@@ -433,11 +433,9 @@ impl Message {
     where
         B: zvariant::DynamicDeserialize<'d>,
     {
-        let body_sig = match self.body_signature() {
-            Ok(sig) => sig,
-            Err(Error::NoBodySignature) => Signature::from_static_str_unchecked(""),
-            Err(e) => return Err(e),
-        };
+        let body_sig = self
+            .signature()
+            .unwrap_or_else(|| Signature::from_static_str_unchecked(""));
 
         {
             #[cfg(unix)]
@@ -515,7 +513,7 @@ impl fmt::Debug for Message {
                 msg.field("member", &member);
             }
         });
-        if let Ok(s) = self.body_signature() {
+        if let Some(s) = self.signature() {
             msg.field("body", &s);
         }
         #[cfg(unix)]
@@ -614,7 +612,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            m.body_signature().unwrap().to_string(),
+            m.signature().unwrap().to_string(),
             if cfg!(unix) { "hs" } else { "s" }
         );
         #[cfg(unix)]

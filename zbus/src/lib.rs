@@ -378,7 +378,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(reply.body_signature().map(|s| s == "u").unwrap());
+        assert!(reply.signature().map(|s| s == "u").unwrap());
         let reply: RequestNameReply = reply.body().unwrap();
         assert_eq!(reply, RequestNameReply::PrimaryOwner);
 
@@ -392,10 +392,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(reply
-            .body_signature()
-            .map(|s| s == <&str>::signature())
-            .unwrap());
+        assert!(reply.signature().map(|s| s == <&str>::signature()).unwrap());
         let id: &str = reply.body().unwrap();
         debug!("Unique ID of the bus: {}", id);
 
@@ -409,10 +406,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(reply
-            .body_signature()
-            .map(|s| s == bool::signature())
-            .unwrap());
+        assert!(reply.signature().map(|s| s == bool::signature()).unwrap());
         assert!(reply.body::<bool>().unwrap());
 
         let reply = connection
@@ -425,10 +419,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(reply
-            .body_signature()
-            .map(|s| s == <&str>::signature())
-            .unwrap());
+        assert!(reply.signature().map(|s| s == <&str>::signature()).unwrap());
         assert_eq!(
             reply.body::<UniqueName<'_>>().unwrap(),
             *connection.unique_name().unwrap(),
@@ -449,7 +440,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(reply.body_signature().map(|s| s == "a{sv}").unwrap());
+        assert!(reply.signature().map(|s| s == "a{sv}").unwrap());
         let hashmap: HashMap<&str, OwnedValue> = reply.body().unwrap();
 
         let pid: u32 = (&hashmap["ProcessID"]).try_into().unwrap();
@@ -486,7 +477,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(reply.body_signature().map(|s| s == "u").unwrap());
+        assert!(reply.signature().map(|s| s == "u").unwrap());
         let reply: RequestNameReply = reply.body().unwrap();
         assert_eq!(reply, RequestNameReply::PrimaryOwner);
 
@@ -501,10 +492,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(reply
-            .body_signature()
-            .map(|s| s == <&str>::signature())
-            .unwrap());
+        assert!(reply.signature().map(|s| s == <&str>::signature()).unwrap());
         let id: &str = reply.body().unwrap();
         debug!("Unique ID of the bus: {}", id);
 
@@ -519,10 +507,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(reply
-            .body_signature()
-            .map(|s| s == bool::signature())
-            .unwrap());
+        assert!(reply.signature().map(|s| s == bool::signature()).unwrap());
         assert!(reply.body::<bool>().unwrap());
 
         let reply = connection
@@ -536,10 +521,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(reply
-            .body_signature()
-            .map(|s| s == <&str>::signature())
-            .unwrap());
+        assert!(reply.signature().map(|s| s == <&str>::signature()).unwrap());
         assert_eq!(
             reply.body::<UniqueName<'_>>().unwrap(),
             *connection.unique_name().unwrap(),
@@ -561,7 +543,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(reply.body_signature().map(|s| s == "a{sv}").unwrap());
+        assert!(reply.signature().map(|s| s == "a{sv}").unwrap());
         let hashmap: HashMap<&str, OwnedValue> = reply.body().unwrap();
 
         let pid: u32 = (&hashmap["ProcessID"]).try_into().unwrap();
