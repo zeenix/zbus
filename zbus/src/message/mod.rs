@@ -291,6 +291,7 @@ impl Message {
     /// syntax), D-Bus does not. Since this method gives you the signature expected on the wire by
     /// D-Bus, the trailing and leading STRUCT signature parenthesis will not be present in case of
     /// multiple arguments.
+    #[deprecated(note = "Use `Message::signature` instead")]
     pub fn body_signature(&self) -> Result<Signature<'_>> {
         self.signature().ok_or(Error::InvalidField)
     }
