@@ -321,8 +321,7 @@ impl Message {
     }
 
     /// Deserialize the fields.
-    ///
-    /// Note: prefer using the direct access methods if possible; they are more efficient.
+    #[deprecated(note = "Use the direct access methods of `Message` instead")]
     pub fn fields(&self) -> Result<Fields<'_>> {
         let ctxt = dbus_context!(header::PRIMARY_HEADER_SIZE);
         zvariant::from_slice(&self.bytes[header::PRIMARY_HEADER_SIZE..], ctxt)
