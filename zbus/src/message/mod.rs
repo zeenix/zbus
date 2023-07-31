@@ -292,15 +292,7 @@ impl Message {
     /// D-Bus, the trailing and leading STRUCT signature parenthesis will not be present in case of
     /// multiple arguments.
     pub fn body_signature(&self) -> Result<Signature<'_>> {
-        match self
-            .header()?
-            .into_fields()
-            .into_field(FieldCode::Signature)
-            .ok_or(Error::NoBodySignature)?
-        {
-            Field::Signature(signature) => Ok(signature),
-            _ => Err(Error::InvalidField),
-        }
+        self.signature().ok_or(Error::InvalidField)
     }
 
     pub fn primary_header(&self) -> &PrimaryHeader {
@@ -358,9 +350,39 @@ impl Message {
         self.quick_fields.member(self)
     }
 
+    /// The error name.
+    pub fn error_name(&self) -> Option<ErrorName<'_>> {
+        self.quick_fields.error_name(self)
+    }
+
     /// The serial number of the message this message is a reply to.
     pub fn reply_serial(&self) -> Option<u32> {
         self.quick_fields.reply_serial()
+    }
+
+    /// The destination of a message.
+    pub fn destination(&self) -> Option<BusName<'_>> {
+        self.quick_fields.destination(self)
+    }
+
+    /// The sender of the message.
+    pub fn sender(&self) -> Option<UniqueName<'_>> {
+        self.quick_fields.sender(self)
+    }
+
+    /// The signature of the body.
+    ///
+    /// **Note:** While zbus treats multiple arguments as a struct (to allow you to use the tuple
+    /// syntax), D-Bus does not. Since this method gives you the signature expected on the wire by
+    /// D-Bus, the trailing and leading STRUCT signature parenthesis will not be present in case of
+    /// multiple arguments.
+    pub fn signature(&self) -> Option<Signature<'_>> {
+        self.quick_fields.signature(self)
+    }
+
+    /// The Unix file descriptors associated with the message.
+    pub fn unix_fds(&self) -> Option<u32> {
+        self.quick_fields.unix_fds()
     }
 
     /// Deserialize the body (without checking signature matching).
