@@ -77,12 +77,12 @@ impl<'a> Builder<'a> {
     }
 
     /// Create a message of type [`Type::MethodReturn`].
-    pub fn method_return(reply_to: &Header<'_>) -> Result<Self> {
+    pub fn method_return(reply_to: &Message) -> Result<Self> {
         Self::new(Type::MethodReturn).reply_to(reply_to)
     }
 
     /// Create a message of type [`Type::Error`].
-    pub fn error<'e: 'a, E>(reply_to: &Header<'_>, name: E) -> Result<Self>
+    pub fn error<'e: 'a, E>(reply_to: &Message, name: E) -> Result<Self>
     where
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
@@ -177,13 +177,11 @@ impl<'a> Builder<'a> {
         Ok(self)
     }
 
-    fn reply_to(mut self, reply_to: &Header<'_>) -> Result<Self> {
-        let serial = reply_to.primary().serial_num().ok_or(Error::MissingField)?;
-        self.header
-            .fields_mut()
-            .replace(Field::ReplySerial(*serial));
+    fn reply_to(mut self, reply_to: &Message) -> Result<Self> {
+        let serial = reply_to.reply_serial().ok_or(Error::MissingField)?;
+        self.header.fields_mut().replace(Field::ReplySerial(serial));
 
-        if let Some(sender) = reply_to.sender()? {
+        if let Some(sender) = reply_to.sender() {
             self.destination(sender.to_owned())
         } else {
             Ok(self)

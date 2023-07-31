@@ -703,9 +703,7 @@ mod tests {
 
             for m in stream {
                 let msg = m.unwrap();
-                let hdr = msg.header().unwrap();
-
-                if hdr.member().unwrap().map(|m| m.as_str()) == Some("ZBusIssue122") {
+                if msg.member().map(|m| m.as_str()) == Some("ZBusIssue122") {
                     break;
                 }
             }
@@ -933,9 +931,7 @@ mod tests {
 
         let mut stream = zbus::MessageStream::from(connection);
         while let Some(msg) = stream.try_next().await? {
-            let msg_header = msg.header()?;
-
-            match msg_header.message_type()? {
+            match msg.primary_header().msg_type() {
                 zbus::message::Type::MethodCall => {
                     connection.reply(&msg, &()).await?;
 

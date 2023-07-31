@@ -39,12 +39,15 @@ impl<'a> DispatchResult<'a> {
         E: zbus::DBusError + Send,
     {
         DispatchResult::Async(Box::pin(async move {
-            let hdr = msg.header()?;
             let ret = f.await;
-            if !hdr.primary().flags().contains(Flags::NoReplyExpected) {
+            if !msg
+                .primary_header()
+                .flags()
+                .contains(Flags::NoReplyExpected)
+            {
                 match ret {
                     Ok(r) => conn.reply(msg, &r).await,
-                    Err(e) => conn.reply_dbus_error(&hdr, e).await,
+                    Err(e) => conn.reply_dbus_error(msg, e).await,
                 }
                 .map(|_seq| ())
             } else {

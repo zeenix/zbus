@@ -210,8 +210,6 @@ impl<'m> MatchRule<'m> {
     /// * `destination` in the rule when `destination` on the `msg` is a well-known name. The
     ///   `destination` on match rule is always a unique name.
     pub fn matches(&self, msg: &zbus::message::Message) -> Result<bool> {
-        let hdr = msg.header()?;
-
         // Start with message type.
         if let Some(msg_type) = self.msg_type() {
             if msg_type != msg.message_type() {
@@ -222,7 +220,7 @@ impl<'m> MatchRule<'m> {
         // Then check sender.
         if let Some(sender) = self.sender() {
             match sender {
-                BusName::Unique(name) if Some(name) != hdr.sender()? => {
+                BusName::Unique(name) if Some(name) != msg.sender().as_ref() => {
                     return Ok(false);
                 }
                 BusName::Unique(_) => (),
@@ -251,8 +249,8 @@ impl<'m> MatchRule<'m> {
 
         // The destination.
         if let Some(destination) = self.destination() {
-            match hdr.destination()? {
-                Some(BusName::Unique(name)) if destination != name => {
+            match msg.destination() {
+                Some(BusName::Unique(name)) if *destination != name => {
                     return Ok(false);
                 }
                 Some(BusName::Unique(_)) | None => (),

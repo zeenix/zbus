@@ -483,11 +483,7 @@ impl Connection {
     /// using one of the standard interface reply types.
     ///
     /// Returns the message serial number.
-    pub async fn reply_dbus_error(
-        &self,
-        call: &zbus::message::Header<'_>,
-        err: impl DBusError,
-    ) -> Result<u32> {
+    pub async fn reply_dbus_error(&self, call: &Message, err: impl DBusError) -> Result<u32> {
         let m = err.create_reply(call);
         self.send_message(m?).await
     }
@@ -996,31 +992,18 @@ impl Connection {
                         m.ok()
                     }) {
                         if let Some(conn) = weak_conn.upgrade() {
-                            let hdr = match msg.header() {
-                                Ok(hdr) => hdr,
-                                Err(e) => {
-                                    warn!("Failed to parse header: {}", e);
-
-                                    continue;
-                                }
-                            };
-                            match hdr.destination() {
+                            match msg.destination() {
                                 // Unique name is already checked by the match rule.
-                                Ok(Some(BusName::Unique(_))) | Ok(None) => (),
-                                Ok(Some(BusName::WellKnown(dest))) => {
+                                Some(BusName::Unique(_)) | None => (),
+                                Some(BusName::WellKnown(dest)) => {
                                     let names = conn.inner.registered_names.lock().await;
                                     // destination doesn't matter if no name has been registered
                                     // (probably means name it's registered through external means).
-                                    if !names.is_empty() && !names.contains_key(dest) {
+                                    if !names.is_empty() && !names.contains_key(&dest) {
                                         trace!("Got a method call for a different destination: {}", dest);
 
                                         continue;
                                     }
-                                }
-                                Err(e) => {
-                                    warn!("Failed to parse destination: {}", e);
-
-                                    continue;
                                 }
                             }
                             let member = match msg.member() {
