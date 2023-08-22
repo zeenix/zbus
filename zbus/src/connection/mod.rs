@@ -303,7 +303,7 @@ impl Connection {
         let serial = self.assign_serial_num(&mut msg)?;
 
         trace!("Sending message: {:?}", msg);
-        (&mut &*self).send(msg).await?;
+        (&mut &*self).send(Arc::new(msg)).await?;
         trace!("Sent message with serial: {}", serial);
 
         Ok(serial)
@@ -1281,18 +1281,15 @@ impl Connection {
     }
 }
 
-impl<T> Sink<T> for Connection
-where
-    T: Into<Arc<Message>>,
-{
+impl Sink<Arc<Message>> for Connection {
     type Error = Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         <&Connection as Sink<Arc<Message>>>::poll_ready(Pin::new(&mut &*self), cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, msg: T) -> Result<()> {
-        Pin::new(&mut &*self).start_send(msg)
+    fn start_send(self: Pin<&mut Self>, msg: Arc<Message>) -> Result<()> {
+        <&Connection as Sink<Arc<Message>>>::start_send(Pin::new(&mut &*self), msg)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
@@ -1304,10 +1301,7 @@ where
     }
 }
 
-impl<'a, T> Sink<T> for &'a Connection
-where
-    T: Into<Arc<Message>>,
-{
+impl<'a> Sink<Arc<Message>> for &'a Connection {
     type Error = Error;
 
     fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
@@ -1315,9 +1309,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(self: Pin<&mut Self>, msg: T) -> Result<()> {
-        let msg = msg.into();
-
+    fn start_send(self: Pin<&mut Self>, msg: Arc<Message>) -> Result<()> {
         if msg.primary_header().serial_num().is_none() {
             return Err(Error::InvalidSerial);
         }
