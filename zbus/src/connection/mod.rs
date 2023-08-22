@@ -13,7 +13,7 @@ use std::{
     pin::Pin,
     sync::{
         atomic::{AtomicU32, Ordering::SeqCst},
-        Arc, Weak,
+        Arc, Mutex as SyncMutex, Weak,
     },
     task::{Context, Poll},
 };
@@ -23,7 +23,7 @@ use zvariant::ObjectPath;
 
 use futures_core::{ready, Future};
 use futures_sink::Sink;
-use futures_util::{sink::SinkExt, StreamExt};
+use futures_util::{pin_mut, sink::SinkExt, StreamExt};
 
 use crate::{
     async_lock::Mutex,
@@ -214,6 +214,7 @@ pub(crate) type MsgBroadcaster = Broadcaster<Result<Arc<Message>>>;
 #[must_use = "Dropping a `Connection` will close the underlying socket."]
 pub struct Connection {
     pub(crate) inner: Arc<ConnectionInner>,
+    pub(crate) sink_ready_listner: Arc<SyncMutex<Option<EventListener>>>,
 }
 
 assert_impl_all!(Connection: Send, Sync, Unpin);
@@ -1215,6 +1216,7 @@ impl Connection {
                 method_return_receiver,
                 registered_names: Mutex::new(HashMap::new()),
             }),
+            sink_ready_listner: Arc::new(SyncMutex::new(None)),
         };
 
         Ok(connection)
@@ -1304,9 +1306,30 @@ impl Sink<Arc<Message>> for Connection {
 impl<'a> Sink<Arc<Message>> for &'a Connection {
     type Error = Error;
 
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
-        // TODO: We should have a max queue length in raw::Socket for outgoing messages.
-        Poll::Ready(Ok(()))
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        let mut listener = self.sink_ready_listner.lock().expect("lock poisoned");
+        let l = match listener.as_mut() {
+            None => {
+                let l = self.inner.raw_conn.await_out_queue_ready();
+                if l.is_some() {
+                    *listener = l;
+                }
+                listener.as_mut()
+            }
+            listener => listener,
+        };
+        match l {
+            Some(l) => {
+                pin_mut!(l);
+                println!("polling ready..");
+                ready!(l.poll(cx));
+                println!("ready!!!");
+                *listener = None;
+
+                Poll::Ready(Ok(()))
+            }
+            None => Poll::Ready(Ok(())),
+        }
     }
 
     fn start_send(self: Pin<&mut Self>, msg: Arc<Message>) -> Result<()> {
@@ -1355,7 +1378,10 @@ pub(crate) struct WeakConnection {
 impl WeakConnection {
     /// Upgrade to a Connection.
     pub fn upgrade(&self) -> Option<Connection> {
-        self.inner.upgrade().map(|inner| Connection { inner })
+        self.inner.upgrade().map(|inner| Connection {
+            inner,
+            sink_ready_listner: Arc::new(SyncMutex::new(None)),
+        })
     }
 }
 
@@ -1377,6 +1403,8 @@ enum NameStatus {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::from_fn;
+
     use futures_util::stream::TryStreamExt;
     use ntest::timeout;
     use test_log::test;
@@ -1745,5 +1773,96 @@ mod tests {
             server_builder.build(),
         )
         .map(|_| ())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[timeout(15000)]
+    fn unix_p2p_sink_impl() {
+        crate::utils::block_on(test_unix_p2p_sink_impl()).unwrap()
+    }
+
+    async fn test_unix_p2p_sink_impl() -> Result<()> {
+        let (server_conn, client_conn) = unix_p2p_pipe().await?;
+
+        // server task just reads messages from the stream.
+        let mut stream = MessageStream::from(&server_conn);
+        let _server_task = server_conn.executor().spawn(
+            async move { while let Ok(Some(_)) = stream.try_next().await {} },
+            "unix_p2p_sink_impl_server",
+        );
+
+        // Create a simple message
+        let mut msg = Message::signal(
+            None::<&str>,
+            None::<&str>,
+            "/org/zbus/p2p",
+            "org.zbus.p2p",
+            "Test",
+            &(),
+        )
+        .unwrap();
+        client_conn.assign_serial_num(&mut msg).unwrap();
+        let msg = Arc::new(msg);
+
+        let start_event = Event::new();
+        // Send the message from multile tasks a 100 times.
+        let mut count = 0;
+        let tasks: Vec<_> = from_fn(|| {
+            if count == 3 {
+                // We only want 3 tasks
+                return None;
+            }
+            count += 1;
+            let mut conn = client_conn.clone();
+            let listener = start_event.listen();
+            let name = format!("unix_p2p_sink_impl_task{count}");
+            let name_clone = name.clone();
+            let msg = msg.clone();
+            Some(client_conn.executor().spawn(
+                async move {
+                    listener.await;
+                    println!("\n{name_clone} started\n");
+                    for i in 0..100 {
+                        conn.feed(msg.clone()).await.unwrap();
+                        println!("\n{name_clone} {i}\n");
+                    }
+                    println!("\n{name_clone} done\n");
+                },
+                &name,
+            ))
+        })
+        .collect();
+
+        // flush the sink every 10 ms.
+        let mut flush_task = client_conn.clone();
+        let flush_task_listener = start_event.listen();
+        let _flush_task = client_conn.executor().spawn(
+            async move {
+                use std::time::Duration;
+
+                #[cfg(not(feature = "tokio"))]
+                use async_io::Timer;
+                #[cfg(feature = "tokio")]
+                use tokio::time::sleep;
+
+                flush_task_listener.await;
+                loop {
+                    #[cfg(not(feature = "tokio"))]
+                    Timer::after(Duration::from_millis(10)).await;
+                    #[cfg(feature = "tokio")]
+                    sleep(Duration::from_millis(10)).await;
+
+                    flush_task.flush().await.unwrap();
+                }
+            },
+            "unix_p2p_sink_impl_flush_task",
+        );
+
+        start_event.notify(usize::MAX);
+
+        futures_util::future::join_all(tasks).await;
+
+        Ok(())
     }
 }

@@ -35,6 +35,7 @@ pub struct Connection<S> {
     #[derivative(Debug = "ignore")]
     socket: Mutex<S>,
     activity_event: Event,
+    out_queue_ready: Event,
     inbound: Mutex<InBound>,
     outbound: Mutex<OutBound>,
 }
@@ -59,6 +60,7 @@ impl<S: Socket> Connection<S> {
         Connection {
             socket: Mutex::new(socket),
             activity_event: Event::new(),
+            out_queue_ready: Event::new(),
             inbound: Mutex::new(InBound {
                 pos: raw_in_buffer.len(),
                 buffer: raw_in_buffer,
@@ -90,6 +92,7 @@ impl<S: Socket> Connection<S> {
                 if data.is_empty() {
                     outbound.pos = 0;
                     outbound.msgs.pop_front();
+
                     break;
                 }
                 #[cfg(unix)]
@@ -103,7 +106,21 @@ impl<S: Socket> Connection<S> {
                 ))?;
             }
         }
+        self.out_queue_ready.notify(usize::MAX);
+        println!("NOTIFied");
         Poll::Ready(Ok(()))
+    }
+
+    /// Check if the queue of outgoing messages is full.
+    pub fn await_out_queue_ready(&self) -> Option<EventListener> {
+        let outbound = self.outbound.lock().expect("lock poisoned");
+        if outbound.msgs.len() < MAX_OUT_QUEUE_LEN {
+            println!("WONT await queue ready..");
+            return None;
+        }
+        let listener = self.out_queue_ready.listen();
+        println!("await queue ready..");
+        Some(listener)
     }
 
     /// Enqueue a message to be sent out to the socket
@@ -254,6 +271,8 @@ impl<S: Socket> Connection<S> {
         self.activity_event.listen()
     }
 }
+
+const MAX_OUT_QUEUE_LEN: usize = 4;
 
 #[cfg(unix)]
 #[cfg(test)]

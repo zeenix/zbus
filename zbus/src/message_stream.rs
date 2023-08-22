@@ -1,6 +1,6 @@
 use std::{
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
@@ -267,6 +267,7 @@ impl From<&MessageStream> for Connection {
     fn from(stream: &MessageStream) -> Connection {
         Connection {
             inner: stream.inner.conn_inner.clone(),
+            sink_ready_listner: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -282,6 +283,7 @@ impl Drop for Inner {
     fn drop(&mut self) {
         let conn = Connection {
             inner: self.conn_inner.clone(),
+            sink_ready_listner: Arc::new(Mutex::new(None)),
         };
 
         if let Some(rule) = self.match_rule.take() {
@@ -295,6 +297,7 @@ impl AsyncDrop for MessageStream {
     async fn async_drop(mut self) {
         let conn = Connection {
             inner: self.inner.conn_inner.clone(),
+            sink_ready_listner: Arc::new(Mutex::new(None)),
         };
 
         if let Some(rule) = self.inner.match_rule.take() {
