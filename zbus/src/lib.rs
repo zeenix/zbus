@@ -269,9 +269,9 @@ mod tests {
         // Hello method is already called during connection creation so subsequent calls are
         // expected to fail but only with a D-Bus error.
         match connection.call_method(
-            Some("org.freedesktop.DBus"),
-            "/org/freedesktop/DBus",
-            Some("org.freedesktop.DBus"),
+            Some("org.freedesktop.DBus".try_into().unwrap()),
+            "/org/freedesktop/DBus".try_into().unwrap(),
+            Some("org.freedesktop.DBus".try_into().unwrap()),
             "Hello",
             &(),
         ) {
@@ -296,9 +296,9 @@ mod tests {
 
         match connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into()?),
+                "/org/freedesktop/DBus".try_into()?,
+                Some("org.freedesktop.DBus".try_into()?),
                 "Hello",
                 &(),
             )
@@ -324,9 +324,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.systemd1"),
-                "/org/freedesktop/systemd1",
-                Some("org.freedesktop.systemd1.Manager"),
+                Some("org.freedesktop.systemd1".try_into().unwrap()),
+                "/org/freedesktop/systemd1".try_into().unwrap(),
+                Some("org.freedesktop.systemd1.Manager".try_into().unwrap()),
                 "DumpByFileDescriptor",
                 &(),
             )
@@ -353,9 +353,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
+                "/org/freedesktop/DBus".try_into().unwrap(),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
                 "RequestName",
                 &(
                     "org.freedesktop.zbus.sync",
@@ -370,9 +370,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
+                "/org/freedesktop/DBus".try_into().unwrap(),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
                 "GetId",
                 &(),
             )
@@ -387,9 +387,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
+                "/org/freedesktop/DBus".try_into().unwrap(),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
                 "NameHasOwner",
                 &"org.freedesktop.zbus.sync",
             )
@@ -403,9 +403,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
+                "/org/freedesktop/DBus".try_into().unwrap(),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
                 "GetNameOwner",
                 &"org.freedesktop.zbus.sync",
             )
@@ -427,9 +427,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
+                "/org/freedesktop/DBus".try_into().unwrap(),
+                Some("org.freedesktop.DBus".try_into().unwrap()),
                 "GetConnectionCredentials",
                 &"org.freedesktop.DBus",
             )
@@ -460,9 +460,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into()?),
+                "/org/freedesktop/DBus".try_into()?,
+                Some("org.freedesktop.DBus".try_into()?),
                 "RequestName",
                 &(
                     "org.freedesktop.zbus.async",
@@ -478,9 +478,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into()?),
+                "/org/freedesktop/DBus".try_into()?,
+                Some("org.freedesktop.DBus".try_into()?),
                 "GetId",
                 &(),
             )
@@ -496,9 +496,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into()?),
+                "/org/freedesktop/DBus".try_into()?,
+                Some("org.freedesktop.DBus".try_into()?),
                 "NameHasOwner",
                 &"org.freedesktop.zbus.async",
             )
@@ -513,9 +513,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into()?),
+                "/org/freedesktop/DBus".try_into()?,
+                Some("org.freedesktop.DBus".try_into()?),
                 "GetNameOwner",
                 &"org.freedesktop.zbus.async",
             )
@@ -538,9 +538,9 @@ mod tests {
 
         let reply = connection
             .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
+                Some("org.freedesktop.DBus".try_into()?),
+                "/org/freedesktop/DBus".try_into()?,
+                Some("org.freedesktop.DBus".try_into()?),
                 "GetConnectionCredentials",
                 &"org.freedesktop.DBus",
             )

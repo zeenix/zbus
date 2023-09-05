@@ -335,21 +335,15 @@ impl Connection {
     ///
     /// On successful reply, an `Ok(Message)` is returned. On error, an `Err` is returned. D-Bus
     /// error replies are returned as [`Error::MethodError`].
-    pub async fn call_method<'d, 'p, 'i, D, P, I, B>(
+    pub async fn call_method<B>(
         &self,
-        destination: Option<D>,
-        path: P,
-        interface: Option<I>,
+        destination: Option<BusName<'_>>,
+        path: ObjectPath<'_>,
+        interface: Option<InterfaceName<'_>>,
         method_name: &str,
         body: &B,
     ) -> Result<Arc<Message>>
     where
-        D: TryInto<BusName<'d>>,
-        P: TryInto<ObjectPath<'p>>,
-        I: TryInto<InterfaceName<'i>>,
-        D::Error: Into<Error>,
-        P::Error: Into<Error>,
-        I::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         self.call_method_raw(
@@ -375,33 +369,27 @@ impl Connection {
     /// guaranteed to be `Ok(Some(_))`, if there was no error encountered.
     ///
     /// INTERNAL NOTE: If this method is ever made pub, flags should become `BitFlags<MethodFlags>`.
-    pub(crate) async fn call_method_raw<'d, 'p, 'i, D, P, I, B>(
+    pub(crate) async fn call_method_raw<B>(
         &self,
-        destination: Option<D>,
-        path: P,
-        interface: Option<I>,
+        destination: Option<BusName<'_>>,
+        path: ObjectPath<'_>,
+        interface: Option<InterfaceName<'_>>,
         method_name: &str,
         flags: BitFlags<Flags>,
         body: &B,
     ) -> Result<Option<PendingMethodCall>>
     where
-        D: TryInto<BusName<'d>>,
-        P: TryInto<ObjectPath<'p>>,
-        I: TryInto<InterfaceName<'i>>,
-        D::Error: Into<Error>,
-        P::Error: Into<Error>,
-        I::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         let mut builder = Message::method(path, method_name)?;
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?
+            builder = builder.sender(sender.inner().clone())?;
         }
         if let Some(destination) = destination {
-            builder = builder.destination(destination)?
+            builder = builder.destination(destination)?;
         }
         if let Some(interface) = interface {
-            builder = builder.interface(interface)?
+            builder = builder.interface(interface)?;
         }
         for flag in flags {
             builder = builder.with_flags(flag)?;
@@ -1418,7 +1406,13 @@ mod tests {
             let mut stream = MessageStream::from(&client1);
             server_ready_listener.await;
             let reply = client1
-                .call_method(None::<()>, "/", Some("org.zbus.p2p"), "Test", &())
+                .call_method(
+                    None,
+                    "/".try_into()?,
+                    Some("org.zbus.p2p".try_into()?),
+                    "Test",
+                    &(),
+                )
                 .await?;
             assert_eq!(reply.to_string(), "Method return");
             // Check we didn't miss the signal that was sent during the call.

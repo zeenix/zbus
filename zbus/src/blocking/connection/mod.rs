@@ -81,21 +81,15 @@ impl Connection {
     ///
     /// [`receive_message`]: struct.Connection.html#method.receive_message
     /// [`MethodError`]: enum.Error.html#variant.MethodError
-    pub fn call_method<'d, 'p, 'i, D, P, I, B>(
+    pub fn call_method<B>(
         &self,
-        destination: Option<D>,
-        path: P,
-        iface: Option<I>,
+        destination: Option<BusName<'_>>,
+        path: ObjectPath<'_>,
+        iface: Option<InterfaceName<'_>>,
         method_name: &str,
         body: &B,
     ) -> Result<Arc<Message>>
     where
-        D: TryInto<BusName<'d>>,
-        P: TryInto<ObjectPath<'p>>,
-        I: TryInto<InterfaceName<'i>>,
-        D::Error: Into<Error>,
-        P::Error: Into<Error>,
-        I::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         block_on(
@@ -312,7 +306,13 @@ mod tests {
                 .unwrap();
             rx.recv().unwrap();
             let reply = c
-                .call_method(None::<()>, "/", Some("org.zbus.p2p"), "Test", &())
+                .call_method(
+                    None,
+                    "/".try_into().unwrap(),
+                    Some("org.zbus.p2p".try_into().unwrap()),
+                    "Test",
+                    &(),
+                )
                 .unwrap();
             assert_eq!(reply.to_string(), "Method return");
             let val: String = reply.body().unwrap();

@@ -333,9 +333,9 @@ impl PropertiesCache {
         let get_all = proxy
             .connection()
             .call_method_raw(
-                Some(proxy.destination()),
-                proxy.path(),
-                Some(proxy.interface()),
+                Some(proxy.destination().to_owned()),
+                proxy.path().to_owned(),
+                Some(proxy.interface().to_owned()),
                 "GetAll",
                 BitFlags::empty(),
                 &interface,
@@ -809,9 +809,9 @@ impl<'a> Proxy<'a> {
             .inner_without_borrows
             .conn
             .call_method(
-                Some(&self.inner.destination),
-                self.inner.path.as_str(),
-                Some(&self.inner.interface),
+                Some(self.inner.destination.clone()),
+                self.inner.path.clone(),
+                Some(self.inner.interface.clone()),
                 method_name,
                 body,
             )
@@ -858,9 +858,9 @@ impl<'a> Proxy<'a> {
             .inner_without_borrows
             .conn
             .call_method_raw(
-                Some(self.destination()),
-                self.path(),
-                Some(self.interface()),
+                Some(self.destination().to_owned()),
+                self.path().to_owned(),
+                Some(self.interface().to_owned()),
                 method_name,
                 flags,
                 body,
@@ -1138,9 +1138,11 @@ impl<'a> SignalStream<'a> {
 
                 let get_name_owner = conn
                     .call_method_raw(
-                        Some("org.freedesktop.DBus"),
-                        "/org/freedesktop/DBus",
-                        Some("org.freedesktop.DBus"),
+                        Some(BusName::from_static_str("org.freedesktop.DBus")?),
+                        ObjectPath::from_static_str_unchecked("/org/freedesktop/DBus"),
+                        Some(InterfaceName::from_static_str_unchecked(
+                            "org.freedesktop.DBus",
+                        )),
                         "GetNameOwner",
                         BitFlags::empty(),
                         &name,

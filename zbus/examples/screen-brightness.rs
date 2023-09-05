@@ -24,9 +24,9 @@ fn main() {
 
     let reply = connection
         .call_method(
-            Some("org.gnome.SettingsDaemon.Power"),
-            "/org/gnome/SettingsDaemon/Power",
-            Some("org.gnome.SettingsDaemon.Power.Screen"),
+            Some("org.gnome.SettingsDaemon.Power".try_into().unwrap()),
+            "/org/gnome/SettingsDaemon/Power".try_into().unwrap(),
+            Some("org.gnome.SettingsDaemon.Power.Screen".try_into().unwrap()),
             method,
             &(),
         )
