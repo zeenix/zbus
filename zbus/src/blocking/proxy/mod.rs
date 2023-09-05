@@ -207,10 +207,8 @@ impl<'a> Proxy<'a> {
     /// allocation/copying, by deserializing the reply to an unowned type).
     ///
     /// [`call`]: struct.Proxy.html#method.call
-    pub fn call_method<'m, M, B>(&self, method_name: M, body: &B) -> Result<Arc<Message>>
+    pub fn call_method<B>(&self, method_name: &str, body: &B) -> Result<Arc<Message>>
     where
-        M: TryInto<MemberName<'m>>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         block_on(self.inner().call_method(method_name, body))
@@ -221,10 +219,8 @@ impl<'a> Proxy<'a> {
     /// Use [`call_method`] instead if you need to deserialize the reply manually/separately.
     ///
     /// [`call_method`]: struct.Proxy.html#method.call_method
-    pub fn call<'m, M, B, R>(&self, method_name: M, body: &B) -> Result<R>
+    pub fn call<B, R>(&self, method_name: &str, body: &B) -> Result<R>
     where
-        M: TryInto<MemberName<'m>>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
         R: serde::de::DeserializeOwned + zvariant::Type,
     {
@@ -240,15 +236,13 @@ impl<'a> Proxy<'a> {
     ///
     /// [`call`]: struct.Proxy.html#method.call
     /// [`call_noreply`]: struct.Proxy.html#method.call_noreply
-    pub fn call_with_flags<'m, M, B, R>(
+    pub fn call_with_flags<B, R>(
         &self,
-        method_name: M,
+        method_name: &str,
         flags: BitFlags<MethodFlags>,
         body: &B,
     ) -> Result<Option<R>>
     where
-        M: TryInto<MemberName<'m>>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
         R: serde::de::DeserializeOwned + zvariant::Type,
     {
@@ -258,10 +252,8 @@ impl<'a> Proxy<'a> {
     /// Call a method without expecting a reply
     ///
     /// This sets the `NoReplyExpected` flag on the calling message and does not wait for a reply.
-    pub fn call_noreply<'m, M, B>(&self, method_name: M, body: &B) -> Result<()>
+    pub fn call_noreply<B>(&self, method_name: &str, body: &B) -> Result<()>
     where
-        M: TryInto<MemberName<'m>>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         block_on(self.inner().call_noreply(method_name, body))

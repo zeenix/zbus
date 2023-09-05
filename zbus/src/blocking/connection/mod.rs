@@ -81,23 +81,21 @@ impl Connection {
     ///
     /// [`receive_message`]: struct.Connection.html#method.receive_message
     /// [`MethodError`]: enum.Error.html#variant.MethodError
-    pub fn call_method<'d, 'p, 'i, 'm, D, P, I, M, B>(
+    pub fn call_method<'d, 'p, 'i, D, P, I, B>(
         &self,
         destination: Option<D>,
         path: P,
         iface: Option<I>,
-        method_name: M,
+        method_name: &str,
         body: &B,
     ) -> Result<Arc<Message>>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
-        M: TryInto<MemberName<'m>>,
         D::Error: Into<Error>,
         P::Error: Into<Error>,
         I::Error: Into<Error>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         block_on(

@@ -602,7 +602,7 @@ fn gen_proxy_method_call(
                 Ok(quote! {
                     #(#other_attrs)*
                     pub #usage #signature {
-                        self.0.call_with_flags::<_, _, ()>(#method_name, #method_flags, #body)#wait?;
+                        self.0.call_with_flags::<_, ()>(#method_name, #method_flags, #body)#wait?;
                         ::std::result::Result::Ok(())
                     }
                 })

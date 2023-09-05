@@ -335,23 +335,21 @@ impl Connection {
     ///
     /// On successful reply, an `Ok(Message)` is returned. On error, an `Err` is returned. D-Bus
     /// error replies are returned as [`Error::MethodError`].
-    pub async fn call_method<'d, 'p, 'i, 'm, D, P, I, M, B>(
+    pub async fn call_method<'d, 'p, 'i, D, P, I, B>(
         &self,
         destination: Option<D>,
         path: P,
         interface: Option<I>,
-        method_name: M,
+        method_name: &str,
         body: &B,
     ) -> Result<Arc<Message>>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
-        M: TryInto<MemberName<'m>>,
         D::Error: Into<Error>,
         P::Error: Into<Error>,
         I::Error: Into<Error>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         self.call_method_raw(
@@ -377,12 +375,12 @@ impl Connection {
     /// guaranteed to be `Ok(Some(_))`, if there was no error encountered.
     ///
     /// INTERNAL NOTE: If this method is ever made pub, flags should become `BitFlags<MethodFlags>`.
-    pub(crate) async fn call_method_raw<'d, 'p, 'i, 'm, D, P, I, M, B>(
+    pub(crate) async fn call_method_raw<'d, 'p, 'i, D, P, I, B>(
         &self,
         destination: Option<D>,
         path: P,
         interface: Option<I>,
-        method_name: M,
+        method_name: &str,
         flags: BitFlags<Flags>,
         body: &B,
     ) -> Result<Option<PendingMethodCall>>
@@ -390,11 +388,9 @@ impl Connection {
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
-        M: TryInto<MemberName<'m>>,
         D::Error: Into<Error>,
         P::Error: Into<Error>,
         I::Error: Into<Error>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         let mut builder = Message::method(path, method_name)?;
