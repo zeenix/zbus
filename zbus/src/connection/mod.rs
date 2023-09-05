@@ -18,7 +18,7 @@ use std::{
     task::{Context, Poll},
 };
 use tracing::{debug, info_span, instrument, trace, trace_span, warn, Instrument};
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
+use zbus_names::{BusName, ErrorName, InterfaceName, OwnedUniqueName, WellKnownName};
 use zvariant::ObjectPath;
 
 use futures_core::Future;
@@ -426,23 +426,21 @@ impl Connection {
     /// Emit a signal.
     ///
     /// Create a signal message, and send it over the connection.
-    pub async fn emit_signal<'d, 'p, 'i, 'm, D, P, I, M, B>(
+    pub async fn emit_signal<'d, 'p, 'i, D, P, I, B>(
         &self,
         destination: Option<D>,
         path: P,
         interface: I,
-        signal_name: M,
+        signal_name: &str,
         body: &B,
     ) -> Result<()>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
-        M: TryInto<MemberName<'m>>,
         D::Error: Into<Error>,
         P::Error: Into<Error>,
         I::Error: Into<Error>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         let mut b = Message::signal(path, interface, signal_name)?;

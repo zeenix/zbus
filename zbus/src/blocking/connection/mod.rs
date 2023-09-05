@@ -4,7 +4,7 @@ use enumflags2::BitFlags;
 use event_listener::EventListener;
 use static_assertions::assert_impl_all;
 use std::{io, num::NonZeroU32, ops::Deref, sync::Arc};
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
+use zbus_names::{BusName, ErrorName, InterfaceName, OwnedUniqueName, WellKnownName};
 use zvariant::ObjectPath;
 
 use crate::{
@@ -112,18 +112,16 @@ impl Connection {
         destination: Option<D>,
         path: P,
         iface: I,
-        signal_name: M,
+        signal_name: &str,
         body: &B,
     ) -> Result<()>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
-        M: TryInto<MemberName<'m>>,
         D::Error: Into<Error>,
         P::Error: Into<Error>,
         I::Error: Into<Error>,
-        M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
         block_on(
