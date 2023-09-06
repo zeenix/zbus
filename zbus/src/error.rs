@@ -59,6 +59,9 @@ pub enum Error {
     MissingParameter(&'static str),
     /// Serial number in the message header is 0 (which is invalid).
     InvalidSerial,
+    /// Incompatible message format (e.g sending `DBus` format message on a connection using
+    /// `GVariant`).
+    IncompatibleMessageEncoding,
 }
 
 assert_impl_all!(Error: Send, Sync, Unpin);
@@ -85,6 +88,7 @@ impl PartialEq for Error {
             (Self::NameTaken, Self::NameTaken) => true,
             (Error::InputOutput(_), Self::InputOutput(_)) => false,
             (Self::Failure(s1), Self::Failure(s2)) => s1 == s2,
+            (Self::IncompatibleMessageEncoding, Self::IncompatibleMessageEncoding) => true,
             (_, _) => false,
         }
     }
@@ -113,6 +117,7 @@ impl error::Error for Error {
             Error::Failure(_) => None,
             Error::MissingParameter(_) => None,
             Error::InvalidSerial => None,
+            Error::IncompatibleMessageEncoding => None,
         }
     }
 }
@@ -147,6 +152,9 @@ impl fmt::Display for Error {
                 write!(f, "Parameter `{}` was not specified but it is required", p)
             }
             Error::InvalidSerial => write!(f, "Serial number in the message header is 0"),
+            Error::IncompatibleMessageEncoding => {
+                write!(f, "Incompatible message encoding")
+            }
         }
     }
 }
@@ -176,6 +184,7 @@ impl Clone for Error {
             Error::Failure(e) => Error::Failure(e.clone()),
             Error::MissingParameter(p) => Error::MissingParameter(p),
             Error::InvalidSerial => Error::InvalidSerial,
+            Error::IncompatibleMessageEncoding => Error::IncompatibleMessageEncoding,
         }
     }
 }
