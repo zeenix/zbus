@@ -21,7 +21,7 @@ use uds_windows::UnixStream;
 #[cfg(all(feature = "vsock", not(feature = "tokio")))]
 use vsock::VsockStream;
 
-use zvariant::{ObjectPath, Str};
+use zvariant::{EncodingFormat, ObjectPath, Str};
 
 use crate::{
     address::{self, Address},
@@ -71,6 +71,7 @@ pub struct Builder<'a> {
     unique_name: Option<UniqueName<'a>>,
     cookie_context: Option<super::handshake::CookieContext<'a>>,
     cookie_id: Option<usize>,
+    encoding_format: EncodingFormat,
 }
 
 assert_impl_all!(Builder<'_>: Send, Sync, Unpin);
@@ -318,6 +319,17 @@ impl<'a> Builder<'a> {
         Ok(self)
     }
 
+    /// Set the encoding format to use for all messages going through this connection.
+    ///
+    /// For the foreseeable future, you'll not need this as `DBus` is the only supported format on
+    /// all current bus implementations. you may find it useful for peer-to-peer connections though
+    /// where you can set the format to `GVariant` for more efficient encoding and ability to use
+    /// `Option<t>` (instead of `zvariant::Optional<t>`).
+    pub fn encoding_format(mut self, format: EncodingFormat) -> Self {
+        self.encoding_format = format;
+        self
+    }
+
     /// Build the connection, consuming the builder.
     ///
     /// # Errors
@@ -373,7 +385,7 @@ impl<'a> Builder<'a> {
         let socket_read = auth.socket_read.take().unwrap();
         let already_received_bytes = auth.already_received_bytes.take().unwrap();
 
-        let mut conn = Connection::new(auth, !self.p2p, executor).await?;
+        let mut conn = Connection::new(auth, !self.p2p, executor, self.encoding_format).await?;
         conn.set_max_queued(self.max_queued.unwrap_or(DEFAULT_MAX_QUEUED));
         if let Some(unique_name) = self.unique_name {
             conn.set_unique_name(unique_name)?;
@@ -425,6 +437,7 @@ impl<'a> Builder<'a> {
             unique_name: None,
             cookie_id: None,
             cookie_context: None,
+            encoding_format: EncodingFormat::DBus,
         }
     }
 

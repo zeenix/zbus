@@ -19,7 +19,7 @@ use std::{
 };
 use tracing::{debug, info_span, instrument, trace, trace_span, warn, Instrument};
 use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
-use zvariant::ObjectPath;
+use zvariant::{EncodingFormat, ObjectPath};
 
 use futures_core::Future;
 use futures_util::StreamExt;
@@ -80,6 +80,8 @@ pub(crate) struct ConnectionInner {
 
     object_server: OnceCell<blocking::ObjectServer>,
     object_server_dispatch_task: OnceCell<Task<()>>,
+
+    encoding_format: EncodingFormat,
 }
 
 type Subscriptions = HashMap<OwnedMatchRule, (u64, InactiveReceiver<Result<Arc<Message>>>)>;
@@ -299,6 +301,9 @@ impl Connection {
     /// Same as [`Connection::send_message`] except it doesn't sets the unique serial number on the
     /// message for you. It expects a serial number to be already set on the message.
     pub async fn send(&self, msg: &Message) -> Result<()> {
+        if msg.primary_header().encoding_format()? != self.inner.encoding_format {
+            return Err(Error::IncompatibleMessageEncoding);
+        }
         #[cfg(unix)]
         if !msg.fds().is_empty() && !self.inner.cap_unix_fd {
             return Err(Error::Unsupported);
@@ -397,7 +402,8 @@ impl Connection {
         M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
-        let mut builder = Message::method(path, method_name)?;
+        let mut builder =
+            Message::method(path, method_name)?.encoding_format(self.inner.encoding_format);
         if let Some(sender) = self.unique_name() {
             builder = builder.sender(sender)?
         }
@@ -449,7 +455,8 @@ impl Connection {
         M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
-        let mut b = Message::signal(path, interface, signal_name)?;
+        let mut b = Message::signal(path, interface, signal_name)?
+            .encoding_format(self.inner.encoding_format);
         if let Some(sender) = self.unique_name() {
             b = b.sender(sender)?;
         }
@@ -1191,6 +1198,7 @@ impl Connection {
         auth: Authenticated,
         bus_connection: bool,
         executor: Executor<'static>,
+        format: EncodingFormat,
     ) -> Result<Self> {
         #[cfg(unix)]
         let cap_unix_fd = auth.cap_unix_fd;
@@ -1241,6 +1249,7 @@ impl Connection {
                 msg_receiver,
                 method_return_receiver,
                 registered_names: Mutex::new(HashMap::new()),
+                encoding_format: format,
             }),
         };
 
@@ -1313,6 +1322,7 @@ impl Connection {
                     inner.msg_senders.clone(),
                     already_read,
                     inner.activity_event.clone(),
+                    inner.encoding_format,
                 )
                 .spawn(&inner.executor),
             )

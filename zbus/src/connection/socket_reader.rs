@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use event_listener::Event;
 use tracing::{debug, instrument, trace};
+use zvariant::EncodingFormat;
 
 use crate::{
     async_lock::Mutex,
@@ -19,6 +20,7 @@ pub(crate) struct SocketReader {
     already_received_bytes: Option<Vec<u8>>,
     prev_seq: u64,
     activity_event: Arc<Event>,
+    encoding_format: EncodingFormat,
 }
 
 impl SocketReader {
@@ -27,6 +29,7 @@ impl SocketReader {
         senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
         already_received_bytes: Vec<u8>,
         activity_event: Arc<Event>,
+        encoding_format: EncodingFormat,
     ) -> Self {
         Self {
             socket,
@@ -34,6 +37,7 @@ impl SocketReader {
             already_received_bytes: Some(already_received_bytes),
             prev_seq: 0,
             activity_event,
+            encoding_format,
         }
     }
 
@@ -138,6 +142,9 @@ impl SocketReader {
         }
 
         let (primary_header, fields_len) = PrimaryHeader::read(&bytes)?;
+        if primary_header.encoding_format()? != self.encoding_format {
+            return Err(crate::Error::IncompatibleMessageEncoding);
+        }
         let header_len = MIN_MESSAGE_SIZE + fields_len as usize;
         let body_padding = padding_for_8_bytes(header_len);
         let body_len = primary_header.body_len() as usize;

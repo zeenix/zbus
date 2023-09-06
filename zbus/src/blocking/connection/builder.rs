@@ -10,7 +10,7 @@ use tokio::net::UnixStream;
 #[cfg(windows)]
 use uds_windows::UnixStream;
 
-use zvariant::{ObjectPath, Str};
+use zvariant::{EncodingFormat, ObjectPath, Str};
 
 use crate::{
     address::Address,
@@ -179,6 +179,16 @@ impl<'a> Builder<'a> {
         U::Error: Into<Error>,
     {
         self.0.unique_name(unique_name).map(Self)
+    }
+
+    /// Set the encoding format to use for all messages going through this connection.
+    ///
+    /// For the foreseeable future, you'll not need this as `DBus` is the only supported format on
+    /// all current bus implementations. you may find it useful for peer-to-peer connections though
+    /// where you can set the format to `GVariant` for more efficient encoding and ability to use
+    /// `Option<t>` (instead of `zvariant::Optional<t>`).
+    pub fn encoding_format(self, format: EncodingFormat) -> Self {
+        Self(self.0.encoding_format(format))
     }
 
     /// Build the connection, consuming the builder.
