@@ -10,6 +10,7 @@ use std::{
 
 use enumflags2::BitFlags;
 use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
+use zvariant::EncodingFormat;
 
 use crate::{
     message::{Field, FieldCode, Fields, Flags, Header, Message, PrimaryHeader, Sequence, Type},
@@ -29,6 +30,12 @@ type BuildGenericResult = ();
 macro_rules! dbus_context {
     ($n_bytes_before: expr) => {
         EncodingContext::<byteorder::NativeEndian>::new_dbus($n_bytes_before)
+    };
+}
+
+macro_rules! encoding_context {
+    ($format: expr, $n_bytes_before: expr) => {
+        EncodingContext::<byteorder::NativeEndian>::new($format, $n_bytes_before)
     };
 }
 
@@ -181,12 +188,25 @@ impl<'a> Builder<'a> {
     fn reply_to(mut self, reply_to: &Header<'_>) -> Result<Self> {
         let serial = reply_to.primary().serial_num().ok_or(Error::MissingField)?;
         self.header.fields_mut().replace(Field::ReplySerial(serial));
+        let format = reply_to.primary().encoding_format()?;
+        self.header.primary_mut().set_encoding_format(format);
 
         if let Some(sender) = reply_to.sender() {
             self.destination(sender.to_owned())
         } else {
             Ok(self)
         }
+    }
+
+    /// Set the encoding format of the message.
+    ///
+    /// For the foreseeable future, you'll not need this as `DBus` is the only supported format on
+    /// all current bus implementations. You may find it useful for peer-to-peer connections though
+    /// where you can set the format to `GVariant` for more efficient encoding and ability to use
+    /// `Option<T>` (instead of `zvariant::Optional<T>`).
+    pub fn encoding_format(mut self, format: EncodingFormat) -> Self {
+        self.header.primary_mut().set_encoding_format(format);
+        self
     }
 
     /// Build the [`Message`] with the given body.
@@ -203,7 +223,8 @@ impl<'a> Builder<'a> {
     where
         B: serde::ser::Serialize + DynamicType,
     {
-        let ctxt = dbus_context!(0);
+        let format = self.header.primary().encoding_format()?;
+        let ctxt = encoding_context!(format, 0);
 
         // Note: this iterates the body twice, but we prefer efficient handling of large messages
         // to efficient handling of ones that are complex to serialize.
@@ -281,6 +302,7 @@ impl<'a> Builder<'a> {
     where
         WriteFunc: FnOnce(&mut Cursor<&mut Vec<u8>>) -> Result<BuildGenericResult>,
     {
+        // Headers are always encoded in D-Bus format.
         let ctxt = dbus_context!(0);
         let mut header = self.header;
 

@@ -9,6 +9,7 @@ use std::{
 
 use static_assertions::assert_impl_all;
 use zbus_names::{ErrorName, InterfaceName, MemberName};
+use zvariant::EncodingFormat;
 
 #[cfg(unix)]
 use crate::OwnedFd;
@@ -34,9 +35,9 @@ pub use header::{EndianSig, Flags, Header, PrimaryHeader, Type, NATIVE_ENDIAN_SI
 #[cfg(unix)]
 const LOCK_PANIC_MSG: &str = "lock poisoned";
 
-macro_rules! dbus_context {
-    ($n_bytes_before: expr) => {
-        EncodingContext::<byteorder::NativeEndian>::new_dbus($n_bytes_before)
+macro_rules! encoding_context {
+    ($format: expr, $n_bytes_before: expr) => {
+        EncodingContext::<byteorder::NativeEndian>::new($format, $n_bytes_before)
     };
 }
 
@@ -172,7 +173,8 @@ impl Message {
         }
 
         let (primary_header, fields_len) = PrimaryHeader::read(&bytes)?;
-        let (header, _) = zvariant::from_slice(&bytes, dbus_context!(0))?;
+        // Header is always in the DBus format.
+        let (header, _) = zvariant::from_slice(&bytes, encoding_context!(EncodingFormat::DBus, 0))?;
         #[cfg(unix)]
         let fds = Arc::new(RwLock::new(Fds::Owned(fds)));
 
@@ -235,9 +237,13 @@ impl Message {
         modifier(&mut self.primary_header)?;
 
         let mut cursor = Cursor::new(&mut self.bytes);
-        zvariant::to_writer(&mut cursor, dbus_context!(0), &self.primary_header)
-            .map(|_| ())
-            .map_err(Error::from)
+        zvariant::to_writer(
+            &mut cursor,
+            encoding_context!(EncodingFormat::DBus, 0),
+            &self.primary_header,
+        )
+        .map(|_| ())
+        .map_err(Error::from)
     }
 
     /// The message header.
@@ -313,18 +319,22 @@ impl Message {
     where
         B: serde::de::Deserialize<'d> + VariantType,
     {
+        let format = self.primary_header.encoding_format()?;
         {
             #[cfg(unix)]
             {
                 zvariant::from_slice_fds(
                     &self.bytes[self.body_offset..],
                     Some(&self.fds()),
-                    dbus_context!(0),
+                    encoding_context!(format, 0),
                 )
             }
             #[cfg(not(unix))]
             {
-                zvariant::from_slice(&self.bytes[self.body_offset..], dbus_context!(0))
+                zvariant::from_slice(
+                    &self.bytes[self.body_offset..],
+                    encoding_context!(format, 0),
+                )
             }
         }
         .map_err(Error::from)
@@ -362,6 +372,7 @@ impl Message {
     where
         B: zvariant::DynamicDeserialize<'d>,
     {
+        let format = self.primary_header.encoding_format()?;
         let body_sig = self
             .body_signature()
             .unwrap_or_else(|| Signature::from_static_str_unchecked(""));
@@ -372,7 +383,7 @@ impl Message {
                 zvariant::from_slice_fds_for_dynamic_signature(
                     &self.bytes[self.body_offset..],
                     Some(&self.fds()),
-                    dbus_context!(0),
+                    encoding_context!(format, 0),
                     &body_sig,
                 )
             }
@@ -380,7 +391,7 @@ impl Message {
             {
                 zvariant::from_slice_for_dynamic_signature(
                     &self.bytes[self.body_offset..],
-                    dbus_context!(0),
+                    encoding_context!(format, 0),
                     &body_sig,
                 )
             }

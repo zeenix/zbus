@@ -14,6 +14,9 @@ use crate::{
 /// [dm]: derive.DBusError.html
 pub trait DBusError {
     /// Generate an error reply message for the given method call.
+    ///
+    /// NOTE: It's the implementer's responsibility to ensure the message returned by this call has
+    /// the same encoding format as the `header` argument.
     fn create_reply(&self, header: &Header<'_>) -> Result<Message>;
 
     // The name of the error.

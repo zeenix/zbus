@@ -6,7 +6,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use static_assertions::assert_impl_all;
 use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
-use zvariant::{EncodingContext, ObjectPath, Signature, Type as VariantType};
+use zvariant::{EncodingContext, EncodingFormat, ObjectPath, Signature, Type as VariantType};
 
 use crate::{
     message::{Field, FieldCode, Fields},
@@ -190,6 +190,29 @@ impl PrimaryHeader {
     /// [`Connection`](struct.Connection.html) the message is sent over.
     pub fn serial_num(&self) -> Option<NonZeroU32> {
         NonZeroU32::new(self.serial_num)
+    }
+
+    /// The encoding format of the message.
+    ///
+    /// This is determined by the protocol version.
+    pub fn encoding_format(&self) -> Result<EncodingFormat, Error> {
+        match self.protocol_version {
+            1 => Ok(EncodingFormat::DBus),
+            #[cfg(feature = "gvariant")]
+            2 => Ok(EncodingFormat::GVariant),
+            _ => Err(crate::Error::Unsupported),
+        }
+    }
+
+    /// Set the encoding format of the message.
+    ///
+    /// This in turn sets the proocol version accordingly.
+    pub fn set_encoding_format(&mut self, format: EncodingFormat) {
+        self.protocol_version = match format {
+            EncodingFormat::DBus => 1,
+            #[cfg(feature = "gvariant")]
+            EncodingFormat::GVariant => 2,
+        }
     }
 
     pub(crate) fn set_serial_num(&mut self, serial_num: NonZeroU32) {
