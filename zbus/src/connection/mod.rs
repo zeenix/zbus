@@ -1388,6 +1388,7 @@ mod tests {
         client1: Connection,
         server2: Connection,
         client2: Connection,
+        format: EncodingFormat,
     ) -> Result<()> {
         let forward1 = {
             let stream = MessageStream::from(server1.clone());
@@ -1422,6 +1423,7 @@ mod tests {
             server_ready.notify(1);
             let method = loop {
                 let m = stream.try_next().await?.unwrap();
+                assert_eq!(m.primary_header().encoding_format().unwrap(), format);
                 if m.to_string() == "Method call Test" {
                     break m;
                 }
@@ -1446,6 +1448,7 @@ mod tests {
             assert_eq!(reply.to_string(), "Method return");
             // Check we didn't miss the signal that was sent during the call.
             let m = stream.try_next().await?.unwrap();
+            assert_eq!(m.primary_header().encoding_format().unwrap(), format);
             client_done.notify(1);
             assert_eq!(m.to_string(), "Signal ASignalForYou");
             reply.body::<String>()
@@ -1460,17 +1463,21 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn tcp_p2p() {
-        crate::utils::block_on(test_tcp_p2p()).unwrap();
+        crate::utils::block_on(async {
+            test_tcp_p2p(EncodingFormat::DBus).await.unwrap();
+            #[cfg(feature = "gvariant")]
+            test_tcp_p2p(EncodingFormat::GVariant).await.unwrap();
+        });
     }
 
-    async fn test_tcp_p2p() -> Result<()> {
-        let (server1, client1) = tcp_p2p_pipe().await?;
-        let (server2, client2) = tcp_p2p_pipe().await?;
+    async fn test_tcp_p2p(format: EncodingFormat) -> Result<()> {
+        let (server1, client1) = tcp_p2p_pipe(format).await?;
+        let (server2, client2) = tcp_p2p_pipe(format).await?;
 
-        test_p2p(server1, client1, server2, client2).await
+        test_p2p(server1, client1, server2, client2, format).await
     }
 
-    async fn tcp_p2p_pipe() -> Result<(Connection, Connection)> {
+    async fn tcp_p2p_pipe(format: EncodingFormat) -> Result<(Connection, Connection)> {
         let guid = Guid::generate();
 
         #[cfg(not(feature = "tokio"))]
@@ -1484,8 +1491,9 @@ mod tests {
                 Builder::tcp_stream(p0)
                     .server(&guid)
                     .p2p()
-                    .auth_mechanisms(&[AuthMechanism::Anonymous]),
-                Builder::tcp_stream(p1).p2p(),
+                    .auth_mechanisms(&[AuthMechanism::Anonymous])
+                    .encoding_format(format),
+                Builder::tcp_stream(p1).p2p().encoding_format(format),
             )
         };
 
@@ -1500,8 +1508,9 @@ mod tests {
                 Builder::tcp_stream(p0)
                     .server(&guid)
                     .p2p()
-                    .auth_mechanisms(&[AuthMechanism::Anonymous]),
-                Builder::tcp_stream(p1).p2p(),
+                    .auth_mechanisms(&[AuthMechanism::Anonymous])
+                    .encoding_format(format),
+                Builder::tcp_stream(p1).p2p().encoding_format(format),
             )
         };
 
@@ -1512,19 +1521,23 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn unix_p2p() {
-        crate::utils::block_on(test_unix_p2p()).unwrap();
+        crate::utils::block_on(async {
+            test_unix_p2p(EncodingFormat::DBus).await.unwrap();
+            #[cfg(feature = "gvariant")]
+            test_unix_p2p(EncodingFormat::GVariant).await.unwrap();
+        });
     }
 
     #[cfg(unix)]
-    async fn test_unix_p2p() -> Result<()> {
-        let (server1, client1) = unix_p2p_pipe().await?;
-        let (server2, client2) = unix_p2p_pipe().await?;
+    async fn test_unix_p2p(format: EncodingFormat) -> Result<()> {
+        let (server1, client1) = unix_p2p_pipe(format).await?;
+        let (server2, client2) = unix_p2p_pipe(format).await?;
 
-        test_p2p(server1, client1, server2, client2).await
+        test_p2p(server1, client1, server2, client2, format).await
     }
 
     #[cfg(unix)]
-    async fn unix_p2p_pipe() -> Result<(Connection, Connection)> {
+    async fn unix_p2p_pipe(format: EncodingFormat) -> Result<(Connection, Connection)> {
         #[cfg(not(feature = "tokio"))]
         use std::os::unix::net::UnixStream;
         #[cfg(feature = "tokio")]
@@ -1537,8 +1550,15 @@ mod tests {
         let (p0, p1) = UnixStream::pair().unwrap();
 
         futures_util::try_join!(
-            Builder::unix_stream(p1).p2p().build(),
-            Builder::unix_stream(p0).server(&guid).p2p().build(),
+            Builder::unix_stream(p1)
+                .p2p()
+                .encoding_format(format)
+                .build(),
+            Builder::unix_stream(p0)
+                .server(&guid)
+                .p2p()
+                .encoding_format(format)
+                .build(),
         )
     }
 
@@ -1562,7 +1582,7 @@ mod tests {
         let (server1, client1) = vsock_p2p_pipe().await?;
         let (server2, client2) = vsock_p2p_pipe().await?;
 
-        test_p2p(server1, client1, server2, client2).await
+        test_p2p(server1, client1, server2, client2, EncodingFormat::DBus).await
     }
 
     #[cfg(all(feature = "vsock", not(feature = "tokio")))]
