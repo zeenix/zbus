@@ -1308,6 +1308,13 @@ impl Connection {
             .map_err(Into::into)
     }
 
+    /// The encoding format being used for all messages going through this connection.
+    ///
+    /// Use [`Builder::encoding_format`] to set this.
+    pub fn encoding_format(&self) -> EncodingFormat {
+        self.inner.encoding_format
+    }
+
     pub(crate) fn init_socket_reader(
         &self,
         socket_read: Box<dyn socket::ReadHalf>,

@@ -5,7 +5,7 @@ use event_listener::EventListener;
 use static_assertions::assert_impl_all;
 use std::{io, num::NonZeroU32, ops::Deref, sync::Arc};
 use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
-use zvariant::ObjectPath;
+use zvariant::{EncodingFormat, ObjectPath};
 
 use crate::{
     blocking::ObjectServer,
@@ -273,6 +273,13 @@ impl Connection {
     /// After this call, all reading and writing operations will fail.
     pub fn close(self) -> Result<()> {
         block_on(self.inner.close())
+    }
+
+    /// The encoding format being used for all messages going through this connection.
+    ///
+    /// Use [`Builder::encoding_format`] to set this.
+    pub fn encoding_format(&self) -> EncodingFormat {
+        self.inner.encoding_format()
     }
 }
 
