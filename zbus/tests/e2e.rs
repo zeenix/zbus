@@ -333,6 +333,13 @@ impl MyIfaceImpl {
 
     #[instrument]
     #[dbus_interface(property)]
+    fn fail_property_custom_error(&self) -> Result<u32, MyIfaceError> {
+        debug!("`FailPropertyCustomError` called.");
+        Err(MyIfaceError::SomethingWentWrong("oops".to_string()))
+    }
+
+    #[instrument]
+    #[dbus_interface(property)]
     fn optional_property(&self) -> Optional<u32> {
         debug!("`OptionalAsProp` getter called.");
         Some(42).into()

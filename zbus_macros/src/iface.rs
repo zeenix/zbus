@@ -379,7 +379,7 @@ pub fn expand(args: AttributeArgs, mut input: ItemImpl) -> syn::Result<TokenStre
                 let q = quote!(
                     #(#cfg_attrs)*
                     #member_name => {
-                        ::std::option::Option::Some(#inner)
+                        ::std::option::Option::Some(#inner.map_err(::std::boxed::Box::new))
                     },
                 );
                 get_dispatch.extend(q);
@@ -504,7 +504,7 @@ pub fn expand(args: AttributeArgs, mut input: ItemImpl) -> syn::Result<TokenStre
             async fn get(
                 &self,
                 property_name: &str,
-            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::zvariant::OwnedValue>> {
+            ) -> ::std::option::Option<::std::result::Result<#zbus::zvariant::OwnedValue, ::std::boxed::Box<dyn #zbus::DBusError>>> {
                 match property_name {
                     #get_dispatch
                     _ => ::std::option::Option::None,

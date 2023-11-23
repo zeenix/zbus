@@ -69,7 +69,10 @@ pub trait Interface: Any + Send + Sync {
         Self: Sized;
 
     /// Get a property value. Returns `None` if the property doesn't exist.
-    async fn get(&self, property_name: &str) -> Option<fdo::Result<OwnedValue>>;
+    async fn get(
+        &self,
+        property_name: &str,
+    ) -> Option<std::result::Result<OwnedValue, Box<dyn zbus::DBusError>>>;
 
     /// Return all the properties.
     async fn get_all(&self) -> fdo::Result<HashMap<String, OwnedValue>>;
