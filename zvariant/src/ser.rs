@@ -253,7 +253,7 @@ where
 }
 
 /// Context for all our serializers and provides shared functionality.
-pub(crate) struct SerializerCommon<'ser, 'sig, B, W> {
+pub(crate) struct SerializerCommon<'ser, 'sig, B: ByteOrder, W> {
     pub(crate) ctxt: Context<B>,
     pub(crate) writer: &'ser mut W,
     pub(crate) bytes_written: usize,

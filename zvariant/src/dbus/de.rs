@@ -20,11 +20,11 @@ use crate::Fd;
 
 /// Our D-Bus deserialization implementation.
 #[derive(Debug)]
-pub(crate) struct Deserializer<'de, 'sig, 'f, B, F>(
+pub(crate) struct Deserializer<'de, 'sig, 'f, B: ByteOrder, F>(
     pub(crate) DeserializerCommon<'de, 'sig, 'f, B, F>,
 );
 
-assert_impl_all!(Deserializer<'_, '_, '_, i32, ()>: Send, Sync, Unpin);
+assert_impl_all!(Deserializer<'_, '_, '_, byteorder::NativeEndian, ()>: Send, Sync, Unpin);
 
 impl<'de, 'sig, 'f, B, F> Deserializer<'de, 'sig, 'f, B, F>
 where
@@ -399,7 +399,7 @@ where
     }
 }
 
-struct ArrayDeserializer<'d, 'de, 'sig, 'f, B, F> {
+struct ArrayDeserializer<'d, 'de, 'sig, 'f, B: ByteOrder, F> {
     de: &'d mut Deserializer<'de, 'sig, 'f, B, F>,
     len: usize,
     start: usize,
@@ -516,7 +516,9 @@ where
     de.0.next_slice(len)
 }
 
-struct ArraySeqDeserializer<'d, 'de, 'sig, 'f, B, F>(ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>);
+struct ArraySeqDeserializer<'d, 'de, 'sig, 'f, B: ByteOrder, F>(
+    ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>,
+);
 
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
     for ArraySeqDeserializer<'d, 'de, 'sig, 'f, B, F>
@@ -534,7 +536,9 @@ where
     }
 }
 
-struct ArrayMapDeserializer<'d, 'de, 'sig, 'f, B, F>(ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>);
+struct ArrayMapDeserializer<'d, 'de, 'sig, 'f, B: ByteOrder, F>(
+    ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>,
+);
 
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> MapAccess<'de>
     for ArrayMapDeserializer<'d, 'de, 'sig, 'f, B, F>
@@ -563,7 +567,7 @@ where
 }
 
 #[derive(Debug)]
-struct StructureDeserializer<'d, 'de, 'sig, 'f, B, F> {
+struct StructureDeserializer<'d, 'de, 'sig, 'f, B: ByteOrder, F> {
     de: &'d mut Deserializer<'de, 'sig, 'f, B, F>,
 }
 
@@ -590,7 +594,7 @@ where
 }
 
 #[derive(Debug)]
-struct ValueDeserializer<'d, 'de, 'sig, 'f, B, F> {
+struct ValueDeserializer<'d, 'de, 'sig, 'f, B: ByteOrder, F> {
     de: &'d mut Deserializer<'de, 'sig, 'f, B, F>,
     stage: ValueParseStage,
     sig_start: usize,

@@ -19,11 +19,11 @@ use crate::{
 use crate::Fd;
 
 /// Our D-Bus serialization implementation.
-pub(crate) struct Serializer<'ser, 'sig, B, W>(
+pub(crate) struct Serializer<'ser, 'sig, B: ByteOrder, W>(
     pub(crate) crate::SerializerCommon<'ser, 'sig, B, W>,
 );
 
-assert_impl_all!(Serializer<'_, '_, i32, i32>: Send, Sync, Unpin);
+assert_impl_all!(Serializer<'_, '_, byteorder::NativeEndian, i32>: Send, Sync, Unpin);
 
 impl<'ser, 'sig, B, W> Serializer<'ser, 'sig, B, W>
 where
@@ -358,7 +358,7 @@ where
 }
 
 #[doc(hidden)]
-pub struct SeqSerializer<'ser, 'sig, 'b, B, W> {
+pub struct SeqSerializer<'ser, 'sig, 'b, B: ByteOrder, W> {
     ser: &'b mut Serializer<'ser, 'sig, B, W>,
     start: usize,
     // alignment of element
@@ -435,7 +435,7 @@ where
 }
 
 #[doc(hidden)]
-pub struct StructSerializer<'ser, 'sig, 'b, B, W> {
+pub struct StructSerializer<'ser, 'sig, 'b, B: ByteOrder, W> {
     ser: &'b mut Serializer<'ser, 'sig, B, W>,
     // The number of `)` in the signature to skip at the end.
     end_parens: u8,
@@ -555,7 +555,7 @@ where
 
 #[doc(hidden)]
 /// Allows us to serialize a struct as an ARRAY.
-pub enum StructSeqSerializer<'ser, 'sig, 'b, B, W> {
+pub enum StructSeqSerializer<'ser, 'sig, 'b, B: ByteOrder, W> {
     Struct(StructSerializer<'ser, 'sig, 'b, B, W>),
     Seq(SeqSerializer<'ser, 'sig, 'b, B, W>),
 }

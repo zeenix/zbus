@@ -19,7 +19,7 @@ use crate::Fd;
 
 /// Our deserialization implementation.
 #[derive(Debug)]
-pub(crate) struct DeserializerCommon<'de, 'sig, 'f, B, F> {
+pub(crate) struct DeserializerCommon<'de, 'sig, 'f, B: ByteOrder, F> {
     pub(crate) ctxt: Context<B>,
     pub(crate) bytes: &'de [u8],
 
@@ -42,13 +42,13 @@ pub(crate) struct DeserializerCommon<'de, 'sig, 'f, B, F> {
 /// Using this deserializer involves an redirection to the actual deserializer. It's best
 /// to use the serialization functions, e.g [`crate::to_bytes`] or specific serializers,
 /// [`crate::dbus::Deserializer`] or [`crate::zvariant::Deserializer`].
-pub(crate) enum Deserializer<'ser, 'sig, 'f, B, F> {
+pub(crate) enum Deserializer<'ser, 'sig, 'f, B: ByteOrder, F> {
     DBus(DBusDeserializer<'ser, 'sig, 'f, B, F>),
     #[cfg(feature = "gvariant")]
     GVariant(GVDeserializer<'ser, 'sig, 'f, B, F>),
 }
 
-assert_impl_all!(Deserializer<'_, '_, '_, u8, ()>: Send, Sync, Unpin);
+assert_impl_all!(Deserializer<'_, '_, '_, byteorder::NativeEndian, ()>: Send, Sync, Unpin);
 
 #[cfg(unix)]
 impl<'de, 'sig, 'f, B, F> DeserializerCommon<'de, 'sig, 'f, B, F>

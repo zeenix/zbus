@@ -214,7 +214,7 @@ mod tests {
         expected_value_len: usize,
     ) -> crate::serialized::Data<'static, 'static, NativeEndian> {
         // Lie that we're starting at byte 1 in the overall message to test padding
-        let ctxt = Context::<NativeEndian>::new(format, 1);
+        let ctxt: Context = Context::new(format, 1);
         let encoded = to_bytes(ctxt, &value).unwrap();
         let padding = crate::padding_for_n_bytes(1, 8);
         assert_eq!(

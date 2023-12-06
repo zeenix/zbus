@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use byteorder::{ByteOrder, NativeEndian};
 use static_assertions::assert_impl_all;
 
 use crate::serialized::Format;
@@ -34,18 +35,18 @@ use crate::serialized::Format;
 /// [ByteOrder]: https://docs.rs/byteorder/1.3.4/byteorder/trait.ByteOrder.html
 /// [specify]: #method.new
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct Context<B> {
+pub struct Context<B: ByteOrder = NativeEndian> {
     format: Format,
     position: usize,
 
     b: PhantomData<B>,
 }
 
-assert_impl_all!(Context<byteorder::NativeEndian>: Send, Sync, Unpin);
+assert_impl_all!(Context: Send, Sync, Unpin);
 
 impl<B> Context<B>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     /// Create a new encoding context.
     pub fn new(format: Format, position: usize) -> Self {
