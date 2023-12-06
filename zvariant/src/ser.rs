@@ -1,4 +1,4 @@
-use byteorder::WriteBytesExt;
+use byteorder::{ByteOrder, WriteBytesExt};
 use serde::Serialize;
 use std::{
     io::{Seek, Write},
@@ -53,7 +53,7 @@ impl Seek for NullWriteSeek {
 /// ```
 pub fn serialized_size<B, T: ?Sized>(ctxt: Context<B>, value: &T) -> Result<Size<B>>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     T: Serialize + DynamicType,
 {
     let mut null = NullWriteSeek;
@@ -130,7 +130,7 @@ pub unsafe fn to_writer<B, W, T: ?Sized>(
     value: &T,
 ) -> Result<Written<B>>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
     T: Serialize + DynamicType,
 {
@@ -144,7 +144,7 @@ where
 /// See [`Data::deserialize`] documentation for an example of how to use this function.
 pub fn to_bytes<B, T: ?Sized>(ctxt: Context<B>, value: &T) -> Result<Data<'static, 'static, B>>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     T: Serialize + DynamicType,
 {
     to_bytes_for_signature(ctxt, value.dynamic_signature(), value)
@@ -173,7 +173,7 @@ pub unsafe fn to_writer_for_signature<'s, B, W, S, T: ?Sized>(
     value: &T,
 ) -> Result<Written<B>>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
     S: TryInto<Signature<'s>>,
     S::Error: Into<Error>,
@@ -232,7 +232,7 @@ pub fn to_bytes_for_signature<'s, B, S, T: ?Sized>(
     value: &T,
 ) -> Result<Data<'static, 'static, B>>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     S: TryInto<Signature<'s>>,
     S::Error: Into<Error>,
     T: Serialize,
@@ -277,7 +277,7 @@ pub(crate) enum FdList {
 
 impl<'ser, 'sig, B, W> SerializerCommon<'ser, 'sig, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     #[cfg(unix)]
@@ -362,7 +362,7 @@ where
 
 impl<'ser, 'sig, B, W> Write for SerializerCommon<'ser, 'sig, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     /// Write `buf` and increment internal bytes written counter.

@@ -1,4 +1,4 @@
-use byteorder::WriteBytesExt;
+use byteorder::{ByteOrder, WriteBytesExt};
 use serde::{ser, ser::SerializeSeq, Serialize};
 use static_assertions::assert_impl_all;
 use std::{
@@ -27,7 +27,7 @@ assert_impl_all!(Serializer<'_, '_, i32, i32>: Send, Sync, Unpin);
 
 impl<'ser, 'sig, B, W> Serializer<'ser, 'sig, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     /// Create a D-Bus Serializer struct instance.
@@ -75,7 +75,7 @@ macro_rules! serialize_basic {
 
 impl<'ser, 'sig, 'b, B, W> ser::Serializer for &'b mut Serializer<'ser, 'sig, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     type Ok = ();
@@ -371,7 +371,7 @@ pub struct SeqSerializer<'ser, 'sig, 'b, B, W> {
 
 impl<'ser, 'sig, 'b, B, W> SeqSerializer<'ser, 'sig, 'b, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     pub(self) fn end_seq(self) -> Result<()> {
@@ -408,7 +408,7 @@ where
 
 impl<'ser, 'sig, 'b, B, W> ser::SerializeSeq for SeqSerializer<'ser, 'sig, 'b, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     type Ok = ();
@@ -445,7 +445,7 @@ pub struct StructSerializer<'ser, 'sig, 'b, B, W> {
 
 impl<'ser, 'sig, 'b, B, W> StructSerializer<'ser, 'sig, 'b, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     fn variant(ser: &'b mut Serializer<'ser, 'sig, B, W>) -> Result<Self> {
@@ -564,7 +564,7 @@ macro_rules! serialize_struct_anon_fields {
     ($trait:ident $method:ident) => {
         impl<'ser, 'sig, 'b, B, W> ser::$trait for StructSerializer<'ser, 'sig, 'b, B, W>
         where
-            B: byteorder::ByteOrder,
+            B: ByteOrder,
             W: Write + Seek,
         {
             type Ok = ();
@@ -584,7 +584,7 @@ macro_rules! serialize_struct_anon_fields {
 
         impl<'ser, 'sig, 'b, B, W> ser::$trait for StructSeqSerializer<'ser, 'sig, 'b, B, W>
         where
-            B: byteorder::ByteOrder,
+            B: ByteOrder,
             W: Write + Seek,
         {
             type Ok = ();
@@ -615,7 +615,7 @@ serialize_struct_anon_fields!(SerializeTupleVariant serialize_field);
 
 impl<'ser, 'sig, 'b, B, W> ser::SerializeMap for SeqSerializer<'ser, 'sig, 'b, B, W>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     W: Write + Seek,
 {
     type Ok = ();
@@ -669,7 +669,7 @@ macro_rules! serialize_struct_named_fields {
     ($trait:ident) => {
         impl<'ser, 'sig, 'b, B, W> ser::$trait for StructSerializer<'ser, 'sig, 'b, B, W>
         where
-            B: byteorder::ByteOrder,
+            B: ByteOrder,
             W: Write + Seek,
         {
             type Ok = ();
@@ -689,7 +689,7 @@ macro_rules! serialize_struct_named_fields {
 
         impl<'ser, 'sig, 'b, B, W> ser::$trait for StructSeqSerializer<'ser, 'sig, 'b, B, W>
         where
-            B: byteorder::ByteOrder,
+            B: ByteOrder,
             W: Write + Seek,
         {
             type Ok = ();

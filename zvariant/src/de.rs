@@ -1,3 +1,4 @@
+use byteorder::ByteOrder;
 use serde::de::{self, DeserializeSeed, VariantAccess, Visitor};
 use static_assertions::assert_impl_all;
 
@@ -52,6 +53,7 @@ assert_impl_all!(Deserializer<'_, '_, '_, u8, ()>: Send, Sync, Unpin);
 #[cfg(unix)]
 impl<'de, 'sig, 'f, B, F> DeserializerCommon<'de, 'sig, 'f, B, F>
 where
+    B: ByteOrder,
     F: AsFd,
 {
     pub fn get_fd(&self, idx: u32) -> Result<i32> {
@@ -63,7 +65,7 @@ where
 
 impl<'de, 'sig, 'f, B, F> DeserializerCommon<'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     pub fn parse_padding(&mut self, alignment: usize) -> Result<usize> {
         let padding = padding_for_n_bytes(self.abs_pos(), alignment);
@@ -148,7 +150,7 @@ macro_rules! deserialize_method {
 impl<'de, 'd, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
     for &'d mut Deserializer<'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
 
@@ -238,7 +240,7 @@ where
 
 pub(crate) trait GetDeserializeCommon<'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     fn common_mut<'d>(self) -> &'d mut DeserializerCommon<'de, 'sig, 'f, B, F>
     where
@@ -254,7 +256,7 @@ pub(crate) struct Enum<B, D, F> {
 
 impl<'de, 'sig, 'f, B, D, F> VariantAccess<'de> for Enum<B, D, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
     D: de::Deserializer<'de, Error = Error> + GetDeserializeCommon<'de, 'sig, 'f, B, F>,
 {
     type Error = Error;

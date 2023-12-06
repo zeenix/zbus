@@ -1,5 +1,6 @@
 use serde::de::{self, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, Visitor};
 use static_assertions::assert_impl_all;
+use ByteOrder;
 
 use std::{ffi::CStr, marker::PhantomData, str};
 
@@ -24,7 +25,7 @@ assert_impl_all!(Deserializer<'_, '_,'_, i32, ()>: Send, Sync, Unpin);
 
 impl<'de, 'sig, 'f, B, F> Deserializer<'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     /// Create a Deserializer struct instance.
     ///
@@ -104,7 +105,7 @@ macro_rules! deserialize_as {
 impl<'de, 'd, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
     for &'d mut Deserializer<'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
 
@@ -402,7 +403,7 @@ fn deserialize_ay<'de, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>(
     de: &mut Deserializer<'de, '_, '_, B, F>,
 ) -> Result<&'de [u8]>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     if de.0.sig_parser.next_signature()? != "ay" {
         return Err(de::Error::invalid_type(de::Unexpected::Seq, &"ay"));
@@ -433,7 +434,7 @@ struct ArrayDeserializer<'d, 'de, 'sig, 'f, B, F> {
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
     ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     fn new(de: &'d mut Deserializer<'de, 'sig, 'f, B, F>) -> Result<Self> {
         de.0.container_depths = de.0.container_depths.inc_array()?;
@@ -520,7 +521,7 @@ where
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
     for ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
 
@@ -573,7 +574,7 @@ where
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> MapAccess<'de>
     for ArrayDeserializer<'d, 'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
 
@@ -695,7 +696,7 @@ struct StructureDeserializer<'d, 'de, 'sig, 'f, B, F> {
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
     for StructureDeserializer<'d, 'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
 
@@ -779,7 +780,7 @@ struct ValueDeserializer<'d, 'de, 'sig, 'f, B, F> {
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
     ValueDeserializer<'d, 'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     fn new(de: &'d mut Deserializer<'de, 'sig, 'f, B, F>) -> Result<Self> {
         // GVariant format has signature at the end
@@ -825,7 +826,7 @@ where
 impl<'d, 'de, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
     for ValueDeserializer<'d, 'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
 
@@ -889,7 +890,7 @@ where
 impl<'de, 'd, 'sig, 'f, B, F> crate::de::GetDeserializeCommon<'de, 'sig, 'f, B, F>
     for &'d mut Deserializer<'de, 'sig, 'f, B, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     fn common_mut<'dr>(self) -> &'dr mut DeserializerCommon<'de, 'sig, 'f, B, F>
     where
@@ -902,7 +903,7 @@ where
 impl<'de, 'd, 'sig, 'f, B, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> EnumAccess<'de>
     for crate::de::Enum<B, &'d mut Deserializer<'de, 'sig, 'f, B, F>, F>
 where
-    B: byteorder::ByteOrder,
+    B: ByteOrder,
 {
     type Error = Error;
     type Variant = Self;
