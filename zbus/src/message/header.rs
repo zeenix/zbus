@@ -16,7 +16,7 @@ use zvariant::{
 
 use crate::{
     message::{Field, FieldCode, Fields},
-    Error,
+    ByteOrder, Error,
 };
 
 pub(crate) const PRIMARY_HEADER_SIZE: usize = 12;
@@ -115,9 +115,9 @@ assert_impl_all!(PrimaryHeader: Send, Sync, Unpin);
 
 impl PrimaryHeader {
     /// Create a new `PrimaryHeader` instance.
-    pub fn new(msg_type: Type, body_len: u32) -> Self {
+    pub fn new<B: ByteOrder>(msg_type: Type, body_len: u32) -> Self {
         Self {
-            endian_sig: NATIVE_ENDIAN_SIG,
+            endian_sig: B::endian_signature(),
             msg_type,
             flags: BitFlags::empty(),
             protocol_version: 1,
@@ -126,8 +126,8 @@ impl PrimaryHeader {
         }
     }
 
-    pub(crate) fn read(buf: &[u8]) -> Result<(PrimaryHeader, u32), Error> {
-        let ctx = Context::<byteorder::NativeEndian>::new_dbus(0);
+    pub(crate) fn read<B: ByteOrder>(buf: &[u8]) -> Result<(PrimaryHeader, u32), Error> {
+        let ctx = Context::<B>::new_dbus(0);
         let data = serialized::Data::new(buf, ctx);
         let (primary_header, size) = data.deserialize()?;
         assert_eq!(size, PRIMARY_HEADER_SIZE);

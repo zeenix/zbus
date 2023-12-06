@@ -13,7 +13,7 @@ use crate::{
     message::{Field, FieldCode, Fields, Flags, Header, Message, PrimaryHeader, Sequence, Type},
     utils::padding_for_8_bytes,
     zvariant::{serialized::Context, DynamicType, ObjectPath, Signature},
-    Error, Result,
+    ByteOrder, Error, Result,
 };
 
 use crate::message::{fields::QuickFields, header::MAX_MESSAGE_SIZE};
@@ -24,24 +24,22 @@ type BuildGenericResult = Vec<OwnedFd>;
 #[cfg(not(unix))]
 type BuildGenericResult = ();
 
-macro_rules! dbus_context {
-    ($n_bytes_before: expr) => {
-        Context::<byteorder::NativeEndian>::new_dbus($n_bytes_before)
-    };
-}
-
 /// A builder for [`Message`]
 #[derive(Debug, Clone)]
-pub struct Builder<'a> {
+pub struct Builder<'a, B: ByteOrder> {
     header: Header<'a>,
+    phantom: std::marker::PhantomData<B>,
 }
 
-impl<'a> Builder<'a> {
+impl<'a, B: ByteOrder> Builder<'a, B> {
     fn new(msg_type: Type) -> Self {
         let primary = PrimaryHeader::new(msg_type, 0);
         let fields = Fields::new();
         let header = Header::new(primary, fields);
-        Self { header }
+        Self {
+            header,
+            phantom: std::marker::PhantomData,
+        }
     }
 
     /// Create a message of type [`Type::MethodCall`].
@@ -197,11 +195,11 @@ impl<'a> Builder<'a> {
     ///
     /// [specification]:
     /// https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-header-fields
-    pub fn build<B>(self, body: &B) -> Result<Message>
+    pub fn build<Body>(self, body: &Body) -> Result<Message<B>>
     where
-        B: serde::ser::Serialize + DynamicType,
+        Body: serde::ser::Serialize + DynamicType,
     {
-        let ctxt = dbus_context!(0);
+        let ctxt = Context::<B>::new_dbus(0);
 
         // Note: this iterates the body twice, but we prefer efficient handling of large messages
         // to efficient handling of ones that are complex to serialize.
@@ -238,13 +236,14 @@ impl<'a> Builder<'a> {
         body_bytes: &[u8],
         signature: S,
         #[cfg(unix)] fds: Vec<OwnedFd>,
-    ) -> Result<Message>
+    ) -> Result<Message<B>>
     where
         S: TryInto<Signature<'b>>,
         S::Error: Into<Error>,
     {
         let signature: Signature<'b> = signature.try_into().map_err(Into::into)?;
-        let body_size = serialized::Size::new(body_bytes.len(), dbus_context!(0));
+        let ctxt = Context::<B>::new_dbus(0);
+        let body_size = serialized::Size::new(body_bytes.len(), ctxt);
         #[cfg(unix)]
         let body_size = {
             let num_fds = fds.len().try_into().map_err(|_| Error::ExcessData)?;
@@ -269,13 +268,13 @@ impl<'a> Builder<'a> {
     fn build_generic<WriteFunc>(
         self,
         mut signature: Signature<'_>,
-        body_size: serialized::Size<byteorder::NativeEndian>,
+        body_size: serialized::Size<B>,
         write_body: WriteFunc,
-    ) -> Result<Message>
+    ) -> Result<Message<B>>
     where
         WriteFunc: FnOnce(&mut Cursor<&mut Vec<u8>>) -> Result<BuildGenericResult>,
     {
-        let ctxt = dbus_context!(0);
+        let ctxt = Context::<B>::new_dbus(0);
         let mut header = self.header;
 
         if !signature.is_empty() {
@@ -339,14 +338,17 @@ impl<'a> Builder<'a> {
     }
 }
 
-impl<'m> From<Header<'m>> for Builder<'m> {
+impl<'m, B: ByteOrder> From<Header<'m>> for Builder<'m, B> {
     fn from(mut header: Header<'m>) -> Self {
         // Signature and Fds are added by body* methods.
         let fields = header.fields_mut();
         fields.remove(FieldCode::Signature);
         fields.remove(FieldCode::UnixFDs);
 
-        Self { header }
+        Self {
+            header,
+            phantom: std::marker::PhantomData,
+        }
     }
 }
 
@@ -354,12 +356,13 @@ impl<'m> From<Header<'m>> for Builder<'m> {
 mod tests {
     use super::Message;
     use crate::Error;
+    use byteorder::NativeEndian;
     use test_log::test;
 
     #[test]
     fn test_raw() -> Result<(), Error> {
         let raw_body: &[u8] = &[16, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0];
-        let message_builder = Message::signal("/", "test.test", "test")?;
+        let message_builder = Message::<NativeEndian>::signal("/", "test.test", "test")?;
         let message = unsafe {
             message_builder.build_raw_body(
                 raw_body,

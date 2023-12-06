@@ -11,7 +11,7 @@ use crate::{
     blocking::Connection, message::Message, proxy::MethodFlags, utils::block_on, Error, Result,
 };
 
-use crate::fdo;
+use crate::{fdo, ByteOrder};
 
 mod builder;
 pub use builder::Builder;
@@ -58,9 +58,9 @@ pub use builder::Builder;
 /// [al]: https://github.com/dbus2/zbus/issues/54
 #[derive(derivative::Derivative)]
 #[derivative(Clone, Debug)]
-pub struct Proxy<'a> {
+pub struct Proxy<'a, O: ByteOrder> {
     #[derivative(Debug = "ignore")]
-    conn: Connection,
+    conn: Connection<O>,
     // Wrap it in an `Option` to ensure the proxy is dropped in a `block_on` call. This is needed
     // for tokio because the proxy spawns a task in its `Drop` impl and that needs a runtime
     // context in case of tokio.
@@ -69,10 +69,10 @@ pub struct Proxy<'a> {
 
 assert_impl_all!(Proxy<'_>: Send, Sync, Unpin);
 
-impl<'a> Proxy<'a> {
+impl<'a, O: ByteOrder> Proxy<'a, O> {
     /// Create a new `Proxy` for the given destination/path/interface.
     pub fn new<D, P, I>(
-        conn: &Connection,
+        conn: &Connection<O>,
         destination: D,
         path: P,
         interface: I,
@@ -101,7 +101,7 @@ impl<'a> Proxy<'a> {
     /// Create a new `Proxy` for the given destination/path/interface, taking ownership of all
     /// passed arguments.
     pub fn new_owned<D, P, I>(
-        conn: Connection,
+        conn: Connection<O>,
         destination: D,
         path: P,
         interface: I,
@@ -128,7 +128,7 @@ impl<'a> Proxy<'a> {
     }
 
     /// Get a reference to the associated connection.
-    pub fn connection(&self) -> &Connection {
+    pub fn connection(&self) -> &Connection<O> {
         &self.conn
     }
 
@@ -208,7 +208,7 @@ impl<'a> Proxy<'a> {
     /// allocation/copying, by deserializing the reply to an unowned type).
     ///
     /// [`call`]: struct.Proxy.html#method.call
-    pub fn call_method<'m, M, B>(&self, method_name: M, body: &B) -> Result<Message>
+    pub fn call_method<'m, M, B>(&self, method_name: M, body: &B) -> Result<Message<O>>
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
@@ -382,9 +382,9 @@ impl std::ops::Drop for Proxy<'_> {
 ///
 /// Use [`Proxy::receive_signal`] to create an instance of this type.
 #[derive(Debug)]
-pub struct SignalIterator<'a>(Option<crate::proxy::SignalStream<'a>>);
+pub struct SignalIterator<'a, O: ByteOrder>(Option<crate::proxy::SignalStream<'a, O>>);
 
-impl<'a> SignalIterator<'a> {
+impl<'a, O> SignalIterator<'a, O> {
     /// The signal name.
     pub fn name(&self) -> Option<&MemberName<'a>> {
         self.0.as_ref().expect("`SignalStream` is `None`").name()
@@ -393,15 +393,15 @@ impl<'a> SignalIterator<'a> {
 
 assert_impl_all!(SignalIterator<'_>: Send, Sync, Unpin);
 
-impl std::iter::Iterator for SignalIterator<'_> {
-    type Item = Message;
+impl<O> std::iter::Iterator for SignalIterator<'_, O> {
+    type Item = Message<O>;
 
     fn next(&mut self) -> Option<Self::Item> {
         block_on(self.0.as_mut().expect("`SignalStream` is `None`").next())
     }
 }
 
-impl std::ops::Drop for SignalIterator<'_> {
+impl<O> std::ops::Drop for SignalIterator<'_, O> {
     fn drop(&mut self) {
         block_on(async {
             if let Some(azync) = self.0.take() {

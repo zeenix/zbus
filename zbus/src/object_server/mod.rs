@@ -21,7 +21,7 @@ use crate::{
     fdo,
     fdo::{Introspectable, ManagedObjects, ObjectManager, Peer, Properties},
     message::Message,
-    Connection, Error, Result,
+    ByteOrder, Connection, Error, Result,
 };
 
 mod interface;
@@ -466,14 +466,14 @@ impl Node {
 /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
 /// ```
 #[derive(Debug)]
-pub struct ObjectServer {
-    conn: WeakConnection,
+pub struct ObjectServer<O: ByteOrder> {
+    conn: WeakConnection<O>,
     root: RwLock<Node>,
 }
 
 assert_impl_all!(ObjectServer: Send, Sync, Unpin);
 
-impl ObjectServer {
+impl<O: ByteOrder> ObjectServer<O> {
     /// Creates a new D-Bus `ObjectServer`.
     pub(crate) fn new(conn: &Connection) -> Self {
         Self {
@@ -675,7 +675,7 @@ impl ObjectServer {
     async fn dispatch_method_call_try(
         &self,
         connection: &Connection,
-        msg: &Message,
+        msg: &Message<O>,
     ) -> fdo::Result<Result<()>> {
         let hdr = msg.header();
         let path = hdr
@@ -738,7 +738,7 @@ impl ObjectServer {
     }
 
     #[instrument(skip(self, connection))]
-    async fn dispatch_method_call(&self, connection: &Connection, msg: &Message) -> Result<()> {
+    async fn dispatch_method_call(&self, connection: &Connection, msg: &Message<O>) -> Result<()> {
         match self.dispatch_method_call_try(connection, msg).await {
             Err(e) => {
                 let hdr = msg.header();
@@ -763,7 +763,7 @@ impl ObjectServer {
     ///
     /// Returns an error if the message is malformed, true if it's handled, false otherwise.
     #[instrument(skip(self))]
-    pub(crate) async fn dispatch_message(&self, msg: &Message) -> Result<bool> {
+    pub(crate) async fn dispatch_message(&self, msg: &Message<O>) -> Result<bool> {
         let conn = self.connection();
         self.dispatch_method_call(&conn, msg).await?;
         trace!("Handled: {}", msg);
@@ -778,8 +778,8 @@ impl ObjectServer {
     }
 }
 
-impl From<crate::blocking::ObjectServer> for ObjectServer {
-    fn from(server: crate::blocking::ObjectServer) -> Self {
+impl<O> From<crate::blocking::ObjectServer<O>> for ObjectServer<O> {
+    fn from(server: crate::blocking::ObjectServer<O>) -> Self {
         server.into_inner()
     }
 }

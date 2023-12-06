@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_impl_all;
-use std::num::NonZeroU32;
+use std::{marker::PhantomData, num::NonZeroU32};
 use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
 use zvariant::{ObjectPath, Signature, Type};
 
 use crate::{
     message::{Field, FieldCode, Header, Message},
-    Result,
+    ByteOrder, Result,
 };
 
 // It's actually 10 (and even not that) but let's round it to next 8-byte alignment
@@ -142,7 +142,7 @@ impl FieldPos {
 
 /// A cache of the Message header fields.
 #[derive(Debug, Default, Copy, Clone)]
-pub(crate) struct QuickFields {
+pub(crate) struct QuickFields<B: ByteOrder> {
     path: FieldPos,
     interface: FieldPos,
     member: FieldPos,
@@ -152,9 +152,10 @@ pub(crate) struct QuickFields {
     sender: FieldPos,
     signature: FieldPos,
     unix_fds: Option<u32>,
+    phantom: PhantomData<B>,
 }
 
-impl QuickFields {
+impl<B: ByteOrder> QuickFields<B> {
     pub fn new(buf: &[u8], header: &Header<'_>) -> Result<Self> {
         Ok(Self {
             path: FieldPos::new(buf, header.path()),
@@ -166,22 +167,23 @@ impl QuickFields {
             sender: FieldPos::new(buf, header.sender()),
             signature: FieldPos::new(buf, header.signature()),
             unix_fds: header.unix_fds(),
+            phantom: PhantomData,
         })
     }
 
-    pub fn path<'m>(&self, msg: &'m Message) -> Option<ObjectPath<'m>> {
+    pub fn path<'m>(&self, msg: &'m Message<B>) -> Option<ObjectPath<'m>> {
         self.path.read(msg.data())
     }
 
-    pub fn interface<'m>(&self, msg: &'m Message) -> Option<InterfaceName<'m>> {
+    pub fn interface<'m>(&self, msg: &'m Message<B>) -> Option<InterfaceName<'m>> {
         self.interface.read(msg.data())
     }
 
-    pub fn member<'m>(&self, msg: &'m Message) -> Option<MemberName<'m>> {
+    pub fn member<'m>(&self, msg: &'m Message<B>) -> Option<MemberName<'m>> {
         self.member.read(msg.data())
     }
 
-    pub fn error_name<'m>(&self, msg: &'m Message) -> Option<ErrorName<'m>> {
+    pub fn error_name<'m>(&self, msg: &'m Message<B>) -> Option<ErrorName<'m>> {
         self.error_name.read(msg.data())
     }
 
@@ -189,15 +191,15 @@ impl QuickFields {
         self.reply_serial
     }
 
-    pub fn destination<'m>(&self, msg: &'m Message) -> Option<BusName<'m>> {
+    pub fn destination<'m>(&self, msg: &'m Message<B>) -> Option<BusName<'m>> {
         self.destination.read(msg.data())
     }
 
-    pub fn sender<'m>(&self, msg: &'m Message) -> Option<UniqueName<'m>> {
+    pub fn sender<'m>(&self, msg: &'m Message<B>) -> Option<UniqueName<'m>> {
         self.sender.read(msg.data())
     }
 
-    pub fn signature<'m>(&self, msg: &'m Message) -> Option<Signature<'m>> {
+    pub fn signature<'m>(&self, msg: &'m Message<B>) -> Option<Signature<'m>> {
         self.signature.read(msg.data())
     }
 

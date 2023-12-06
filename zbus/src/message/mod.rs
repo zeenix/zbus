@@ -1,12 +1,11 @@
 //! D-Bus Message.
 use std::{fmt, num::NonZeroU32, sync::Arc};
 
-use byteorder::NativeEndian;
 use static_assertions::assert_impl_all;
 use zbus_names::{ErrorName, InterfaceName, MemberName};
 use zvariant::serialized;
 
-use crate::{utils::padding_for_8_bytes, zvariant::ObjectPath, Error, Result};
+use crate::{utils::padding_for_8_bytes, zvariant::ObjectPath, ByteOrder, Error, Result};
 
 mod builder;
 pub use builder::Builder;
@@ -22,7 +21,7 @@ pub use body::Body;
 
 pub(crate) mod header;
 use header::MIN_MESSAGE_SIZE;
-pub use header::{EndianSig, Flags, Header, PrimaryHeader, Type, NATIVE_ENDIAN_SIG};
+pub use header::{EndianSig, Flags, Header, PrimaryHeader, Type};
 
 /// A position in the stream of [`Message`] objects received by a single [`zbus::Connection`].
 ///
@@ -54,14 +53,14 @@ impl Sequence {
 ///
 /// [`Connection`]: struct.Connection#method.call_method
 #[derive(Clone)]
-pub struct Message {
-    pub(super) inner: Arc<Inner>,
+pub struct Message<B: ByteOrder> {
+    pub(super) inner: Arc<Inner<B>>,
 }
 
-pub(super) struct Inner {
+pub(super) struct Inner<B: ByteOrder> {
     pub(crate) primary_header: PrimaryHeader,
-    pub(crate) quick_fields: QuickFields,
-    pub(crate) bytes: serialized::Data<'static, 'static, NativeEndian>,
+    pub(crate) quick_fields: QuickFields<B>,
+    pub(crate) bytes: serialized::Data<'static, 'static, B>,
     pub(crate) body_offset: usize,
     pub(crate) recv_seq: Sequence,
 }
@@ -69,9 +68,9 @@ pub(super) struct Inner {
 assert_impl_all!(Message: Send, Sync, Unpin);
 
 // TODO: Handle non-native byte order: https://github.com/dbus2/zbus/issues/19
-impl Message {
+impl<B: ByteOrder> Message<B> {
     /// Create a builder for message of type [`Type::MethodCall`].
-    pub fn method<'b, 'p: 'b, 'm: 'b, P, M>(path: P, method_name: M) -> Result<Builder<'b>>
+    pub fn method<'b, 'p: 'b, 'm: 'b, P, M>(path: P, method_name: M) -> Result<Builder<'b, B>>
     where
         P: TryInto<ObjectPath<'p>>,
         M: TryInto<MemberName<'m>>,
@@ -87,7 +86,7 @@ impl Message {
         path: P,
         iface: I,
         signal_name: M,
-    ) -> Result<Builder<'b>>
+    ) -> Result<Builder<'b, B>>
     where
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
@@ -101,13 +100,13 @@ impl Message {
     }
 
     /// Create a builder for message of type [`Type::MethodReturn`].
-    pub fn method_reply(call: &Self) -> Result<Builder<'_>> {
+    pub fn method_reply(call: &Self) -> Result<Builder<'_, B>> {
         #[allow(deprecated)]
         Builder::method_return(&call.header())
     }
 
     /// Create a builder for message of type [`Type::Error`].
-    pub fn method_error<'b, 'e: 'b, E>(call: &Self, name: E) -> Result<Builder<'b>>
+    pub fn method_error<'b, 'e: 'b, E>(call: &Self, name: E) -> Result<Builder<'b, B>>
     where
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
@@ -125,18 +124,16 @@ impl Message {
     /// # Safety
     ///
     /// This method is unsafe as bytes may have an invalid encoding.
-    pub unsafe fn from_bytes(
-        bytes: serialized::Data<'static, 'static, NativeEndian>,
-    ) -> Result<Self> {
+    pub unsafe fn from_bytes(bytes: serialized::Data<'static, 'static, B>) -> Result<Self> {
         Self::from_raw_parts(bytes, 0)
     }
 
     /// Create a message from its full contents
     pub(crate) fn from_raw_parts(
-        bytes: serialized::Data<'static, 'static, NativeEndian>,
+        bytes: serialized::Data<'static, 'static, B>,
         recv_seq: u64,
     ) -> Result<Self> {
-        if EndianSig::try_from(bytes[0])? != NATIVE_ENDIAN_SIG {
+        if EndianSig::try_from(bytes[0])? != B::endian_signature() {
             return Err(Error::IncorrectEndian);
         }
 
@@ -256,7 +253,7 @@ impl Message {
     /// assert_eq!(reply_value.2.len(), 1);
     /// # Ok(()) })().unwrap()
     /// ```
-    pub fn body(&self) -> Body {
+    pub fn body(&self) -> Body<B> {
         Body::new(
             self.inner.bytes.slice(self.inner.body_offset..),
             self.clone(),
@@ -264,7 +261,7 @@ impl Message {
     }
 
     /// Get a reference to the underlying byte encoding of the message.
-    pub fn data(&self) -> &serialized::Data<'static, 'static, NativeEndian> {
+    pub fn data(&self) -> &serialized::Data<'static, 'static, B> {
         &self.inner.bytes
     }
 
@@ -280,7 +277,7 @@ impl Message {
     }
 }
 
-impl fmt::Debug for Message {
+impl<B> fmt::Debug for Message<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut msg = f.debug_struct("Msg");
         let h = self.header();
@@ -311,7 +308,7 @@ impl fmt::Debug for Message {
     }
 }
 
-impl fmt::Display for Message {
+impl<B> fmt::Display for Message<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let header = self.header();
         let (ty, error_name, sender, member) = (
@@ -374,7 +371,7 @@ mod tests {
     fn test() {
         #[cfg(unix)]
         let stdout = std::io::stdout();
-        let m = Message::method("/", "do")
+        let m: Message = Message::method("/", "do")
             .unwrap()
             .sender(":1.72")
             .unwrap()

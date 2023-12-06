@@ -12,7 +12,8 @@ use zbus_names::{InterfaceName, MemberName};
 use zvariant::{DynamicType, OwnedValue, Value};
 
 use crate::{
-    fdo, message::Message, object_server::SignalContext, Connection, ObjectServer, Result,
+    fdo, message::Message, object_server::SignalContext, ByteOrder, Connection, ObjectServer,
+    Result,
 };
 use tracing::trace;
 
@@ -32,11 +33,12 @@ pub enum DispatchResult<'a> {
 
 impl<'a> DispatchResult<'a> {
     /// Helper for creating the Async variant
-    pub fn new_async<F, T, E>(conn: &'a Connection, msg: &'a Message, f: F) -> Self
+    pub fn new_async<F, T, E, O>(conn: &'a Connection, msg: &'a Message<O>, f: F) -> Self
     where
         F: Future<Output = ::std::result::Result<T, E>> + Send + 'a,
         T: serde::Serialize + DynamicType + Send + Sync,
         E: zbus::DBusError + Send,
+        O: ByteOrder,
     {
         DispatchResult::Async(Box::pin(async move {
             let hdr = msg.header();
@@ -107,22 +109,22 @@ pub trait Interface: Any + Send + Sync {
     /// [`DispatchResult::RequiresMut`] if `call_mut` should be used instead.
     ///
     /// It is valid, though inefficient, for this to always return `RequiresMut`.
-    fn call<'call>(
+    fn call<'call, O: ByteOrder>(
         &'call self,
-        server: &'call ObjectServer,
-        connection: &'call Connection,
-        msg: &'call Message,
+        server: &'call ObjectServer<O>,
+        connection: &'call Connection<O>,
+        msg: &'call Message<O>,
         name: MemberName<'call>,
     ) -> DispatchResult<'call>;
 
     /// Call a `&mut self` method.
     ///
     /// This will only be invoked if `call` returned `RequiresMut`.
-    fn call_mut<'call>(
+    fn call_mut<'call, O: ByteOrder>(
         &'call mut self,
-        server: &'call ObjectServer,
-        connection: &'call Connection,
-        msg: &'call Message,
+        server: &'call ObjectServer<O>,
+        connection: &'call Connection<O>,
+        msg: &'call Message<O>,
         name: MemberName<'call>,
     ) -> DispatchResult<'call>;
 

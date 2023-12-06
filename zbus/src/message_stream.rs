@@ -5,6 +5,7 @@ use std::{
 };
 
 use async_broadcast::Receiver as ActiveReceiver;
+use byteorder::NativeEndian;
 use futures_core::stream;
 use futures_util::stream::FusedStream;
 use ordered_stream::{OrderedStream, PollResult};
@@ -14,7 +15,7 @@ use tracing::warn;
 use crate::{
     connection::ConnectionInner,
     message::{Message, Sequence},
-    AsyncDrop, Connection, MatchRule, OwnedMatchRule, Result,
+    AsyncDrop, ByteOrder, Connection, MatchRule, OwnedMatchRule, Result,
 };
 
 /// A [`stream::Stream`] implementation that yields [`Message`] items.
@@ -29,13 +30,13 @@ use crate::{
 /// consider keeping both a connection and stream around.
 #[derive(Clone, Debug)]
 #[must_use = "streams do nothing unless polled"]
-pub struct MessageStream {
-    inner: Inner,
+pub struct MessageStream<O: ByteOrder = NativeEndian> {
+    inner: Inner<O>,
 }
 
 assert_impl_all!(MessageStream: Send, Sync, Unpin);
 
-impl MessageStream {
+impl<O: ByteOrder> MessageStream<O> {
     /// Create a message stream for the given match rule.
     ///
     /// If `conn` is a bus connection and match rule is for a signal, the match rule will be
@@ -181,8 +182,8 @@ impl MessageStream {
     }
 }
 
-impl stream::Stream for MessageStream {
-    type Item = Result<Message>;
+impl<O: ByteOrder> stream::Stream for MessageStream<O> {
+    type Item = Result<Message<O>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -191,8 +192,8 @@ impl stream::Stream for MessageStream {
     }
 }
 
-impl OrderedStream for MessageStream {
-    type Data = Result<Message>;
+impl<O: ByteOrder> OrderedStream for MessageStream<O> {
+    type Data = Result<Message<O>>;
     type Ordering = Sequence;
 
     fn poll_next_before(
@@ -230,14 +231,14 @@ impl OrderedStream for MessageStream {
     }
 }
 
-impl FusedStream for MessageStream {
+impl<O> FusedStream for MessageStream<O> {
     fn is_terminated(&self) -> bool {
         self.inner.msg_receiver.is_terminated()
     }
 }
 
-impl From<Connection> for MessageStream {
-    fn from(conn: Connection) -> Self {
+impl<O: ByteOrder> From<Connection<O>> for MessageStream<O> {
+    fn from(conn: Connection<O>) -> Self {
         let conn_inner = conn.inner;
         let msg_receiver = conn_inner.msg_receiver.activate_cloned();
 
@@ -251,20 +252,20 @@ impl From<Connection> for MessageStream {
     }
 }
 
-impl From<&Connection> for MessageStream {
-    fn from(conn: &Connection) -> Self {
+impl<O: ByteOrder> From<&Connection<O>> for MessageStream<O> {
+    fn from(conn: &Connection<O>) -> Self {
         Self::from(conn.clone())
     }
 }
 
-impl From<MessageStream> for Connection {
-    fn from(stream: MessageStream) -> Connection {
+impl<O: ByteOrder> From<MessageStream<O>> for Connection<O> {
+    fn from(stream: MessageStream<O>) -> Connection<O> {
         Connection::from(&stream)
     }
 }
 
-impl From<&MessageStream> for Connection {
-    fn from(stream: &MessageStream) -> Connection {
+impl<O: ByteOrder> From<&MessageStream<O>> for Connection<O> {
+    fn from(stream: &MessageStream<O>) -> Connection<O> {
         Connection {
             inner: stream.inner.conn_inner.clone(),
         }
@@ -272,13 +273,13 @@ impl From<&MessageStream> for Connection {
 }
 
 #[derive(Clone, Debug)]
-struct Inner {
-    conn_inner: Arc<ConnectionInner>,
+struct Inner<O: ByteOrder> {
+    conn_inner: Arc<ConnectionInner<O>>,
     msg_receiver: ActiveReceiver<Result<Message>>,
     match_rule: Option<OwnedMatchRule>,
 }
 
-impl Drop for Inner {
+impl<O> Drop for Inner<O> {
     fn drop(&mut self) {
         let conn = Connection {
             inner: self.conn_inner.clone(),
@@ -291,7 +292,7 @@ impl Drop for Inner {
 }
 
 #[async_trait::async_trait]
-impl AsyncDrop for MessageStream {
+impl<O> AsyncDrop for MessageStream<O> {
     async fn async_drop(mut self) {
         let conn = Connection {
             inner: self.inner.conn_inner.clone(),

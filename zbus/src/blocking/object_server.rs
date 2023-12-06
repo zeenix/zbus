@@ -8,7 +8,7 @@ use zvariant::ObjectPath;
 use crate::{
     object_server::{Interface, InterfaceDeref, InterfaceDerefMut, SignalContext},
     utils::block_on,
-    Error, Result,
+    ByteOrder, Error, Result,
 };
 
 /// Wrapper over an interface, along with its corresponding `SignalContext`
@@ -125,15 +125,15 @@ where
 /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
 /// ```
 #[derive(Debug)]
-pub struct ObjectServer {
-    azync: crate::ObjectServer,
+pub struct ObjectServer<O: ByteOrder> {
+    azync: crate::ObjectServer<O>,
 }
 
 assert_impl_all!(ObjectServer: Send, Sync, Unpin);
 
-impl ObjectServer {
+impl<O: ByteOrder> ObjectServer<O> {
     /// Creates a new D-Bus `ObjectServer`.
-    pub(crate) fn new(conn: &crate::Connection) -> Self {
+    pub(crate) fn new(conn: &crate::Connection<O>) -> Self {
         Self {
             azync: crate::ObjectServer::new(conn),
         }
@@ -225,26 +225,26 @@ impl ObjectServer {
     }
 
     /// Get a reference to the underlying async ObjectServer.
-    pub fn inner(&self) -> &crate::ObjectServer {
+    pub fn inner(&self) -> &crate::ObjectServer<O> {
         &self.azync
     }
 
     /// Get the underlying async ObjectServer, consuming `self`.
-    pub fn into_inner(self) -> crate::ObjectServer {
+    pub fn into_inner(self) -> crate::ObjectServer<O> {
         self.azync
     }
 }
 
-impl Deref for ObjectServer {
-    type Target = crate::ObjectServer;
+impl<O> Deref for ObjectServer<O> {
+    type Target = crate::ObjectServer<O>;
 
     fn deref(&self) -> &Self::Target {
         self.inner()
     }
 }
 
-impl From<crate::ObjectServer> for ObjectServer {
-    fn from(azync: crate::ObjectServer) -> Self {
+impl<O> From<crate::ObjectServer<O>> for ObjectServer<O> {
+    fn from(azync: crate::ObjectServer<O>) -> Self {
         Self { azync }
     }
 }

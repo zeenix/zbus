@@ -23,7 +23,8 @@ use zvariant::{ObjectPath, OwnedValue, Str, Value};
 use crate::{
     fdo::{self, IntrospectableProxy, NameOwnerChanged, PropertiesChangedStream, PropertiesProxy},
     message::{Flags, Message, Sequence, Type},
-    AsyncDrop, Connection, Error, Executor, MatchRule, MessageStream, OwnedMatchRule, Result, Task,
+    AsyncDrop, ByteOrder, Connection, Error, Executor, MatchRule, MessageStream, OwnedMatchRule,
+    Result, Task,
 };
 
 mod builder;
@@ -810,7 +811,7 @@ impl<'a> Proxy<'a> {
     /// allocation/copying, by deserializing the reply to an unowned type).
     ///
     /// [`call`]: struct.Proxy.html#method.call
-    pub async fn call_method<'m, M, B>(&self, method_name: M, body: &B) -> Result<Message>
+    pub async fn call_method<'m, M, B>(&self, method_name: M, body: &B) -> Result<Message<B>>
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
@@ -1095,13 +1096,13 @@ impl<'a> stream::Stream for OwnerChangedStream<'a> {
 /// This type uses a [`MessageStream::for_match_rule`] internally and therefore the note about match
 /// rule registration and [`AsyncDrop`] in its documentation applies here as well.
 #[derive(Debug)]
-pub struct SignalStream<'a> {
+pub struct SignalStream<'a, O: ByteOrder> {
     stream: Join<MessageStream, Option<MessageStream>>,
     src_unique_name: Option<UniqueName<'static>>,
     signal_name: Option<MemberName<'a>>,
 }
 
-impl<'a> SignalStream<'a> {
+impl<'a, O: ByteOrder> SignalStream<'a, O> {
     /// The signal name.
     pub fn name(&self) -> Option<&MemberName<'a>> {
         self.signal_name.as_ref()
@@ -1240,7 +1241,7 @@ impl<'a> SignalStream<'a> {
         })
     }
 
-    fn filter(&mut self, msg: &Message) -> Result<bool> {
+    fn filter(&mut self, msg: &Message<O>) -> Result<bool> {
         let header = msg.header();
         let sender = header.sender();
         if sender == self.src_unique_name.as_ref() {
@@ -1259,16 +1260,16 @@ impl<'a> SignalStream<'a> {
 
 assert_impl_all!(SignalStream<'_>: Send, Sync, Unpin);
 
-impl<'a> stream::Stream for SignalStream<'a> {
-    type Item = Message;
+impl<'a, O: ByteOrder> stream::Stream for SignalStream<'a, O> {
+    type Item = Message<O>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         OrderedStream::poll_next_before(self, cx, None).map(|res| res.into_data())
     }
 }
 
-impl<'a> OrderedStream for SignalStream<'a> {
-    type Data = Message;
+impl<'a, O: ByteOrder> OrderedStream for SignalStream<'a, O> {
+    type Data = Message<O>;
     type Ordering = Sequence;
 
     fn poll_next_before(
@@ -1300,14 +1301,14 @@ impl<'a> OrderedStream for SignalStream<'a> {
     }
 }
 
-impl<'a> stream::FusedStream for SignalStream<'a> {
+impl<'a, O> stream::FusedStream for SignalStream<'a, O> {
     fn is_terminated(&self) -> bool {
         ordered_stream::FusedOrderedStream::is_terminated(&self.stream)
     }
 }
 
 #[async_trait::async_trait]
-impl AsyncDrop for SignalStream<'_> {
+impl<O> AsyncDrop for SignalStream<'_, O> {
     async fn async_drop(self) {
         let (signals, names, _buffered) = self.stream.into_inner();
         signals.async_drop().await;
@@ -1317,8 +1318,8 @@ impl AsyncDrop for SignalStream<'_> {
     }
 }
 
-impl<'a> From<crate::blocking::Proxy<'a>> for Proxy<'a> {
-    fn from(proxy: crate::blocking::Proxy<'a>) -> Self {
+impl<'a, O> From<crate::blocking::Proxy<'a, O>> for Proxy<'a, O> {
+    fn from(proxy: crate::blocking::Proxy<'a, O>) -> Self {
         proxy.into_inner()
     }
 }

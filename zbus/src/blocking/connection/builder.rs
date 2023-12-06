@@ -18,17 +18,17 @@ use crate::{
     names::{UniqueName, WellKnownName},
     object_server::Interface,
     utils::block_on,
-    AuthMechanism, Error, Guid, Result,
+    AuthMechanism, ByteOrder, Error, Guid, Result,
 };
 
 /// A builder for [`zbus::blocking::Connection`].
 #[derive(Debug)]
 #[must_use]
-pub struct Builder<'a>(crate::connection::Builder<'a>);
+pub struct Builder<'a, O: ByteOrder>(crate::connection::Builder<'a, O>);
 
 assert_impl_all!(Builder<'_>: Send, Sync, Unpin);
 
-impl<'a> Builder<'a> {
+impl<'a, O: ByteOrder> Builder<'a, O> {
     /// Create a builder for the session/user message bus connection.
     pub fn session() -> Result<Self> {
         crate::connection::Builder::session().map(Self)
@@ -187,7 +187,7 @@ impl<'a> Builder<'a> {
     ///
     /// Until server-side bus connection is supported, attempting to build such a connection will
     /// result in [`Error::Unsupported`] error.
-    pub fn build(self) -> Result<Connection> {
+    pub fn build(self) -> Result<Connection<O>> {
         block_on(self.0.build()).map(Into::into)
     }
 }

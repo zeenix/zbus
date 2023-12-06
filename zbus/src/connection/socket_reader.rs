@@ -8,24 +8,24 @@ use crate::{
     async_lock::Mutex,
     connection::MsgBroadcaster,
     message::header::{PrimaryHeader, MAX_MESSAGE_SIZE, MIN_MESSAGE_SIZE},
-    padding_for_8_bytes, Executor, Message, OwnedMatchRule, Task,
+    padding_for_8_bytes, ByteOrder, Executor, Message, OwnedMatchRule, Task,
 };
 
 use super::socket::ReadHalf;
 
 #[derive(Debug)]
-pub(crate) struct SocketReader {
+pub(crate) struct SocketReader<O: ByteOrder> {
     socket: Box<dyn ReadHalf>,
-    senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
+    senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster<O>>>>,
     already_received_bytes: Option<Vec<u8>>,
     prev_seq: u64,
     activity_event: Arc<Event>,
 }
 
-impl SocketReader {
+impl<O: ByteOrder> SocketReader<O> {
     pub fn new(
         socket: Box<dyn ReadHalf>,
-        senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
+        senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster<O>>>>,
         already_received_bytes: Vec<u8>,
         activity_event: Arc<Event>,
     ) -> Self {
@@ -95,7 +95,7 @@ impl SocketReader {
     }
 
     #[instrument]
-    async fn read_socket(&mut self) -> crate::Result<Message> {
+    async fn read_socket(&mut self) -> crate::Result<Message<O>> {
         self.activity_event.notify(usize::MAX);
         let mut bytes = self
             .already_received_bytes
@@ -138,7 +138,7 @@ impl SocketReader {
             }
         }
 
-        let (primary_header, fields_len) = PrimaryHeader::read(&bytes)?;
+        let (primary_header, fields_len) = PrimaryHeader::read::<O>(&bytes)?;
         let header_len = MIN_MESSAGE_SIZE + fields_len as usize;
         let body_padding = padding_for_8_bytes(header_len);
         let body_len = primary_header.body_len() as usize;
@@ -180,7 +180,7 @@ impl SocketReader {
         // If we reach here, the message is complete; return it
         let seq = self.prev_seq + 1;
         self.prev_seq = seq;
-        let ctxt = Context::<byteorder::NativeEndian>::new_dbus(0);
+        let ctxt = Context::<O>::new_dbus(0);
         #[cfg(unix)]
         let bytes = serialized::Data::new_fds(bytes, ctxt, fds);
         #[cfg(not(unix))]

@@ -12,7 +12,7 @@ use crate::{
     fdo::{ConnectionCredentials, RequestNameFlags, RequestNameReply},
     message::Message,
     utils::block_on,
-    DBusError, Error, Result,
+    ByteOrder, DBusError, Error, Result,
 };
 
 mod builder;
@@ -24,13 +24,13 @@ pub use builder::Builder;
 #[derive(derivative::Derivative, Clone)]
 #[derivative(Debug)]
 #[must_use = "Dropping a `Connection` will close the underlying socket."]
-pub struct Connection {
-    inner: crate::Connection,
+pub struct Connection<O: ByteOrder> {
+    inner: crate::Connection<O>,
 }
 
 assert_impl_all!(Connection: Send, Sync, Unpin);
 
-impl Connection {
+impl<O: ByteOrder> Connection<O> {
     /// Create a `Connection` to the session/user message bus.
     pub fn session() -> Result<Self> {
         block_on(crate::Connection::session()).map(Self::from)
@@ -62,7 +62,7 @@ impl Connection {
     }
 
     /// Send `msg` to the peer.
-    pub fn send(&self, msg: &Message) -> Result<()> {
+    pub fn send(&self, msg: &Message<O>) -> Result<()> {
         block_on(self.inner.send(msg))
     }
 
@@ -84,7 +84,7 @@ impl Connection {
         iface: Option<I>,
         method_name: M,
         body: &B,
-    ) -> Result<Message>
+    ) -> Result<Message<O>>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
@@ -134,7 +134,7 @@ impl Connection {
     ///
     /// Given an existing message (likely a method call), send a reply back to the caller with the
     /// given `body`.
-    pub fn reply<B>(&self, call: &Message, body: &B) -> Result<()>
+    pub fn reply<B>(&self, call: &Message<O>, body: &B) -> Result<()>
     where
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
@@ -147,7 +147,7 @@ impl Connection {
     /// with the given `error_name` and `body`.
     ///
     /// Returns the message serial number.
-    pub fn reply_error<'e, E, B>(&self, call: &Message, error_name: E, body: &B) -> Result<()>
+    pub fn reply_error<'e, E, B>(&self, call: &Message<O>, error_name: E, body: &B) -> Result<()>
     where
         B: serde::ser::Serialize + zvariant::DynamicType,
         E: TryInto<ErrorName<'e>>,
@@ -224,7 +224,7 @@ impl Connection {
     /// Get a reference to the associated [`ObjectServer`].
     ///
     /// The `ObjectServer` is created on-demand.
-    pub fn object_server(&self) -> impl Deref<Target = ObjectServer> + '_ {
+    pub fn object_server(&self) -> impl Deref<Target = ObjectServer<O>> + '_ {
         self.inner.sync_object_server(true, None)
     }
 
@@ -265,8 +265,8 @@ impl Connection {
     }
 }
 
-impl From<crate::Connection> for Connection {
-    fn from(conn: crate::Connection) -> Self {
+impl<O> From<crate::Connection<O>> for Connection<O> {
+    fn from(conn: crate::Connection<O>) -> Self {
         Self { inner: conn }
     }
 }

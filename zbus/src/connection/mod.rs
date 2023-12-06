@@ -1,5 +1,6 @@
 //! Connection API.
 use async_broadcast::{broadcast, InactiveReceiver, Receiver, Sender as Broadcaster};
+use byteorder::NativeEndian;
 use enumflags2::BitFlags;
 use event_listener::{Event, EventListener};
 use once_cell::sync::OnceCell;
@@ -29,8 +30,8 @@ use crate::{
     fdo::{self, ConnectionCredentials, RequestNameFlags, RequestNameReply},
     message::{Flags, Message, Type},
     proxy::CacheProperties,
-    DBusError, Error, Executor, Guid, MatchRule, MessageStream, ObjectServer, OwnedMatchRule,
-    Result, Task,
+    ByteOrder, DBusError, Error, Executor, Guid, MatchRule, MessageStream, ObjectServer,
+    OwnedMatchRule, Result, Task,
 };
 
 mod builder;
@@ -50,7 +51,7 @@ const DEFAULT_MAX_METHOD_RETURN_QUEUED: usize = 8;
 
 /// Inner state shared by Connection and WeakConnection
 #[derive(Debug)]
-pub(crate) struct ConnectionInner {
+pub(crate) struct ConnectionInner<O: ByteOrder> {
     server_guid: Guid,
     #[cfg(unix)]
     cap_unix_fd: bool,
@@ -68,19 +69,19 @@ pub(crate) struct ConnectionInner {
     #[allow(unused)]
     socket_reader_task: OnceCell<Task<()>>,
 
-    pub(crate) msg_receiver: InactiveReceiver<Result<Message>>,
-    pub(crate) method_return_receiver: InactiveReceiver<Result<Message>>,
-    msg_senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
+    pub(crate) msg_receiver: InactiveReceiver<Result<Message<O>>>,
+    pub(crate) method_return_receiver: InactiveReceiver<Result<Message<O>>>,
+    msg_senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster<O>>>>,
 
-    subscriptions: Mutex<Subscriptions>,
+    subscriptions: Mutex<Subscriptions<O>>,
 
-    object_server: OnceCell<blocking::ObjectServer>,
+    object_server: OnceCell<blocking::ObjectServer<O>>,
     object_server_dispatch_task: OnceCell<Task<()>>,
 }
 
-type Subscriptions = HashMap<OwnedMatchRule, (u64, InactiveReceiver<Result<Message>>)>;
+type Subscriptions<O> = HashMap<OwnedMatchRule, (u64, InactiveReceiver<Result<Message<O>>>)>;
 
-pub(crate) type MsgBroadcaster = Broadcaster<Result<Message>>;
+pub(crate) type MsgBroadcaster<O> = Broadcaster<Result<Message<O>>>;
 
 /// A D-Bus connection.
 ///
@@ -191,8 +192,8 @@ pub(crate) type MsgBroadcaster = Broadcaster<Result<Message>>;
 /// [Monitor]: https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-become-monitor
 #[derive(Clone, Debug)]
 #[must_use = "Dropping a `Connection` will close the underlying socket."]
-pub struct Connection {
-    pub(crate) inner: Arc<ConnectionInner>,
+pub struct Connection<O: ByteOrder = NativeEndian> {
+    pub(crate) inner: Arc<ConnectionInner<O>>,
 }
 
 assert_impl_all!(Connection: Send, Sync, Unpin);
@@ -203,13 +204,13 @@ assert_impl_all!(Connection: Send, Sync, Unpin);
 /// an update signal stream can be used to ensure that cache updates are not overwritten by a cache
 /// population whose task is scheduled later.
 #[derive(Debug)]
-pub(crate) struct PendingMethodCall {
-    stream: Option<MessageStream>,
+pub(crate) struct PendingMethodCall<O: ByteOrder> {
+    stream: Option<MessageStream<O>>,
     serial: NonZeroU32,
 }
 
-impl Future for PendingMethodCall {
-    type Output = Result<Message>;
+impl<O: ByteOrder> Future for PendingMethodCall<O> {
+    type Output = Result<Message<O>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.poll_before(cx, None).map(|ret| {
@@ -222,8 +223,8 @@ impl Future for PendingMethodCall {
     }
 }
 
-impl OrderedFuture for PendingMethodCall {
-    type Output = Result<Message>;
+impl<O: ByteOrder> OrderedFuture for PendingMethodCall<O> {
+    type Output = Result<Message<O>>;
     type Ordering = zbus::message::Sequence;
 
     fn poll_before(
@@ -271,9 +272,9 @@ impl OrderedFuture for PendingMethodCall {
     }
 }
 
-impl Connection {
+impl<O: ByteOrder> Connection<O> {
     /// Send `msg` to the peer.
-    pub async fn send(&self, msg: &Message) -> Result<()> {
+    pub async fn send(&self, msg: &Message<O>) -> Result<()> {
         let data = msg.data();
         #[cfg(unix)]
         if !data.fds().is_empty() && !self.inner.cap_unix_fd {
@@ -318,7 +319,7 @@ impl Connection {
         interface: Option<I>,
         method_name: M,
         body: &B,
-    ) -> Result<Message>
+    ) -> Result<Message<O>>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
@@ -361,7 +362,7 @@ impl Connection {
         method_name: M,
         flags: BitFlags<Flags>,
         body: &B,
-    ) -> Result<Option<PendingMethodCall>>
+    ) -> Result<Option<PendingMethodCall<O>>>
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
@@ -426,7 +427,7 @@ impl Connection {
         M::Error: Into<Error>,
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
-        let mut b = Message::signal(path, interface, signal_name)?;
+        let mut b = Message::<O>::signal(path, interface, signal_name)?;
         if let Some(sender) = self.unique_name() {
             b = b.sender(sender)?;
         }
@@ -442,7 +443,7 @@ impl Connection {
     ///
     /// Given an existing message (likely a method call), send a reply back to the caller with the
     /// given `body`.
-    pub async fn reply<B>(&self, call: &Message, body: &B) -> Result<()>
+    pub async fn reply<B>(&self, call: &Message<O>, body: &B) -> Result<()>
     where
         B: serde::ser::Serialize + zvariant::DynamicType,
     {
@@ -458,7 +459,12 @@ impl Connection {
     ///
     /// Given an existing message (likely a method call), send an error reply back to the caller
     /// with the given `error_name` and `body`.
-    pub async fn reply_error<'e, E, B>(&self, call: &Message, error_name: E, body: &B) -> Result<()>
+    pub async fn reply_error<'e, E, B>(
+        &self,
+        call: &Message<O>,
+        error_name: E,
+        body: &B,
+    ) -> Result<()>
     where
         B: serde::ser::Serialize + zvariant::DynamicType,
         E: TryInto<ErrorName<'e>>,
@@ -481,7 +487,7 @@ impl Connection {
         call: &zbus::message::Header<'_>,
         err: impl DBusError,
     ) -> Result<()> {
-        let m = err.create_reply(call)?;
+        let m: Message<O> = err.create_reply(call)?;
         self.send(&m).await
     }
 
@@ -895,12 +901,12 @@ impl Connection {
     /// **Note**: Once the `ObjectServer` is created, it will be replying to all method calls
     /// received on `self`. If you want to manually reply to method calls, do not use this
     /// method (or any of the `ObjectServer` related API).
-    pub fn object_server(&self) -> impl Deref<Target = ObjectServer> + '_ {
+    pub fn object_server(&self) -> impl Deref<Target = ObjectServer<O>> + '_ {
         // FIXME: Maybe it makes sense after all to implement Deref<Target= ObjectServer> for
         // crate::ObjectServer instead of this wrapper?
-        struct Wrapper<'a>(&'a blocking::ObjectServer);
-        impl<'a> Deref for Wrapper<'a> {
-            type Target = ObjectServer;
+        struct Wrapper<'a, Order>(&'a blocking::ObjectServer<Order>);
+        impl<'a, Order> Deref for Wrapper<'a, Order> {
+            type Target = ObjectServer<Order>;
 
             fn deref(&self) -> &Self::Target {
                 self.0.inner()
@@ -914,7 +920,7 @@ impl Connection {
         &self,
         start: bool,
         started_event: Option<Event>,
-    ) -> &blocking::ObjectServer {
+    ) -> &blocking::ObjectServer<O> {
         self.inner
             .object_server
             .get_or_init(move || self.setup_object_server(start, started_event))
@@ -924,7 +930,7 @@ impl Connection {
         &self,
         start: bool,
         started_event: Option<Event>,
-    ) -> blocking::ObjectServer {
+    ) -> blocking::ObjectServer<O> {
         if start {
             self.start_object_server(started_event);
         }
@@ -1035,7 +1041,7 @@ impl Connection {
         &self,
         rule: OwnedMatchRule,
         max_queued: Option<usize>,
-    ) -> Result<Receiver<Result<Message>>> {
+    ) -> Result<Receiver<Result<Message<O>>>> {
         use std::collections::hash_map::Entry;
 
         if self.inner.msg_senders.lock().await.is_empty() {
@@ -1268,27 +1274,27 @@ impl Connection {
     }
 }
 
-impl From<crate::blocking::Connection> for Connection {
-    fn from(conn: crate::blocking::Connection) -> Self {
+impl<O> From<crate::blocking::Connection<O>> for Connection<O> {
+    fn from(conn: crate::blocking::Connection<O>) -> Self {
         conn.into_inner()
     }
 }
 
 // Internal API that allows keeping a weak connection ref around.
 #[derive(Debug)]
-pub(crate) struct WeakConnection {
-    inner: Weak<ConnectionInner>,
+pub(crate) struct WeakConnection<O: ByteOrder> {
+    inner: Weak<ConnectionInner<O>>,
 }
 
-impl WeakConnection {
+impl<O> WeakConnection<O> {
     /// Upgrade to a Connection.
-    pub fn upgrade(&self) -> Option<Connection> {
+    pub fn upgrade(&self) -> Option<Connection<O>> {
         self.inner.upgrade().map(|inner| Connection { inner })
     }
 }
 
-impl From<&Connection> for WeakConnection {
-    fn from(conn: &Connection) -> Self {
+impl<O> From<&Connection<O>> for WeakConnection<O> {
+    fn from(conn: &Connection<O>) -> Self {
         Self {
             inner: Arc::downgrade(&conn.inner),
         }

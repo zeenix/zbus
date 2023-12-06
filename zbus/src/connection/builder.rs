@@ -28,7 +28,7 @@ use crate::{
     async_lock::RwLock,
     names::{InterfaceName, UniqueName, WellKnownName},
     object_server::Interface,
-    Connection, Error, Executor, Guid, Result,
+    ByteOrder, Connection, Error, Executor, Guid, Result,
 };
 
 use super::{
@@ -58,7 +58,7 @@ type Interfaces<'a> =
 #[derive(derivative::Derivative)]
 #[derivative(Debug)]
 #[must_use]
-pub struct Builder<'a> {
+pub struct Builder<'a, O: ByteOrder> {
     target: Option<Target>,
     max_queued: Option<usize>,
     guid: Option<&'a Guid>,
@@ -75,7 +75,7 @@ pub struct Builder<'a> {
 
 assert_impl_all!(Builder<'_>: Send, Sync, Unpin);
 
-impl<'a> Builder<'a> {
+impl<'a, O: ByteOrder> Builder<'a, O> {
     /// Create a builder for the session/user message bus connection.
     pub fn session() -> Result<Self> {
         Ok(Self::new(Target::Address(Address::session()?)))
