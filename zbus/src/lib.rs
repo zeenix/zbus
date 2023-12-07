@@ -181,6 +181,7 @@ extern crate self as zbus;
 #[doc(hidden)]
 pub mod export {
     pub use async_trait;
+    pub use byteorder;
     pub use futures_core;
     pub use futures_util;
     pub use ordered_stream;
