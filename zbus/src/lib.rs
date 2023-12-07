@@ -172,6 +172,9 @@ pub use connection::Socket;
 
 pub mod blocking;
 
+mod byte_order;
+pub use byte_order::ByteOrder;
+
 pub use zbus_macros::{dbus_interface, dbus_proxy, DBusError};
 
 // Required for the macros to function within this crate.
