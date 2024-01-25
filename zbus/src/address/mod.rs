@@ -11,7 +11,7 @@
 
 pub mod transport;
 
-use crate::{Error, Guid, Result};
+use crate::{Error, Guid, OwnedGuid, Result};
 #[cfg(all(unix, not(target_os = "macos")))]
 use nix::unistd::Uid;
 use std::{collections::HashMap, env, str::FromStr};
@@ -25,7 +25,7 @@ pub use self::transport::Transport;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Address {
-    guid: Option<Guid>,
+    guid: Option<OwnedGuid>,
     transport: Transport,
 }
 
@@ -39,10 +39,14 @@ impl Address {
     }
 
     /// Set the GUID for this address.
-    pub fn set_guid(mut self, guid: Guid) -> Self {
-        self.guid = Some(guid);
+    pub fn set_guid<G>(mut self, guid: G) -> Result<Self>
+    where
+        G: TryInto<OwnedGuid>,
+        G::Error: Into<crate::Error>,
+    {
+        self.guid = Some(guid.try_into().map_err(Into::into)?);
 
-        self
+        Ok(self)
     }
 
     /// The transport details for this address.
@@ -106,8 +110,8 @@ impl Address {
     }
 
     /// The GUID for this address, if known.
-    pub fn guid(&self) -> Option<&Guid> {
-        self.guid.as_ref()
+    pub fn guid(&self) -> Option<&Guid<'_>> {
+        self.guid.as_ref().map(|guid| guid.inner())
     }
 }
 
@@ -147,7 +151,10 @@ impl FromStr for Address {
         }
 
         Ok(Self {
-            guid: options.remove("guid").map(Guid::from_str).transpose()?,
+            guid: options
+                .remove("guid")
+                .map(|s| Guid::from_str(s).map(|guid| OwnedGuid::from(guid).to_owned()))
+                .transpose()?,
             transport: Transport::from_options(transport, options)?,
         })
     }
@@ -238,7 +245,8 @@ mod tests {
             Address::from(Transport::Unix(Unix::new(UnixPath::File(
                 "/tmp/dbus-foo".into()
             ))))
-            .set_guid(guid),
+            .set_guid(guid)
+            .unwrap(),
         );
         assert_eq!(
             Address::from_str("tcp:host=localhost,port=4142").unwrap(),
