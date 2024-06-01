@@ -492,8 +492,8 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                     // * For all other arg types, we convert the passed value to `OwnedValue` first
                     //   and then pass it as `Value` (so `TryFrom<OwnedValue>` is required).
                     let value_to_owned = quote! {
-                        match ::zbus::zvariant::Value::try_to_owned(value) {
-                            ::std::result::Result::Ok(val) => ::zbus::zvariant::Value::from(val),
+                        match ::zbus::Value::try_to_owned(value) {
+                            ::std::result::Result::Ok(val) => ::zbus::Value::from(val),
                             ::std::result::Result::Err(e) => {
                                 return ::std::result::Result::Err(
                                     ::std::convert::Into::into(#zbus::Error::Variant(::std::convert::Into::into(e)))
@@ -516,7 +516,7 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                                 .args
                                 .first()
                                 .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
-                                .map(|_| quote!(match ::zbus::zvariant::Value::try_clone(value) {
+                                .map(|_| quote!(match ::zbus::Value::try_clone(value) {
                                     ::std::result::Result::Ok(val) => val,
                                     ::std::result::Result::Err(e) => {
                                         return ::std::result::Result::Err(
@@ -601,8 +601,8 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                     p.ty = Some(get_property_type(output)?);
                     p.read = true;
                     let value_convert = quote!(
-                        <#zbus::zvariant::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                            <#zbus::zvariant::Value as ::std::convert::From<_>>::from(
+                        <#zbus::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
+                            <#zbus::Value as ::std::convert::From<_>>::from(
                                 value,
                             ),
                         )
@@ -629,8 +629,8 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                         quote!(if let Ok(prop) = self.#ident()#method_await {
                             props.insert(
                                 ::std::string::ToString::to_string(#member_name),
-                                <#zbus::zvariant::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                                    <#zbus::zvariant::Value as ::std::convert::From<_>>::from(
+                                <#zbus::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
+                                    <#zbus::Value as ::std::convert::From<_>>::from(
                                         prop,
                                     ),
                                 )
@@ -640,8 +640,8 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                     } else {
                         quote!(props.insert(
                         ::std::string::ToString::to_string(#member_name),
-                        <#zbus::zvariant::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                            <#zbus::zvariant::Value as ::std::convert::From<_>>::from(
+                        <#zbus::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
+                            <#zbus::Value as ::std::convert::From<_>>::from(
                                 self.#ident()#method_await,
                             ),
                         )
@@ -663,7 +663,7 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                             signal_context: &#zbus::object_server::SignalContext<'_>,
                         ) -> #zbus::Result<()> {
                             let mut changed = ::std::collections::HashMap::new();
-                            let value = <#zbus::zvariant::Value as ::std::convert::From<_>>::from(#prop_value_handled);
+                            let value = <#zbus::Value as ::std::convert::From<_>>::from(#prop_value_handled);
                             changed.insert(#member_name, &value);
                             #zbus::fdo::Properties::properties_changed(
                                 signal_context,
@@ -761,7 +761,7 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
             async fn get(
                 &self,
                 property_name: &str,
-            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::zvariant::OwnedValue>> {
+            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::OwnedValue>> {
                 match property_name {
                     #get_dispatch
                     _ => ::std::option::Option::None,
@@ -772,11 +772,11 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                 &self,
             ) -> #zbus::fdo::Result<::std::collections::HashMap<
                 ::std::string::String,
-                #zbus::zvariant::OwnedValue,
+                #zbus::OwnedValue,
             >> {
                 let mut props: ::std::collections::HashMap<
                     ::std::string::String,
-                    #zbus::zvariant::OwnedValue,
+                    #zbus::OwnedValue,
                 > = ::std::collections::HashMap::new();
                 #get_all
                 Ok(props)
@@ -785,7 +785,7 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
             fn set<'call>(
                 &'call self,
                 property_name: &'call str,
-                value: &'call #zbus::zvariant::Value<'_>,
+                value: &'call #zbus::Value<'_>,
                 signal_context: &'call #zbus::object_server::SignalContext<'_>,
             ) -> #zbus::object_server::DispatchResult<'call> {
                 match property_name {
@@ -797,7 +797,7 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
             async fn set_mut(
                 &mut self,
                 property_name: &str,
-                value: &#zbus::zvariant::Value<'_>,
+                value: &#zbus::Value<'_>,
                 signal_context: &#zbus::object_server::SignalContext<'_>,
             ) -> ::std::option::Option<#zbus::fdo::Result<()>> {
                 match property_name {
@@ -841,7 +841,7 @@ pub fn expand<T: AttrParse + Into<TraitAttrs>, M: AttrParse + Into<MethodAttrs>>
                     indent = level
                 ).unwrap();
                 {
-                    use #zbus::zvariant::Type;
+                    use #zbus::Type;
 
                     let level = level + 2;
                     #introspect

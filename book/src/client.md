@@ -58,7 +58,7 @@ zbus `Connection` has a `call_method()` method, which you can use directly:
 use std::collections::HashMap;
 use std::error::Error;
 
-use zbus::{zvariant::Value, Connection};
+use zbus::{Value, Connection};
 
 // Although we use `async-std` here, you can use any async runtime of choice.
 #[async_std::main]
@@ -97,7 +97,7 @@ calls:
 use std::collections::HashMap;
 use std::error::Error;
 
-use zbus::{zvariant::Value, proxy, Connection};
+use zbus::{Value, proxy, Connection};
 
 #[proxy(
     default_service = "org.freedesktop.Notifications",
@@ -162,9 +162,7 @@ Let's look at this API in action, with an example where we monitor started syste
 ```rust,no_run
 # // NOTE: When changing this, please also keep `zbus/examples/watch-systemd-jobs.rs` in sync.
 use async_std::stream::StreamExt;
-use zbus::Connection;
-use zbus_macros::proxy;
-use zvariant::OwnedObjectPath;
+use zbus::{proxy, Connection, OwnedObjectPath};
 
 # fn main() {
 #     async_io::block_on(watch_systemd_jobs()).expect("Error listening to signal");
@@ -208,7 +206,7 @@ Here is a more elaborate example, where we get our location from
 [Geoclue](https://gitlab.freedesktop.org/geoclue/geoclue/-/blob/master/README.md):
 
 ```rust,no_run
-use zbus::{zvariant::ObjectPath, proxy, Connection, Result};
+use zbus::{ObjectPath, proxy, Connection, Result};
 use futures_util::stream::StreamExt;
 
 #[proxy(
@@ -379,12 +377,12 @@ Environment variables:
 #### Trait-bounds for property values
 
 If you use custom types for property values, you might get a compile error for missing
-`TryFrom<zvariant::Value<'_>>` and/or `TryFrom<OwnedValue>` implementations. This is because
+`TryFrom<zbus::Value<'_>>` and/or `TryFrom<OwnedValue>` implementations. This is because
 properties are always sent as Variants on the bus, so you need to implement these conversions for
 your custom types.
 
-Not to worry though, the `zvariant` crate provides a [`Value`] and [`OwnedValue`] derive macro to
-implement these conversions for you.
+Not to worry though, we provides a [`Value`] and [`OwnedValue`] derive macro to implement these
+conversions for you.
 
 #### Watching for changes
 
@@ -552,7 +550,7 @@ trait Notifications {
         arg_3: &str,
         arg_4: &str,
         arg_5: &[&str],
-        arg_6: std::collections::HashMap<&str, zvariant::Value<'_>>,
+        arg_6: std::collections::HashMap<&str, zbus::Value<'_>>,
         arg_7: i32,
     ) -> zbus::Result<u32>;
 
@@ -574,7 +572,7 @@ For example, the generated `GetServerInformation` method can be improved to a ni
 
 ```rust,noplayground
 # use serde::{Serialize, Deserialize};
-# use zbus::{zvariant::Type, proxy};
+# use zbus::{Type, proxy};
 #
 #[derive(Debug, Type, Serialize, Deserialize)]
 pub struct ServerInformation {
@@ -616,7 +614,7 @@ There you have it, a Rust-friendly binding for your D-Bus service!
 [`pkg-config`]: https://www.freedesktop.org/wiki/Software/pkg-config/
 [cob]: blocking.html
 [`Stream`]: https://docs.rs/futures/4/futures/stream/trait.Stream.html
-[`Value`]: https://docs.rs/zvariant/4/zvariant/derive.Value.html
-[`OwnedValue`]: https://docs.rs/zvariant/4/zvariant/derive.OwnedValue.html
+[`Value`]: https://docs.rs/zbus/4.3.0/derive.Value.html
+[`OwnedValue`]: https://docs.rs/4.3.0/derive.OwnedValue.html
 
 [^busctl]: `busctl` is part of [`systemd`](https://www.freedesktop.org/wiki/Software/systemd/).

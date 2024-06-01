@@ -49,7 +49,7 @@ impl Sequence {
 /// and hence use the API provided by [`Connection`], even when using the low-level API.
 ///
 /// **Note**: The message owns the received FDs and will close them when dropped. You can
-/// deserialize to [`zvariant::OwnedFd`] the body (that you get using [`Message::body`]) if you want
+/// deserialize to [`zbus::OwnedFd`] the body (that you get using [`Message::body`]) if you want
 /// to keep the FDs around after the containing message is dropped.
 ///
 /// [`Connection`]: struct.Connection#method.call_method
@@ -245,7 +245,7 @@ impl Message {
     /// # Example
     ///
     /// ```
-    /// # use zbus::message::Message;
+    /// # use zbus::{message::Message, Value};
     /// # (|| -> zbus::Result<()> {
     /// let send_body = (7i32, (2i32, "foo"), vec!["bar"]);
     /// let message = Message::method("/", "ping")?
@@ -253,11 +253,11 @@ impl Message {
     ///     .interface("zbus.test")?
     ///     .build(&send_body)?;
     /// let body = message.body();
-    /// let body: zbus::zvariant::Structure = body.deserialize()?;
+    /// let body: zbus::Structure = body.deserialize()?;
     /// let fields = body.fields();
-    /// assert!(matches!(fields[0], zvariant::Value::I32(7)));
-    /// assert!(matches!(fields[1], zvariant::Value::Structure(_)));
-    /// assert!(matches!(fields[2], zvariant::Value::Array(_)));
+    /// assert!(matches!(fields[0], Value::I32(7)));
+    /// assert!(matches!(fields[1], Value::Structure(_)));
+    /// assert!(matches!(fields[2], Value::Array(_)));
     ///
     /// let reply_body = Message::method_reply(&message)?.build(&body)?.body();
     /// let reply_value : (i32, (i32, &str), Vec<String>) = reply_body.deserialize()?;

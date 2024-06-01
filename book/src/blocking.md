@@ -23,7 +23,7 @@ Similar to `blocking::Connection`, you use `blocking::Proxy` type. Its construct
 to use the blocking connection and proxy:
 
 ```rust,no_run
-use zbus::{blocking::Connection, zvariant::ObjectPath, proxy, Result};
+use zbus::{blocking::Connection, ObjectPath, proxy, Result};
 
 #[proxy(
     default_service = "org.freedesktop.GeoClue2",

@@ -338,40 +338,40 @@ fn to_rust_type(ty: &CompleteType, input: bool, as_ref: bool) -> String {
             f64::SIGNATURE_CHAR => "f64".into(),
             // xmlgen accepts 'h' on Windows, only for code generation
             'h' => (if input {
-                "zbus::zvariant::Fd<'_>"
+                "zbus::Fd<'_>"
             } else {
-                "zbus::zvariant::OwnedFd"
+                "zbus::OwnedFd"
             })
             .into(),
             <&str>::SIGNATURE_CHAR => (if input || as_ref { "&str" } else { "String" }).into(),
             ObjectPath::SIGNATURE_CHAR => (if input {
                 if as_ref {
-                    "&zbus::zvariant::ObjectPath<'_>"
+                    "&zbus::ObjectPath<'_>"
                 } else {
-                    "zbus::zvariant::ObjectPath<'_>"
+                    "zbus::ObjectPath<'_>"
                 }
             } else {
-                "zbus::zvariant::OwnedObjectPath"
+                "zbus::OwnedObjectPath"
             })
             .into(),
             Signature::SIGNATURE_CHAR => (if input {
                 if as_ref {
-                    "&zbus::zvariant::Signature<'_>"
+                    "&zbus::Signature<'_>"
                 } else {
-                    "zbus::zvariant::Signature<'_>"
+                    "zbus::Signature<'_>"
                 }
             } else {
-                "zbus::zvariant::OwnedSignature"
+                "zbus::OwnedSignature"
             })
             .into(),
             VARIANT_SIGNATURE_CHAR => (if input {
                 if as_ref {
-                    "&zbus::zvariant::Value<'_>"
+                    "&zbus::Value<'_>"
                 } else {
-                    "zbus::zvariant::Value<'_>"
+                    "zbus::Value<'_>"
                 }
             } else {
-                "zbus::zvariant::OwnedValue"
+                "zbus::OwnedValue"
             })
             .into(),
             ARRAY_SIGNATURE_CHAR => {

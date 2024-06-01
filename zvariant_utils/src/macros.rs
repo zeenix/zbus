@@ -477,7 +477,14 @@ macro_rules! def_attrs {
                 }
             );
         )+
-    }
+    };
+    (
+        crate $first_name:ident, $($list_name:ident),+;
+        $($rest:tt)*
+    ) => {
+        $crate::def_attrs!($first_name; $($rest)*);
+        $crate::def_attrs!($($list_name),+; $($rest)*);
+    };
 }
 
 /// Checks if a [`Type`]'s identifier is "Option".

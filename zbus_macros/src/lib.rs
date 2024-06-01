@@ -112,7 +112,7 @@ mod utils;
 /// ```no_run
 /// # use std::error::Error;
 /// use zbus_macros::proxy;
-/// use zbus::{blocking::Connection, Result, fdo, zvariant::Value};
+/// use zbus::{blocking::Connection, Result, fdo, Value};
 /// use futures_util::stream::StreamExt;
 /// use async_io::block_on;
 ///

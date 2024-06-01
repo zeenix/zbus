@@ -142,7 +142,7 @@ fn test_interface() {
     #[interface(name = "org.freedesktop.zbus.Test", spawn = false)]
     impl<T: 'static> Test<T>
     where
-        T: serde::ser::Serialize + zbus::zvariant::Type + Send + Sync,
+        T: serde::ser::Serialize + zbus::Type + Send + Sync,
     {
         /// Testing `no_arg` documentation is reflected in XML.
         fn no_arg(&self) {

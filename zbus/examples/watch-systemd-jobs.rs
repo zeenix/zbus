@@ -5,9 +5,8 @@
 //! Run with command: `cargo run --example watch-systemd-jobs`
 
 use async_std::stream::StreamExt;
-use zbus::Connection;
+use zbus::{Connection, OwnedObjectPath};
 use zbus_macros::proxy;
-use zvariant::OwnedObjectPath;
 
 fn main() {
     async_io::block_on(watch_systemd_jobs()).expect("Error listening to signal");

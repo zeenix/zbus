@@ -188,7 +188,11 @@ pub mod export {
 }
 
 pub use zbus_names as names;
-pub use zvariant;
+pub use zvariant::{
+    self, Array, DeserializeDict, Dict, DynamicTuple, DynamicType, Endian, Fd, NoneValue,
+    ObjectPath, Optional, OwnedFd, OwnedObjectPath, OwnedSignature, OwnedStructure, OwnedValue,
+    SerializeDict, SerializeValue, Signature, Str, Structure, StructureBuilder, Type, Value,
+};
 
 #[cfg(test)]
 mod tests {
@@ -1042,13 +1046,10 @@ mod tests {
     fn issue_466() {
         #[crate::proxy(interface = "org.Some.Thing1", assume_defaults = true)]
         trait MyGreeter {
-            fn foo(
-                &self,
-                arg: &(u32, zbus::zvariant::Value<'_>),
-            ) -> zbus::Result<(u32, zbus::zvariant::OwnedValue)>;
+            fn foo(&self, arg: &(u32, zbus::Value<'_>)) -> zbus::Result<(u32, zbus::OwnedValue)>;
 
             #[zbus(property)]
-            fn bar(&self) -> zbus::Result<(u32, zbus::zvariant::OwnedValue)>;
+            fn bar(&self) -> zbus::Result<(u32, zbus::OwnedValue)>;
         }
     }
 

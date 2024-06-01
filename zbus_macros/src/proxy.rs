@@ -357,7 +357,7 @@ pub fn create_proxy<M: AttrParse + Into<MethodAttrs>>(
                 where
                     D: ::std::convert::TryInto<#zbus::names::BusName<'static>>,
                     D::Error: ::std::convert::Into<#zbus::Error>,
-                    P: ::std::convert::TryInto<#zbus::zvariant::ObjectPath<'static>>,
+                    P: ::std::convert::TryInto<#zbus::ObjectPath<'static>>,
                     P::Error: ::std::convert::Into<#zbus::Error>,
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
@@ -389,7 +389,7 @@ pub fn create_proxy<M: AttrParse + Into<MethodAttrs>>(
                 /// Creates a new proxy with the given path, and the default destination.
                 pub #usage fn new<P>(conn: &#connection, path: P) -> #zbus::Result<#proxy_name<'p>>
                 where
-                    P: ::std::convert::TryInto<#zbus::zvariant::ObjectPath<'static>>,
+                    P: ::std::convert::TryInto<#zbus::ObjectPath<'static>>,
                     P::Error: ::std::convert::Into<#zbus::Error>,
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
@@ -493,9 +493,9 @@ pub fn create_proxy<M: AttrParse + Into<MethodAttrs>>(
             }
         }
 
-        impl<'p> #zbus::zvariant::Type for #proxy_name<'p> {
-            fn signature() -> #zbus::zvariant::Signature<'static> {
-                #zbus::zvariant::OwnedObjectPath::signature()
+        impl<'p> #zbus::Type for #proxy_name<'p> {
+            fn signature() -> #zbus::Signature<'static> {
+                #zbus::OwnedObjectPath::signature()
             }
         }
 
@@ -640,7 +640,7 @@ fn gen_proxy_method_call<M: AttrParse + Into<MethodAttrs>>(
             parse_quote!(#zbus::export::serde::de::DeserializeOwned)
         };
         where_clause.predicates.push(parse_quote!(
-            #param: #serde_bound + #zbus::zvariant::Type
+            #param: #serde_bound + #zbus::Type
         ));
     }
     let (_, ty_generics, where_clause) = generics.split_for_impl();
@@ -655,10 +655,10 @@ fn gen_proxy_method_call<M: AttrParse + Into<MethodAttrs>>(
         Ok(quote! {
             #(#other_attrs)*
             pub #usage #signature {
-                let object_path: #zbus::zvariant::OwnedObjectPath =
+                let object_path: #zbus::OwnedObjectPath =
                     self.0.call(
                         #method_name,
-                        &#zbus::zvariant::DynamicTuple((#(#args,)*)),
+                        &#zbus::DynamicTuple((#(#args,)*)),
                     )
                     #wait?;
                 #proxy_path::builder(&self.0.connection())
@@ -673,11 +673,11 @@ fn gen_proxy_method_call<M: AttrParse + Into<MethodAttrs>>(
             // the '()' from the signature that we add and not the actual intended ones.
             let arg = &args[0];
             quote! {
-                &#zbus::zvariant::DynamicTuple((#arg,))
+                &#zbus::DynamicTuple((#arg,))
             }
         } else {
             quote! {
-                &#zbus::zvariant::DynamicTuple((#(#args),*))
+                &#zbus::DynamicTuple((#(#args),*))
             }
         };
 
@@ -911,7 +911,7 @@ fn gen_proxy_signal(
     {
         where_clause
                 .predicates
-                .push(parse_quote!(#param: #zbus::export::serde::de::Deserialize<'s> + #zbus::zvariant::Type + ::std::fmt::Debug));
+                .push(parse_quote!(#param: #zbus::export::serde::de::Deserialize<'s> + #zbus::Type + ::std::fmt::Debug));
     }
     generics.params.push(parse_quote!('s));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
