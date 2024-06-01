@@ -240,17 +240,7 @@ pub fn iter_meta_lists(attrs: &[Attribute], list_name: &str) -> Result<impl Iter
 /// 4. Invalid literal type for attributes with values.
 #[macro_export]
 macro_rules! def_attrs {
-    (@attr_ty str) => {::std::option::Option<::std::string::String>};
-    (@attr_ty bool) => {::std::option::Option<bool>};
-    (@attr_ty [str]) => {::std::option::Option<::std::vec::Vec<::std::string::String>>};
-    (@attr_ty none) => {bool};
-    (@attr_ty {
-        $(#[$m:meta])*
-        $vis:vis $name:ident($what:literal) {
-            $($attr_name:ident $kind:tt),+
-        }
-    }) => {::std::option::Option<$name>};
-    (@match_attr_with $attr_name:ident, $meta:ident, $self:ident, $matched:expr) => {
+    ($attr_name:ident, $meta:ident, $self:ident, $matched:expr) => {
         if let ::std::option::Option::Some(value) = $matched? {
             if $self.$attr_name.is_none() {
                 $self.$attr_name = ::std::option::Option::Some(value.value());
@@ -263,9 +253,8 @@ macro_rules! def_attrs {
             }
         }
     };
-    (@match_attr str $attr_name:ident, $meta:ident, $self:ident) => {
+    (str $attr_name:ident, $meta:ident, $self:ident) => {
         $crate::def_attrs!(
-            @match_attr_with
             $attr_name,
             $meta,
             $self,
@@ -275,9 +264,8 @@ macro_rules! def_attrs {
             )
         )
     };
-    (@match_attr bool $attr_name:ident, $meta:ident, $self:ident) => {
+    (bool $attr_name:ident, $meta:ident, $self:ident) => {
         $crate::def_attrs!(
-            @match_attr_with
             $attr_name,
             $meta,
             $self,
@@ -287,7 +275,7 @@ macro_rules! def_attrs {
             )
         )
     };
-    (@match_attr [str] $attr_name:ident, $meta:ident, $self:ident) => {
+    ([str] $attr_name:ident, $meta:ident, $self:ident) => {
         if let Some(list) = $crate::macros::match_attribute_with_str_list_value(
             $meta,
             ::std::stringify!($attr_name),
@@ -303,7 +291,7 @@ macro_rules! def_attrs {
             }
         }
     };
-    (@match_attr none $attr_name:ident, $meta:ident, $self:ident) => {
+    (none $attr_name:ident, $meta:ident, $self:ident) => {
         if $crate::macros::match_attribute_without_value(
             $meta,
             ::std::stringify!($attr_name),
@@ -319,7 +307,7 @@ macro_rules! def_attrs {
             }
         }
     };
-    (@match_attr {
+    ({
         $(#[$m:meta])*
         $vis:vis $name:ident($what:literal) $body:tt
     } $attr_name:ident, $meta:expr, $self:ident) => {
@@ -352,32 +340,7 @@ macro_rules! def_attrs {
             }
         }
     };
-    (@def_ty $list_name:ident str) => {};
-    (@def_ty $list_name:ident bool) => {};
-    (@def_ty $list_name:ident [str]) => {};
-    (@def_ty $list_name:ident none) => {};
     (
-        @def_ty $list_name:ident {
-            $(#[$m:meta])*
-            $vis:vis $name:ident($what:literal) {
-                $($attr_name:ident $kind:tt),+
-            }
-        }
-    ) => {
-        // Recurse further to potentially define nested lists.
-        $($crate::def_attrs!(@def_ty $attr_name $kind);)+
-
-        $crate::def_attrs!(
-            @def_struct
-            $list_name
-            $(#[$m])*
-            $vis $name($what) {
-                $($attr_name $kind),+
-            }
-        );
-    };
-    (
-        @def_struct
         $list_name:ident
         $(#[$m:meta])*
         $vis:vis $name:ident($what:literal) {
@@ -387,7 +350,7 @@ macro_rules! def_attrs {
         $(#[$m])*
         #[derive(Default, Clone, Debug)]
         $vis struct $name {
-            $(pub $attr_name: $crate::def_attrs!(@attr_ty $kind)),+
+            $(pub $attr_name: $crate::def_ty!($kind)),+
         }
 
         impl ::zvariant_utils::macros::AttrParse for $name {
@@ -416,7 +379,7 @@ macro_rules! def_attrs {
                 // This creates subsequent if blocks for simplicity. Any block that is taken
                 // either returns an error or sets the attribute field and returns success.
                 $(
-                    $crate::def_attrs!(@match_attr $kind $attr_name, meta, self);
+                    $crate::def_attrs!($kind $attr_name, meta, self);
                 )+
 
                 // None of the if blocks have been taken, return the appropriate error.
@@ -467,8 +430,7 @@ macro_rules! def_attrs {
         ];
 
         $(
-            $crate::def_attrs!(
-                @def_ty
+            $crate::def_ty!(
                 $list_name {
                     $(#[$m])*
                     $vis $name($what) {
@@ -478,6 +440,44 @@ macro_rules! def_attrs {
             );
         )+
     }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! def_ty {
+    (str) => {::std::option::Option<::std::string::String>};
+    (bool) => {::std::option::Option<bool>};
+    ([str]) => {::std::option::Option<::std::vec::Vec<::std::string::String>>};
+    (none) => {bool};
+    ({
+        $(#[$m:meta])*
+        $vis:vis $name:ident($what:literal) {
+            $($attr_name:ident $kind:tt),+
+        }
+    }) => {::std::option::Option<$name>};
+    ($list_name:ident str) => {};
+    ($list_name:ident bool) => {};
+    ($list_name:ident [str]) => {};
+    ($list_name:ident none) => {};
+    (
+        $list_name:ident {
+            $(#[$m:meta])*
+            $vis:vis $name:ident($what:literal) {
+                $($attr_name:ident $kind:tt),+
+            }
+        }
+    ) => {
+        // Recurse further to potentially define nested lists.
+        $($crate::def_ty!($attr_name $kind);)+
+
+        $crate::def_attrs!(
+            $list_name
+            $(#[$m])*
+            $vis $name($what) {
+                $($attr_name $kind),+
+            }
+        );
+    };
 }
 
 /// Checks if a [`Type`]'s identifier is "Option".
