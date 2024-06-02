@@ -383,15 +383,11 @@ macro_rules! def_attrs {
                 )+
 
                 // None of the if blocks have been taken, return the appropriate error.
-                let is_valid_attr = ALLOWED_ATTRS.iter().any(|attr| meta.path().is_ident(attr));
-                return ::std::result::Result::Err(::syn::Error::new(meta.span(), if is_valid_attr {
+                return ::std::result::Result::Err(::syn::Error::new(meta.span(), {
                     ::std::format!(
                         ::std::concat!("attribute `{}` is not allowed on ", $what),
                         meta.path().get_ident().unwrap()
-                    )
-                } else {
-                    ::std::format!("unknown attribute `{}`", meta.path().get_ident().unwrap())
-                }))
+                    )}));
             }
 
             pub fn parse_nested_metas<I>(iter: I) -> syn::Result<Self>
@@ -425,10 +421,6 @@ macro_rules! def_attrs {
             }
         );+;
     ) => {
-        static ALLOWED_ATTRS: &[&'static str] = &[
-            $($(::std::stringify!($attr_name),)+)+
-        ];
-
         $(
             $crate::def_ty!(
                 $list_name {
@@ -439,7 +431,14 @@ macro_rules! def_attrs {
                 }
             );
         )+
-    }
+    };
+    (
+        crate $first_name:ident, $($list_name:ident),+;
+        $($rest:tt)*
+    ) => {
+        $crate::def_attrs!(crate $first_name; $($rest)*);
+        $crate::def_attrs!(crate $($list_name),+; $($rest)*);
+    };
 }
 
 #[doc(hidden)]
