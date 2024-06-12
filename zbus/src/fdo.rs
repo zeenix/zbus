@@ -21,34 +21,18 @@ use crate::{
     OwnedGuid,
 };
 
-#[rustfmt::skip]
-macro_rules! gen_introspectable_proxy {
-    ($gen_async:literal, $gen_blocking:literal) => {
-        /// Proxy for the `org.freedesktop.DBus.Introspectable` interface.
-        #[proxy(
-            interface = "org.freedesktop.DBus.Introspectable",
-            default_path = "/",
-            gen_async = $gen_async,
-            gen_blocking = $gen_blocking,
-        )]
-        trait Introspectable {
-            /// Returns an XML description of the object, including its interfaces (with signals and
-            /// methods), objects below it in the object path tree, and its properties.
-            fn introspect(&self) -> Result<String>;
-        }
-    };
-}
-
-gen_introspectable_proxy!(true, false);
-assert_impl_all!(IntrospectableProxy<'_>: Send, Sync, Unpin);
-
 /// Server-side implementation for the `org.freedesktop.DBus.Introspectable` interface.
 /// This interface is implemented automatically for any object registered to the
 /// [ObjectServer](crate::ObjectServer).
 pub(crate) struct Introspectable;
 
-#[interface(name = "org.freedesktop.DBus.Introspectable")]
+#[interface(
+    name = "org.freedesktop.DBus.Introspectable",
+    proxy(default_path = "/")
+)]
 impl Introspectable {
+    /// Returns an XML description of the object, including its interfaces (with signals and
+    /// methods), objects below it in the object path tree, and its properties.
     async fn introspect(
         &self,
         #[zbus(object_server)] server: &ObjectServer,
@@ -63,6 +47,8 @@ impl Introspectable {
         Ok(node.introspect().await)
     }
 }
+assert_impl_all!(IntrospectableProxy<'_>: Send, Sync, Unpin);
+assert_impl_all!(IntrospectableProxyBlocking<'_>: Send, Sync, Unpin);
 
 #[rustfmt::skip]
 macro_rules! gen_properties_proxy {

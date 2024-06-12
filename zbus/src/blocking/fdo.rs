@@ -13,14 +13,13 @@ use zvariant::{ObjectPath, Optional, OwnedValue, Value};
 
 use crate::{
     fdo::{
-        ConnectionCredentials, ManagedObjects, ReleaseNameReply, RequestNameFlags,
-        RequestNameReply, Result,
+        ConnectionCredentials, IntrospectableProxyBlocking, ManagedObjects, ReleaseNameReply,
+        RequestNameFlags, RequestNameReply, Result,
     },
     proxy, OwnedGuid,
 };
 
-gen_introspectable_proxy!(false, true);
-assert_impl_all!(IntrospectableProxy<'_>: Send, Sync, Unpin);
+pub type IntrospectableProxy<'p> = IntrospectableProxyBlocking<'p>;
 
 gen_properties_proxy!(false, true);
 assert_impl_all!(PropertiesProxy<'_>: Send, Sync, Unpin);
