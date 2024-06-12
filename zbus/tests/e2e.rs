@@ -588,9 +588,7 @@ async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> {
     let err = proxy.fail_property().await;
     assert_eq!(
         err.unwrap_err(),
-        zbus::Error::FDO(Box::new(zbus::fdo::Error::UnknownProperty(
-            "FailProperty".into()
-        )))
+        zbus::fdo::Error::UnknownProperty("FailProperty".into()),
     );
 
     assert_eq!(proxy.optional_property().await?, Some(42).into());

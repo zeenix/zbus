@@ -773,7 +773,7 @@ pub fn expand<T: AttrParse + Into<ImplAttrs>, M: AttrParse + Into<MethodAttrs>>(
         }
 
         if let Some(proxy) = &mut proxy {
-            proxy.add_method(info, &properties, &zbus);
+            proxy.add_method(info, &properties, &zbus)?;
         }
     }
 
@@ -1329,7 +1329,7 @@ impl Proxy {
         method_info: MethodInfo,
         properties: &BTreeMap<String, Property<'_>>,
         zbus: &TokenStream,
-    ) {
+    ) -> syn::Result<()> {
         let inputs: Punctuated<PatType, Comma> = method_info
             .typed_inputs
             .iter()
@@ -1345,9 +1345,29 @@ impl Proxy {
             })
             .map(|(_, p)| p.clone())
             .collect();
-        let ret = get_return_type(&method_info.output)
-            .map(|r| quote!(#r))
-            .unwrap_or(quote!(()));
+        let ret = match &method_info.output {
+            ReturnType::Type(_, ty) => {
+                let ty = ty.as_ref();
+
+                if let Type::Path(p) = ty {
+                    let is_result_output = p
+                        .path
+                        .segments
+                        .last()
+                        .ok_or_else(|| Error::new_spanned(ty, "unsupported return type"))?
+                        .ident
+                        == "Result";
+                    if is_result_output {
+                        quote! { #ty }
+                    } else {
+                        quote! { #zbus::Result<#ty> }
+                    }
+                } else {
+                    quote! { #zbus::Result<#ty> }
+                }
+            }
+            ReturnType::Default => quote! { #zbus::Result<()> },
+        };
         let ident = &method_info.ident;
         let member_name = method_info.member_name;
         let mut proxy_method_attrs = quote! { name = #member_name, };
@@ -1389,8 +1409,10 @@ impl Proxy {
         self.methods.extend(quote! {
             #(#cfg_attrs)*
             #[zbus(#proxy_method_attrs)]
-            fn #ident(&self, #inputs) -> #zbus::Result<#ret>;
+            fn #ident(&self, #inputs) -> #ret;
         });
+
+        Ok(())
     }
 
     fn gen(&self, iface_name: &str, zbus: &TokenStream) -> TokenStream {
