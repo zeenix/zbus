@@ -1,4 +1,8 @@
-use std::{borrow::Cow, ffi::OsStr, fmt};
+use std::{
+    borrow::Cow,
+    ffi::OsStr,
+    fmt::{self},
+};
 
 use super::{
     percent::{decode_percents_os_str, decode_percents_str, EncOsStr},
@@ -40,6 +44,12 @@ impl<'a> Unixexec<'a> {
     /// Arguments to pass to the binary as `[(nth, arg),...]`.
     pub fn argv(&self) -> &[(usize, Cow<'a, str>)] {
         self.argv.as_ref()
+    }
+
+    pub(crate) fn find_arg_by_key(&self, key: usize) -> Option<&Cow<'a, str>> {
+        self.argv()
+            .iter()
+            .find_map(|(k, v)| if *k == key { Some(v) } else { None })
     }
 }
 

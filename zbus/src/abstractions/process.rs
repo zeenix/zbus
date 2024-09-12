@@ -6,6 +6,8 @@ use std::{ffi::OsStr, io::Error, process::Stdio};
 #[cfg(feature = "tokio")]
 use tokio::process::Child;
 
+use crate::address::transport::Unixexec;
+
 /// A wrapper around the command API of the underlying async runtime.
 pub struct Command(
     #[cfg(not(feature = "tokio"))] async_process::Command,
@@ -93,4 +95,22 @@ where
     S: AsRef<OsStr>,
 {
     Command::new(program).args(args).output().await
+}
+
+impl From<&Unixexec<'_>> for Command {
+    fn from(unixexec: &Unixexec<'_>) -> Self {
+        let mut command = Command::new(unixexec.path());
+
+        if let Some(arg0) = unixexec.find_arg_by_key(0) {
+            command.arg0(arg0.as_ref());
+        }
+
+        let mut arg_index = 1;
+        while let Some(arg) = unixexec.find_arg_by_key(arg_index) {
+            command.arg(arg.as_ref());
+            arg_index += 1;
+        }
+
+        command
+    }
 }
