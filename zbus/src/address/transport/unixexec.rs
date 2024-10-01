@@ -46,6 +46,7 @@ impl<'a> Unixexec<'a> {
         self.argv.as_ref()
     }
 
+    #[cfg(unix)]
     pub(crate) fn find_arg_by_key(&self, key: usize) -> Option<&Cow<'a, str>> {
         self.argv()
             .iter()
