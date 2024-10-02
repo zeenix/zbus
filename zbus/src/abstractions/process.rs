@@ -27,6 +27,23 @@ impl Command {
         return Self(tokio::process::Command::new(program));
     }
 
+    /// Constructs a new `Command` from a `unixexec` address.
+    pub fn for_unixexec(unixexec: &Unixexec<'_>) -> Self {
+        let mut command = Self::new(unixexec.path());
+
+        if let Some(arg0) = unixexec.find_arg_by_key(0) {
+            command.arg0(arg0.as_ref());
+        }
+
+        let mut arg_index = 1;
+        while let Some(arg) = unixexec.find_arg_by_key(arg_index) {
+            command.arg(arg.as_ref());
+            arg_index += 1;
+        }
+
+        command
+    }
+
     /// Sets executable argument.
     ///
     /// Set the first process argument, `argv[0]`, to something other than the
@@ -95,22 +112,4 @@ where
     S: AsRef<OsStr>,
 {
     Command::new(program).args(args).output().await
-}
-
-impl From<&Unixexec<'_>> for Command {
-    fn from(unixexec: &Unixexec<'_>) -> Self {
-        let mut command = Command::new(unixexec.path());
-
-        if let Some(arg0) = unixexec.find_arg_by_key(0) {
-            command.arg0(arg0.as_ref());
-        }
-
-        let mut arg_index = 1;
-        while let Some(arg) = unixexec.find_arg_by_key(arg_index) {
-            command.arg(arg.as_ref());
-            arg_index += 1;
-        }
-
-        command
-    }
 }

@@ -139,7 +139,7 @@ impl WriteHalf for ChildStdin {
 pub(crate) async fn connect(
     addr: &crate::address::transport::Unixexec<'_>,
 ) -> crate::Result<Command> {
-    crate::process::Command::from(addr)
+    crate::process::Command::for_unixexec(addr)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
