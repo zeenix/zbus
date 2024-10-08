@@ -144,6 +144,17 @@ impl<'a> Address<'a> {
         self.try_into()
     }
 
+    /// Create an address from a static string slice.
+    pub fn from_static_str(addr: &'static str) -> Result<Address<'static>> {
+        let addr = Address {
+            addr: Str::from_static(addr),
+        };
+
+        addr.validate()?;
+
+        Ok(addr)
+    }
+
     pub(super) fn key_val_iter(&'a self) -> KeyValIter<'a> {
         let mut split = self.addr.splitn(2, ':');
         // skip transport:..
