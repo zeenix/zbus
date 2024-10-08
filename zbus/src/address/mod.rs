@@ -33,6 +33,7 @@ pub use address_list::{AddressList, AddressListIter};
 
 mod percent;
 pub use percent::*;
+use zvariant::Str;
 
 #[cfg(test)]
 mod tests;
@@ -129,7 +130,7 @@ pub fn system() -> Result<AddressList<'static>> {
 /// ```
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Address<'a> {
-    pub(super) addr: Cow<'a, str>,
+    pub(super) addr: Str<'a>,
 }
 
 impl<'a> Address<'a> {
@@ -152,7 +153,7 @@ impl<'a> Address<'a> {
     }
 
     fn new<A: Into<Cow<'a, str>>>(addr: A) -> Result<Self> {
-        let addr = addr.into();
+        let addr = addr.into().into();
         let addr = Self { addr };
 
         addr.validate()?;
