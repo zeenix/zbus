@@ -155,6 +155,35 @@ impl<'a> Address<'a> {
         Ok(addr)
     }
 
+    /// Create an address from a string slice w/o checking for validity.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the `addr` contains a valid address.
+    pub unsafe fn from_str_unchecked(addr: &'a str) -> Self {
+        Address { addr: addr.into() }
+    }
+
+    /// Create an address from a static string slice w/o checking for validity.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the `addr` contains a valid address.
+    pub const unsafe fn from_static_str_unchecked(addr: &'static str) -> Address<'static> {
+        Address {
+            addr: Str::from_static(addr),
+        }
+    }
+
+    /// Create an address from a string w/o checking for validity.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the `addr` contains a valid address.
+    pub unsafe fn from_static_string_unchecked(addr: String) -> Address<'static> {
+        Address { addr: addr.into() }
+    }
+
     pub(super) fn key_val_iter(&'a self) -> KeyValIter<'a> {
         let mut split = self.addr.splitn(2, ':');
         // skip transport:..
