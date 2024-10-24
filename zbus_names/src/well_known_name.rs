@@ -167,10 +167,10 @@ fn validate(name: &str) -> Result<()> {
         )));
     }
 
-    let first_element_char = one_of((AsChar::is_alpha, '_', '-'));
-    let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, '_', '-'));
+    let first_element_char = one_of((AsChar::is_alpha, b'_', b'-'));
+    let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_', b'-'));
     let element = (first_element_char, subsequent_element_chars);
-    let mut well_known_name = separated(2.., element, '.');
+    let mut well_known_name = separated(2.., element, b'.');
 
     well_known_name.parse(name.as_bytes()).map_err(|_| {
         Error::InvalidWellKnownName(
