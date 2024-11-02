@@ -4,7 +4,6 @@ use std::{
     borrow::Cow,
     cmp::Ordering,
     hash::{Hash, Hasher},
-    sync::Arc,
 };
 
 use crate::{Basic, Type};
@@ -33,7 +32,7 @@ pub struct Str<'a>(#[serde(borrow)] Inner<'a>);
 enum Inner<'a> {
     Static(&'static str),
     Borrowed(&'a str),
-    Owned(Arc<str>),
+    Owned(Box<str>),
 }
 
 impl<'a> Default for Inner<'a> {
@@ -156,8 +155,14 @@ impl<'a> From<String> for Str<'a> {
     }
 }
 
-impl<'a> From<Arc<str>> for Str<'a> {
-    fn from(value: Arc<str>) -> Self {
+impl<'a> From<std::sync::Arc<str>> for Str<'a> {
+    fn from(value: std::sync::Arc<str>) -> Self {
+        Self(Inner::Owned(value.to_string().into()))
+    }
+}
+
+impl<'a> From<Box<str>> for Str<'a> {
+    fn from(value: Box<str>) -> Self {
         Self(Inner::Owned(value))
     }
 }
