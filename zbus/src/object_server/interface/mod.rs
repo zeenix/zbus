@@ -103,7 +103,7 @@ pub trait Interface: Any + Send + Sync {
     ) -> DispatchResult<'call>;
 
     /// Write introspection XML to the writer, with the given indentation level.
-    fn introspect_to_writer(&self, writer: &mut dyn Write, level: usize);
+    fn introspect_to_writer(&self, writer: &mut dyn Write, indentation: &'static str);
 }
 
 /// A type for a reference-counted Interface trait-object, with associated run-time details and a

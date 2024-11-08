@@ -270,7 +270,7 @@ fn test_interface() {
         generic: 42u32,
     };
     let mut xml = String::new();
-    t.introspect_to_writer(&mut xml, 0);
+    t.introspect_to_writer(&mut xml, "");
     assert_eq!(xml, EXPECTED_XML);
 
     assert_eq!(Test::<u32>::name(), "org.freedesktop.zbus.Test");

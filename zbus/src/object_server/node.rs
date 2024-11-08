@@ -190,7 +190,7 @@ impl Node {
                             .instance
                             .read()
                             .await
-                            .introspect_to_writer(writer, level + 2);
+                            .introspect_to_writer(writer, "  ");
                     }
                 }
                 Fragment::End { level } => {

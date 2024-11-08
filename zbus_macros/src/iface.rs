@@ -908,21 +908,18 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 }
             }
 
-            fn introspect_to_writer(&self, writer: &mut dyn ::std::fmt::Write, level: usize) {
-                ::std::writeln!(
-                    writer,
-                    r#"{:indent$}<interface name="{}">"#,
-                    "",
-                    <Self as #zbus::object_server::Interface>::name(),
-                    indent = level
+            fn introspect_to_writer(&self, writer: &mut dyn ::std::fmt::Write, indentation: &'static str) {
+                ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                ::std::fmt::Write::write_str(writer,
+                    "<interface name=\"#iface_name\">",
                 ).unwrap();
                 {
                     use #zbus::zvariant::Type;
 
-                    let level = level + 2;
                     #introspect
                 }
-                ::std::writeln!(writer, r#"{:indent$}</interface>"#, "", indent = level).unwrap();
+                ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                ::std::fmt::Write::write_str(writer, "</interface>\n").unwrap();
             }
         }
 
@@ -1052,24 +1049,36 @@ fn clear_input_arg_attrs(inputs: &mut Punctuated<FnArg, Token![,]>) {
 }
 
 fn introspect_signal(name: &str, args: &TokenStream) -> TokenStream {
+    let opening = format!("<signal name=\"{}\">\n", name);
     quote!(
-        ::std::writeln!(writer, "{:indent$}<signal name=\"{}\">", "", #name, indent = level).unwrap();
-        {
-            let level = level + 2;
-            #args
+        for _ in 0..2 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
         }
-        ::std::writeln!(writer, "{:indent$}</signal>", "", indent = level).unwrap();
+        ::std::fmt::Write::write_str(writer, #opening).unwrap();
+
+        #args
+
+        for _ in 0..2 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
+        }
+        ::std::fmt::Write::write_str(writer, "</signal>\n").unwrap();
     )
 }
 
 fn introspect_method(name: &str, args: &TokenStream) -> TokenStream {
+    let opening = format!("<method name=\"{}\">\n", name);
     quote!(
-        ::std::writeln!(writer, "{:indent$}<method name=\"{}\">", "", #name, indent = level).unwrap();
-        {
-            let level = level + 2;
-            #args
+        for _ in 0..2 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
         }
-        ::std::writeln!(writer, "{:indent$}</method>", "", indent = level).unwrap();
+        ::std::fmt::Write::write_str(writer, #opening).unwrap();
+
+        #args
+
+        for _ in 0..2 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
+        }
+        ::std::fmt::Write::write_str(writer, "</method>\n").unwrap();
     )
 }
 
@@ -1115,11 +1124,20 @@ fn introspect_input_args<'i>(
 
             let ident = pat_ident(pat_type).unwrap();
             let arg_name = quote!(#ident).to_string();
-            let dir = if is_signal { "" } else { " direction=\"in\"" };
+            let opening = format!("<arg name=\"{}\" type=\"", arg_name);
+            let closing = if is_signal {
+                "\"/>\n"
+            } else {
+                "direction=\"in\"\n"
+            };
             Some(quote!(
                 #(#cfg_attrs)*
-                ::std::writeln!(writer, "{:indent$}<arg name=\"{}\" type=\"{}\"{}/>", "",
-                         #arg_name, <#ty>::SIGNATURE, #dir, indent = level).unwrap();
+                for _ in 0..3 {
+                    ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                }
+                ::std::fmt::Write::write_str(writer, #opening).unwrap();
+                ::std::writeln!(writer, "{}", <#ty>::SIGNATURE).unwrap();
+                ::std::fmt::Write::write_str(writer, #closing).unwrap();
             ))
         })
 }
@@ -1130,14 +1148,19 @@ fn introspect_output_arg(
     cfg_attrs: &[&syn::Attribute],
 ) -> TokenStream {
     let arg_name = match arg_name {
-        Some(name) => format!("name=\"{name}\" "),
+        Some(name) => format!("name=\"{name}\""),
         None => String::from(""),
     };
+    let opening = format!("<arg {} type=\"", arg_name);
 
     quote!(
         #(#cfg_attrs)*
-        ::std::writeln!(writer, "{:indent$}<arg {}type=\"{}\" direction=\"out\"/>", "",
-                 #arg_name, <#ty>::SIGNATURE, indent = level).unwrap();
+        for _ in 0..3 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
+        }
+        ::std::fmt::Write::write_str(writer, #opening).unwrap();
+        ::std::writeln!(writer, "{}", <#ty>::SIGNATURE).unwrap();
+        ::std::fmt::Write::write_str(writer, "\" direction=\"out\"/>\n").unwrap();
     )
 }
 
@@ -1245,33 +1268,41 @@ fn introspect_properties(
         })?;
 
         let doc_comments = prop.doc_comments;
+        let opening = format!("<property name=\"{}\" access=\"{}\" type=\"", name, access);
         if prop.emits_changed_signal == PropertyEmitsChangedSignal::True {
             introspection.extend(quote!(
                 #doc_comments
-                ::std::writeln!(
-                    writer,
-                    "{:indent$}<property name=\"{}\" type=\"{}\" access=\"{}\"/>",
-                    "", #name, <#ty>::SIGNATURE, #access, indent = level,
-                ).unwrap();
+                for _ in 0..2 {
+                    ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                }
+                ::std::fmt::Write::write_str(writer, #opening).unwrap();
+                ::std::writeln!(writer, "{}", <#ty>::SIGNATURE).unwrap();
+                ::std::fmt::Write::write_str(writer, "\"/>\n").unwrap();
             ));
         } else {
             let emits_changed_signal = prop.emits_changed_signal.to_string();
+            let annotation = format!(
+                "<annotation \
+                    name=\"org.freedesktop.DBus.Property.EmitsChangedSignal\" \
+                    value=\"{}\" \
+                />\n",
+                emits_changed_signal,
+            );
             introspection.extend(quote!(
                 #doc_comments
-                ::std::writeln!(
-                    writer,
-                    "{:indent$}<property name=\"{}\" type=\"{}\" access=\"{}\">",
-                    "", #name, <#ty>::SIGNATURE, #access, indent = level,
-                ).unwrap();
-                ::std::writeln!(
-                    writer,
-                    "{:indent$}<annotation name=\"org.freedesktop.DBus.Property.EmitsChangedSignal\" value=\"{}\"/>",
-                    "", #emits_changed_signal, indent = level + 2,
-                ).unwrap();
-                ::std::writeln!(
-                    writer,
-                    "{:indent$}</property>", "", indent = level,
-                ).unwrap();
+                for _ in 0..2 {
+                    ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                }
+                ::std::fmt::Write::write_str(writer, #opening).unwrap();
+                ::std::writeln!(writer, "{}", <#ty>::SIGNATURE).unwrap();
+                ::std::fmt::Write::write_str(writer, "\">\n").unwrap();
+
+                for _ in 0..3 {
+                    ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                }
+                ::std::fmt::Write::write_str(writer, #annotation).unwrap();
+
+                ::std::fmt::Write::write_str(writer, "</property>\n").unwrap();
             ));
         }
     }
@@ -1296,17 +1327,29 @@ pub fn to_xml_docs(lines: Vec<String>) -> TokenStream {
         return docs;
     }
 
-    docs.extend(quote!(::std::writeln!(writer, "{:indent$}<!--", "", indent = level).unwrap();));
+    docs.extend(quote! {
+        for _ in 0..2 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
+        }
+        ::std::fmt::Write::write_str(writer, "<!--").unwrap();
+    });
     for line in lines {
         if !line.is_empty() {
-            docs.extend(
-                quote!(::std::writeln!(writer, "{:indent$}{}", "", #line, indent = level).unwrap();),
-            );
-        } else {
-            docs.extend(quote!(::std::writeln!(writer, "").unwrap();));
+            docs.extend(quote! {
+                for _ in 0..2 {
+                    ::std::fmt::Write::write_str(writer, indentation).unwrap();
+                }
+                ::std::fmt::Write::write_str(writer, #line).unwrap();
+            });
         }
+        docs.extend(quote!(::std::fmt::Write::write_char(writer, '\n').unwrap();));
     }
-    docs.extend(quote!(::std::writeln!(writer, "{:indent$} -->", "", indent = level).unwrap();));
+    docs.extend(quote!(
+        for _ in 0..2 {
+            ::std::fmt::Write::write_str(writer, indentation).unwrap();
+        }
+        ::std::fmt::Write::write_str(writer, " -->").unwrap();
+    ));
 
     docs
 }
