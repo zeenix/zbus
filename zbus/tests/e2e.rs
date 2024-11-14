@@ -257,7 +257,7 @@ impl MyIface {
 
     #[instrument]
     #[zbus(property)]
-    fn count(&self) -> u32 {
+    fn count(&self, #[zbus(header)] header: Header<'_>) -> u32 {
         debug!("`Count` getter called.");
         self.count
     }

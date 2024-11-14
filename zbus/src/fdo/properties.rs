@@ -9,7 +9,7 @@ use zbus_names::InterfaceName;
 use zvariant::{OwnedValue, Value};
 
 use super::{Error, Result};
-use crate::{interface, message::Header, object_server::SignalEmitter, ObjectServer};
+use crate::{interface, message::Header, object_server::SignalEmitter, Connection, ObjectServer};
 
 /// Service-side implementation for the `org.freedesktop.DBus.Properties` interface.
 /// This interface is implemented automatically for any object registered to the
@@ -29,6 +29,7 @@ impl Properties {
         &self,
         interface_name: InterfaceName<'_>,
         property_name: &str,
+        #[zbus(connection)] conn: &Connection,
         #[zbus(object_server)] server: &ObjectServer,
         #[zbus(header)] header: Header<'_>,
     ) -> Result<OwnedValue> {
@@ -41,7 +42,12 @@ impl Properties {
                 Error::UnknownInterface(format!("Unknown interface '{interface_name}'"))
             })?;
 
-        let res = iface.instance.read().await.get(property_name).await;
+        let res = iface
+            .instance
+            .read()
+            .await
+            .get(property_name, server, conn, &header)
+            .await;
         res.unwrap_or_else(|| {
             Err(Error::UnknownProperty(format!(
                 "Unknown property '{property_name}'"

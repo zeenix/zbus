@@ -17,8 +17,11 @@ use zbus_names::{InterfaceName, MemberName};
 use zvariant::{OwnedValue, Value};
 
 use crate::{
-    async_lock::RwLock, fdo, message::Message, object_server::SignalEmitter, Connection,
-    ObjectServer,
+    async_lock::RwLock,
+    fdo,
+    message::{self, Message},
+    object_server::SignalEmitter,
+    Connection, ObjectServer,
 };
 
 /// This trait is used to dispatch messages to an interface instance.
@@ -45,7 +48,13 @@ pub trait Interface: Any + Send + Sync {
     }
 
     /// Get a property value. Returns `None` if the property doesn't exist.
-    async fn get(&self, property_name: &str) -> Option<fdo::Result<OwnedValue>>;
+    async fn get(
+        &self,
+        property_name: &str,
+        server: &ObjectServer,
+        connection: &Connection,
+        msg: &message::Header<'_>,
+    ) -> Option<fdo::Result<OwnedValue>>;
 
     /// Return all the properties.
     async fn get_all(&self) -> fdo::Result<HashMap<String, OwnedValue>>;

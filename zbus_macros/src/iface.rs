@@ -103,8 +103,8 @@ enum MethodType {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum PropertyType {
-    Inputs,
-    NoInputs,
+    Setter,
+    Getter,
 }
 
 #[derive(Debug, Clone)]
@@ -190,7 +190,22 @@ impl MethodInfo {
         let is_signal = attrs.signal;
         assert!(!is_property || !is_signal);
 
+        // TODO: This needs to be somehow adjusted to not count our special args, which is a bit
+        // tricky since we parse those in `introspect_input_args` and we only get to call them
+        // later.
         let has_inputs = inputs.len() > 1;
+
+        let method_type = if is_signal {
+            MethodType::Signal
+        } else if is_property {
+            if has_inputs {
+                MethodType::Property(PropertyType::Setter)
+            } else {
+                MethodType::Property(PropertyType::Getter)
+            }
+        } else {
+            MethodType::Other
+        };
 
         let is_mut = if let FnArg::Receiver(r) = inputs
             .first()
@@ -237,7 +252,7 @@ impl MethodInfo {
             cfg_attrs,
         )?;
 
-        let (args_from_msg, args_names) = get_args_from_inputs(&typed_inputs, zbus)?;
+        let (args_from_msg, args_names) = get_args_from_inputs(&typed_inputs, method_type, zbus)?;
 
         let reply = if is_result_output {
             let ret = quote!(r);
@@ -258,18 +273,6 @@ impl MethodInfo {
             }
             pascal_case(&name)
         });
-
-        let method_type = if is_signal {
-            MethodType::Signal
-        } else if is_property {
-            if has_inputs {
-                MethodType::Property(PropertyType::Inputs)
-            } else {
-                MethodType::Property(PropertyType::NoInputs)
-            }
-        } else {
-            MethodType::Other
-        };
 
         Ok(MethodInfo {
             ident: ident.clone(),
@@ -404,7 +407,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
         )?;
         let attr_property = method_attrs.property;
         if let Some(prop_attrs) = &attr_property {
-            if method_info.method_type == MethodType::Property(PropertyType::NoInputs) {
+            if method_info.method_type == MethodType::Property(PropertyType::Getter) {
                 let emits_changed_signal = if let Some(s) = &prop_attrs.emits_changed_signal {
                     PropertyEmitsChangedSignal::parse(s, method.span())?
                 } else {
@@ -852,6 +855,9 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
             async fn get(
                 &self,
                 property_name: &str,
+                s: &#zbus::ObjectServer,
+                c: &#zbus::Connection,
+                h: &#zbus::message::Header<'_>,
             ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::zvariant::OwnedValue>> {
                 match property_name {
                     #get_dispatch
@@ -946,6 +952,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
 
 fn get_args_from_inputs(
     inputs: &[PatType],
+    method_type: MethodType,
     zbus: &TokenStream,
 ) -> syn::Result<(TokenStream, TokenStream)> {
     if inputs.is_empty() {
@@ -997,6 +1004,9 @@ fn get_args_from_inputs(
 
                 let header_arg = &input.pat;
 
+                // TODO: Needs to be adjusted for properties, since the `Interface::get` method gets
+                // a reference to the header directly, instead of the whole message. This part
+                // should be trivial though.
                 header_arg_decl = Some(quote! {
                     let #header_arg = m.header();
                 });
