@@ -6,7 +6,7 @@ use syn::{
     ImplItem, ImplItemFn, ItemImpl,
     Lit::Str,
     Meta, MetaNameValue, PatType, PathArguments, ReturnType, Signature, Token, Type, TypePath,
-    Visibility,
+    TypeReference, Visibility,
     parse::{Parse, ParseStream},
     parse_quote, parse_str,
     punctuated::Punctuated,
@@ -1020,6 +1020,18 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
     })
 }
 
+fn maybe_unref_ty(ty: &Type) -> Option<&Type> {
+    fn should_unref(v: &TypeReference) -> bool {
+        // &str is special and we can deserialize to it, unlike other reference types.
+        !matches!(*v.elem, Type::Path(ref p) if p.path.is_ident("str"))
+    }
+
+    match *ty {
+        Type::Reference(ref v) if should_unref(v) => Some(&v.elem),
+        _ => None,
+    }
+}
+
 fn get_args_from_inputs(
     inputs: &[PatType],
     method_type: MethodType,
@@ -1111,7 +1123,7 @@ fn get_args_from_inputs(
                 };
             } else {
                 args_names.push(pat_ident(input).unwrap());
-                tys.push(&input.ty);
+                tys.push(&*input.ty);
             }
         }
 
@@ -1125,15 +1137,36 @@ fn get_args_from_inputs(
             _ => (
                 quote! { let hdr = __zbus__message.header(); },
                 quote! { let msg_body = __zbus__message.body(); },
-                quote! {
-                    let (#(#args_names),*): (#(#tys),*) =
-                        match msg_body.deserialize() {
-                            ::std::result::Result::Ok(r) => r,
-                            ::std::result::Result::Err(e) => {
-                                let err = <#zbus::fdo::Error as ::std::convert::From<_>>::from(e);
-                                return __zbus__connection.reply_dbus_error(&hdr, err).await;
+                {
+                    let mut unrefed_indices = vec![];
+                    let owned_tys = tys
+                        .iter()
+                        .enumerate()
+                        .map(|(i, ty)| {
+                            let owned = maybe_unref_ty(ty);
+                            if owned.is_some() {
+                                unrefed_indices.push(i);
                             }
-                        };
+                            owned.unwrap_or(ty)
+                        })
+                        .collect::<Vec<_>>();
+                    let mut q = quote! {
+                        let (#(#args_names),*): (#(#owned_tys),*) =
+                            match msg_body.deserialize() {
+                                ::std::result::Result::Ok(r) => r,
+                                ::std::result::Result::Err(e) => {
+                                    let err = <#zbus::fdo::Error as ::std::convert::From<_>>::from(e);
+                                    return __zbus__connection.reply_dbus_error(&hdr, err).await;
+                                }
+                            };
+                    };
+                    for index in unrefed_indices {
+                        let arg_name = &args_names[index];
+                        q.extend(quote! {
+                            let #arg_name = &#arg_name;
+                        });
+                    }
+                    q
                 },
             ),
         };
