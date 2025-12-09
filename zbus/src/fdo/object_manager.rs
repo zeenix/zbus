@@ -3,7 +3,10 @@
 //! The D-Bus specification defines the message bus messages and some standard interfaces that may
 //! be useful across various D-Bus applications. This module provides their proxy.
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 use zbus_names::{InterfaceName, OwnedInterfaceName};
 use zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 
@@ -12,7 +15,7 @@ use crate::{Connection, ObjectServer, interface, message::Header, object_server:
 
 /// The type returned by the [`ObjectManagerProxy::get_managed_objects`] method.
 pub type ManagedObjects =
-    HashMap<OwnedObjectPath, HashMap<OwnedInterfaceName, HashMap<String, OwnedValue>>>;
+    HashMap<OwnedObjectPath, BTreeMap<OwnedInterfaceName, HashMap<String, OwnedValue>>>;
 
 /// Service-side [Object Manager][om] interface implementation.
 ///

@@ -267,7 +267,7 @@ impl Node {
         // Recursively get all properties of all interfaces of descendants.
         let mut node_list: Vec<_> = self.children.values().collect();
         while let Some(node) = node_list.pop() {
-            let mut interfaces = HashMap::new();
+            let mut interfaces = BTreeMap::new();
             for iface_name in node
                 .interfaces
                 .keys()
