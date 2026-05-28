@@ -2,21 +2,16 @@
 use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
 use event_listener::{Event, EventListener};
-use ordered_stream::{OrderedFuture, OrderedStream, PollResult};
 use std::{
     collections::HashMap,
-    io::{self, ErrorKind},
-    num::NonZeroU32,
-    pin::Pin,
+    io,
     sync::{Arc, OnceLock, Weak},
-    task::{Context, Poll},
     time::Duration,
 };
 use tracing::{Instrument, debug, info_span, instrument, trace, trace_span, warn};
 use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
 use zvariant::ObjectPath;
 
-use futures_core::Future;
 use futures_lite::StreamExt;
 
 use crate::{
@@ -37,6 +32,9 @@ pub use socket::Socket;
 
 mod socket_reader;
 use socket_reader::SocketReader;
+
+mod pending_method_call;
+pub(crate) use pending_method_call::PendingMethodCall;
 
 pub(crate) mod handshake;
 pub use handshake::AuthMechanism;
@@ -214,80 +212,6 @@ pub struct Connection {
     pub(crate) inner: Arc<ConnectionInner>,
 }
 
-/// A method call whose completion can be awaited or joined with other streams.
-///
-/// This is useful for cache population method calls, where joining the [`JoinableStream`] with
-/// an update signal stream can be used to ensure that cache updates are not overwritten by a cache
-/// population whose task is scheduled later.
-#[derive(Debug)]
-pub(crate) struct PendingMethodCall {
-    stream: Option<MessageStream>,
-    serial: NonZeroU32,
-}
-
-impl Future for PendingMethodCall {
-    type Output = Result<Message>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.poll_before(cx, None).map(|ret| {
-            ret.map(|(_, r)| r).unwrap_or_else(|| {
-                Err(crate::Error::InputOutput(
-                    io::Error::new(ErrorKind::BrokenPipe, "socket closed").into(),
-                ))
-            })
-        })
-    }
-}
-
-impl OrderedFuture for PendingMethodCall {
-    type Output = Result<Message>;
-    type Ordering = zbus::message::Sequence;
-
-    fn poll_before(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        before: Option<&Self::Ordering>,
-    ) -> Poll<Option<(Self::Ordering, Self::Output)>> {
-        let this = self.get_mut();
-        if let Some(stream) = &mut this.stream {
-            loop {
-                match Pin::new(&mut *stream).poll_next_before(cx, before) {
-                    Poll::Ready(PollResult::Item {
-                        data: Ok(msg),
-                        ordering,
-                    }) => {
-                        if msg.header().reply_serial() != Some(this.serial) {
-                            continue;
-                        }
-                        let res = match msg.message_type() {
-                            Type::Error => Err(msg.into()),
-                            Type::MethodReturn => Ok(msg),
-                            _ => continue,
-                        };
-                        this.stream = None;
-                        return Poll::Ready(Some((ordering, res)));
-                    }
-                    Poll::Ready(PollResult::Item {
-                        data: Err(e),
-                        ordering,
-                    }) => {
-                        return Poll::Ready(Some((ordering, Err(e))));
-                    }
-
-                    Poll::Ready(PollResult::NoneBefore) => {
-                        return Poll::Ready(None);
-                    }
-                    Poll::Ready(PollResult::Terminated) => {
-                        return Poll::Ready(None);
-                    }
-                    Poll::Pending => return Poll::Pending,
-                }
-            }
-        }
-        Poll::Ready(None)
-    }
-}
-
 impl Connection {
     /// Send `msg` to the peer.
     pub async fn send(&self, msg: &Message) -> Result<()> {
@@ -405,7 +329,7 @@ impl Connection {
         if flags.contains(Flags::NoReplyExpected) {
             Ok(None)
         } else {
-            Ok(Some(PendingMethodCall { stream, serial }))
+            Ok(Some(PendingMethodCall::new(stream, serial)))
         }
     }
 
