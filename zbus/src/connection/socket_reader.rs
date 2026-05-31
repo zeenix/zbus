@@ -4,7 +4,10 @@ use event_listener::Event;
 use tracing::{debug, instrument, trace};
 
 use crate::{
-    Executor, Message, OwnedMatchRule, Task, async_lock::Mutex, connection::MsgBroadcaster,
+    Executor, Message, OwnedMatchRule, Task,
+    async_lock::Mutex,
+    connection::{MsgBroadcaster, PendingMethodCalls},
+    message::Type,
 };
 
 use super::socket::ReadHalf;
@@ -13,6 +16,7 @@ use super::socket::ReadHalf;
 pub(crate) struct SocketReader {
     socket: Box<dyn ReadHalf>,
     senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
+    pending_method_calls: PendingMethodCalls,
     already_received_bytes: Vec<u8>,
     #[cfg(unix)]
     already_received_fds: Vec<std::os::fd::OwnedFd>,
@@ -24,6 +28,7 @@ impl SocketReader {
     pub fn new(
         socket: Box<dyn ReadHalf>,
         senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
+        pending_method_calls: PendingMethodCalls,
         already_received_bytes: Vec<u8>,
         #[cfg(unix)] already_received_fds: Vec<std::os::fd::OwnedFd>,
         activity_event: Arc<Event>,
@@ -31,6 +36,7 @@ impl SocketReader {
         Self {
             socket,
             senders,
+            pending_method_calls,
             already_received_bytes,
             #[cfg(unix)]
             already_received_fds,
@@ -50,8 +56,16 @@ impl SocketReader {
             trace!("Waiting for message on the socket..");
             let msg = self.read_socket().await;
             match &msg {
-                Ok(msg) => trace!("Message received on the socket: {:?}", msg),
-                Err(e) => trace!("Error reading from the socket: {:?}", e),
+                Ok(msg) => {
+                    trace!("Message received on the socket: {:?}", msg);
+                    if matches!(msg.message_type(), Type::MethodReturn | Type::Error) {
+                        self.dispatch_pending_reply(msg);
+                    }
+                }
+                Err(e) => {
+                    trace!("Error reading from the socket: {:?}", e);
+                    self.fail_pending_method_calls(e.clone());
+                }
             };
 
             let mut senders = self.senders.lock().await;
@@ -95,6 +109,30 @@ impl SocketReader {
                 return;
             }
         }
+    }
+
+    fn dispatch_pending_reply(&self, msg: &Message) {
+        debug_assert!(matches!(
+            msg.message_type(),
+            Type::MethodReturn | Type::Error
+        ));
+
+        let reply_serial = match msg.header().reply_serial() {
+            Some(serial) => serial,
+            None => return,
+        };
+
+        let result = match msg.message_type() {
+            Type::MethodReturn => Ok(msg.clone()),
+            Type::Error => Err(msg.clone().into()),
+            Type::MethodCall | Type::Signal => return,
+        };
+        self.pending_method_calls
+            .complete_call(reply_serial, msg.recv_position(), result);
+    }
+
+    fn fail_pending_method_calls(&self, error: crate::Error) {
+        self.pending_method_calls.fail_all(error);
     }
 
     #[instrument(skip(self), level = "trace")]

@@ -4,6 +4,7 @@ use enumflags2::BitFlags;
 use event_listener::{Event, EventListener};
 use std::{
     collections::HashMap,
+    future::Future,
     io,
     sync::{Arc, OnceLock, Weak},
     time::Duration,
@@ -13,10 +14,10 @@ use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName,
 use zvariant::ObjectPath;
 
 use futures_lite::StreamExt;
+use ordered_stream::OrderedFuture;
 
 use crate::{
-    DBusError, Error, Executor, MatchRule, MessageStream, ObjectServer, OwnedGuid, OwnedMatchRule,
-    Result, Task,
+    DBusError, Error, Executor, MatchRule, ObjectServer, OwnedGuid, OwnedMatchRule, Result, Task,
     async_lock::{Mutex, Semaphore, SemaphorePermit},
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
     is_flatpak,
@@ -33,15 +34,14 @@ pub use socket::Socket;
 mod socket_reader;
 use socket_reader::SocketReader;
 
-mod pending_method_call;
-pub(crate) use pending_method_call::PendingMethodCall;
+mod pending_method_calls;
+use pending_method_calls::PendingMethodCalls;
 
 pub(crate) mod handshake;
 pub use handshake::AuthMechanism;
 use handshake::Authenticated;
 
 const DEFAULT_MAX_QUEUED: usize = 64;
-const DEFAULT_MAX_METHOD_RETURN_QUEUED: usize = 8;
 
 /// Inner state shared by Connection and WeakConnection
 #[derive(Debug)]
@@ -65,8 +65,8 @@ pub(crate) struct ConnectionInner {
     socket_reader_task: OnceLock<Task<()>>,
 
     pub(crate) msg_receiver: InactiveReceiver<Result<Message>>,
-    pub(crate) method_return_receiver: InactiveReceiver<Result<Message>>,
     msg_senders: Arc<Mutex<HashMap<Option<OwnedMatchRule>, MsgBroadcaster>>>,
+    pending_method_calls: PendingMethodCalls,
 
     subscriptions: Mutex<Subscriptions>,
 
@@ -288,7 +288,12 @@ impl Connection {
         method_name: M,
         flags: BitFlags<Flags>,
         body: &B,
-    ) -> Result<Option<PendingMethodCall>>
+    ) -> Result<
+        Option<
+            impl Future<Output = Result<Message>>
+            + OrderedFuture<Output = Result<Message>, Ordering = crate::message::Sequence>,
+        >,
+    >
     where
         D: TryInto<BusName<'d>>,
         P: TryInto<ObjectPath<'p>>,
@@ -317,19 +322,16 @@ impl Connection {
         }
         let msg = builder.build(body)?;
 
-        let msg_receiver = self.inner.method_return_receiver.activate_cloned();
-        let stream = Some(MessageStream::for_subscription_channel(
-            msg_receiver,
-            // This is a lie but we only use the stream internally so it's fine.
-            None,
-            self,
-        ));
         let serial = msg.primary_header().serial_num();
-        self.send(&msg).await?;
         if flags.contains(Flags::NoReplyExpected) {
+            self.send(&msg).await?;
+
             Ok(None)
         } else {
-            Ok(Some(PendingMethodCall::new(stream, serial)))
+            let pending_call = self.inner.pending_method_calls.register_call(serial);
+            self.send(&msg).await?;
+
+            Ok(Some(pending_call))
         }
     }
 
@@ -1092,17 +1094,8 @@ impl Connection {
         let mut msg_senders = HashMap::new();
         msg_senders.insert(None, msg_sender);
 
-        // The special method return & error channel.
-        let (method_return_sender, method_return_receiver) =
-            create_msg_broadcast_channel!(DEFAULT_MAX_METHOD_RETURN_QUEUED);
-        let rule = MatchRule::builder()
-            .msg_type(Type::MethodReturn)
-            .build()
-            .into();
-        msg_senders.insert(Some(rule), method_return_sender.clone());
-        let rule = MatchRule::builder().msg_type(Type::Error).build().into();
-        msg_senders.insert(Some(rule), method_return_sender);
         let msg_senders = Arc::new(Mutex::new(msg_senders));
+        let pending_method_calls = PendingMethodCalls::default();
         let subscriptions = Mutex::new(HashMap::new());
 
         let connection = Self {
@@ -1121,8 +1114,8 @@ impl Connection {
                 executor,
                 socket_reader_task: OnceLock::new(),
                 msg_senders,
+                pending_method_calls,
                 msg_receiver,
-                method_return_receiver,
                 registered_names: Mutex::new(HashMap::new()),
                 drop_event: Event::new(),
                 method_timeout,
@@ -1278,6 +1271,7 @@ impl Connection {
                 SocketReader::new(
                     socket_read,
                     inner.msg_senders.clone(),
+                    inner.pending_method_calls.clone(),
                     already_read,
                     #[cfg(unix)]
                     already_received_fds,
