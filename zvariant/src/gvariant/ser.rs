@@ -603,6 +603,13 @@ where
             Some(offsets) => offsets,
             None => return Ok(()),
         };
+
+        if self.ser.0.signature.is_fixed_sized() {
+            debug_assert!(offsets.is_empty());
+            let alignment = self.ser.0.signature.alignment(Format::GVariant);
+            self.ser.0.add_padding(alignment)?;
+        }
+
         let struct_len = self.ser.0.bytes_written - self.start;
         if struct_len == 0 {
             // Empty sequence

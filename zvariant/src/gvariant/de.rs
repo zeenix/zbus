@@ -769,6 +769,12 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de
             // All fields have been deserialized.
             self.de.0.container_depths = self.de.0.container_depths.dec_structure();
 
+            if self.de.0.signature.is_fixed_sized() {
+                debug_assert_eq!(self.offsets_len, 0);
+                let alignment = self.de.0.signature.alignment(Format::GVariant);
+                self.de.0.parse_padding(alignment)?;
+            }
+
             // Skip over the framing offsets (if any)
             self.de.0.pos += self.offsets_len;
         }
