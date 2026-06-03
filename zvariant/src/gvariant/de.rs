@@ -638,6 +638,11 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> MapAccess<'de
         self.de.0.pos += de.0.pos;
         // No need for retaking the container depths as the value can't be incomplete.
 
+        // A fixed-sized dictionary entry should be padded to its alignment.
+        if self.offsets.is_none() {
+            self.de.0.parse_padding(self.element_alignment)?;
+        }
+
         if let Some(key_offset_size) = self.key_offset_size {
             self.de.0.pos += key_offset_size as usize;
         }

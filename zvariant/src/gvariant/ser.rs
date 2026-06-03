@@ -728,6 +728,11 @@ where
         value.serialize(&mut *self.seq.ser)?;
         self.seq.ser.0.signature = self.key_signature;
 
+        // A fixed-sized dictionary entry should be padded to its alignment.
+        if self.seq.offsets.is_none() {
+            self.seq.ser.0.add_padding(self.seq.element_alignment)?;
+        }
+
         if let Some(key_offset) = key_offset {
             let entry_size = self.seq.ser.0.bytes_written - self.key_start.unwrap_or(0);
             let offset_size = FramingOffsetSize::for_encoded_container(entry_size);
