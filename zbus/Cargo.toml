@@ -168,6 +168,11 @@ bench = false
 name = "benchmarks"
 harness = false
 
+[[bench]]
+name = "concurrent_method_calls"
+harness = false
+required-features = ["p2p"]
+
 [[example]]
 name = "screen-brightness"
 path = "examples/screen-brightness.rs"
