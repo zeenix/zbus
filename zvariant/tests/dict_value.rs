@@ -344,6 +344,56 @@ fn nested_dict_value() {
 }
 
 #[test]
+fn owned_value_field_in_dict() {
+    use zvariant::OwnedValue;
+
+    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
+
+    // A `Value`/`OwnedValue`-typed field in an `a{sv}` `*Dict` struct must capture the variant
+    // value verbatim, without an extra variant-of-variant wrapping layer. Regression test for
+    // https://github.com/z-galaxy/zbus/issues/1819.
+    #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default)]
+    #[zvariant(signature = "a{sv}", rename_all = "kebab-case")]
+    struct Info {
+        manifest_hash: Option<String>,
+        // The value behind this key is itself an `a{sv}` variant.
+        update: Option<OwnedValue>,
+    }
+
+    // Build the wire data the way an external producer would: an `a{sv}` whose `update` key holds
+    // a variant containing another `a{sv}`.
+    let mut update: HashMap<&str, Value<'_>> = HashMap::new();
+    update.insert("compatible", Value::new(true));
+    update.insert("version", Value::new("1.0"));
+
+    let mut outer: HashMap<&str, Value<'_>> = HashMap::new();
+    outer.insert("manifest-hash", Value::new("abc"));
+    outer.insert("update", Value::Dict(Dict::from(update)));
+
+    let encoded = to_bytes(ctxt, &outer).unwrap();
+    let decoded: Info = encoded.deserialize().unwrap().0;
+    assert_eq!(decoded.manifest_hash.as_deref(), Some("abc"));
+    let update = decoded.update.as_ref().unwrap();
+    assert_eq!(update.value_signature(), "a{sv}");
+    let update_dict = update.downcast_ref::<&Dict<'_, '_>>().unwrap();
+    assert_eq!(
+        update_dict
+            .get::<&str, bool>(&"compatible")
+            .unwrap()
+            .unwrap(),
+        true
+    );
+
+    // And the round-trip through the derived `SerializeDict` must not double-wrap the variant.
+    let reencoded = to_bytes(ctxt, &decoded).unwrap();
+    let redecoded: Info = reencoded.deserialize().unwrap().0;
+    assert_eq!(redecoded, decoded);
+    // The re-serialized bytes are still readable as a plain `a{sv}` map.
+    let as_map: HashMap<String, Value<'_>> = reencoded.deserialize().unwrap().0;
+    assert_eq!(as_map["update"].value_signature(), "a{sv}");
+}
+
+#[test]
 fn nested_dict_object_path_keys() {
     let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
 
