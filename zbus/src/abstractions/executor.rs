@@ -80,7 +80,7 @@ impl Executor<'_> {
 
     /// Runs a single task.
     ///
-    /// With `tokio` feature enabled, its a noop and never returns.
+    /// With `tokio` feature enabled, it's a noop and never returns.
     pub async fn tick(&self) {
         #[cfg(not(feature = "tokio"))]
         {
