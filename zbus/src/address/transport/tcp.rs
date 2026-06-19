@@ -1,8 +1,8 @@
 use super::encode_percents;
 use crate::{Address, Error, Result};
-#[cfg(not(feature = "tokio"))]
+#[cfg(feature = "async-io")]
 use async_io::Async;
-#[cfg(not(feature = "tokio"))]
+#[cfg(feature = "async-io")]
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::{
     collections::HashMap,
@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(feature = "async-io")))]
 use tokio::net::TcpStream;
 
 /// A TCP transport in a D-Bus address.
@@ -128,7 +128,7 @@ impl Tcp {
         })
     }
 
-    #[cfg(not(feature = "tokio"))]
+    #[cfg(feature = "async-io")]
     pub(super) async fn connect(self, address: &Address) -> Result<Async<TcpStream>> {
         let address_clone = address.clone();
         let family = self.family();
@@ -171,7 +171,7 @@ impl Tcp {
         Err(last_err)
     }
 
-    #[cfg(feature = "tokio")]
+    #[cfg(all(feature = "tokio", not(feature = "async-io")))]
     pub(super) async fn connect(self, address: &Address) -> Result<TcpStream> {
         TcpStream::connect((self.host(), self.port()))
             .await

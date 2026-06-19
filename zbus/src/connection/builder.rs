@@ -1,5 +1,8 @@
 use async_broadcast::Receiver as ActiveReceiver;
-#[cfg(not(feature = "tokio"))]
+#[cfg(any(
+    not(feature = "tokio"),
+    all(feature = "vsock", not(feature = "tokio-vsock"))
+))]
 use async_io::Async;
 use enumflags2::BitFlags;
 use event_listener::Event;
@@ -19,7 +22,7 @@ use tokio::net::UnixStream;
 use tokio_vsock::VsockStream;
 #[cfg(all(windows, not(feature = "tokio")))]
 use uds_windows::UnixStream;
-#[cfg(all(feature = "vsock", not(feature = "tokio")))]
+#[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
 use vsock::VsockStream;
 
 use zvariant::ObjectPath;
@@ -47,10 +50,7 @@ enum Target {
     #[cfg(any(unix, not(feature = "tokio")))]
     UnixStream(UnixStream),
     TcpStream(TcpStream),
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     VsockStream(VsockStream),
     Address(Address),
     Socket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
@@ -189,9 +189,9 @@ impl<'a> Builder<'a> {
 
     /// Create a builder for a connection that will use the given unix stream.
     ///
-    /// If the default `async-io` feature is disabled, this method will expect a
-    /// [`tokio::net::UnixStream`](https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html)
-    /// argument.
+    /// When the `tokio` feature is enabled this method expects a
+    /// [`tokio::net::UnixStream`](https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html),
+    /// otherwise a [`std::os::unix::net::UnixStream`].
     ///
     /// Since tokio currently [does not support Unix domain sockets][tuds] on Windows, this method
     /// is not available when the `tokio` feature is enabled and building for Windows target.
@@ -204,9 +204,9 @@ impl<'a> Builder<'a> {
 
     /// Create a builder for a connection that will use the given TCP stream.
     ///
-    /// If the default `async-io` feature is disabled, this method will expect a
-    /// [`tokio::net::TcpStream`](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html)
-    /// argument.
+    /// When the `tokio` feature is enabled this method expects a
+    /// [`tokio::net::TcpStream`](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html),
+    /// otherwise a [`std::net::TcpStream`].
     pub fn tcp_stream(stream: TcpStream) -> Self {
         Self::new(Target::TcpStream(stream))
     }
@@ -216,10 +216,7 @@ impl<'a> Builder<'a> {
     /// This method is only available when either `vsock` or `tokio-vsock` feature is enabled. The
     /// type of `stream` is `vsock::VsockStream` with `vsock` feature and `tokio_vsock::VsockStream`
     /// with `tokio-vsock` feature.
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     pub fn vsock_stream(stream: VsockStream) -> Self {
         Self::new(Target::VsockStream(stream))
     }
@@ -512,13 +509,13 @@ impl<'a> Builder<'a> {
         activate_msg_stream: bool,
     ) -> Result<(Connection, Option<ActiveReceiver<Result<Message>>>)> {
         let executor = Executor::new();
-        #[cfg(not(feature = "tokio"))]
+        #[cfg(feature = "async-io")]
         let internal_executor = self.internal_executor;
         // Box the future as it's large and can cause stack overflow.
         let conn =
             Box::pin(executor.run(self.build_(executor.clone(), activate_msg_stream))).await?;
 
-        #[cfg(not(feature = "tokio"))]
+        #[cfg(feature = "async-io")]
         start_internal_executor(&executor, internal_executor)?;
 
         Ok(conn)
@@ -691,23 +688,20 @@ impl<'a> Builder<'a> {
             Target::TcpStream(stream) => Async::new(stream)?.into(),
             #[cfg(feature = "tokio")]
             Target::TcpStream(stream) => stream.into(),
-            #[cfg(all(feature = "vsock", not(feature = "tokio")))]
+            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
             Target::VsockStream(stream) => Async::new(stream)?.into(),
             #[cfg(feature = "tokio-vsock")]
             Target::VsockStream(stream) => stream.into(),
             Target::Address(address) => {
                 guid = address.guid().map(|g| g.to_owned().into());
                 match address.connect().await? {
-                    #[cfg(any(unix, not(feature = "tokio")))]
-                    address::transport::Stream::Unix(stream) => stream.into(),
+                    #[cfg(any(unix, feature = "async-io"))]
+                    address::transport::Stream::Unix(split) => split,
                     #[cfg(unix)]
-                    address::transport::Stream::Unixexec(stream) => stream.into(),
-                    address::transport::Stream::Tcp(stream) => stream.into(),
-                    #[cfg(any(
-                        all(feature = "vsock", not(feature = "tokio")),
-                        feature = "tokio-vsock"
-                    ))]
-                    address::transport::Stream::Vsock(stream) => stream.into(),
+                    address::transport::Stream::Unixexec(split) => split,
+                    address::transport::Stream::Tcp(split) => split,
+                    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+                    address::transport::Stream::Vsock(split) => split,
                 }
             }
             Target::Socket(stream) => stream,
@@ -726,9 +720,10 @@ impl<'a> Builder<'a> {
 ///
 /// Returns a dummy task that keep the executor ticking thread from exiting due to absence of any
 /// tasks until socket reader task kicks in.
-#[cfg(not(feature = "tokio"))]
+#[cfg(feature = "async-io")]
 fn start_internal_executor(executor: &Executor<'static>, internal_executor: bool) -> Result<()> {
-    if internal_executor {
+    // tokio drives its own tasks; only the `async-io` backend needs this driver thread.
+    if internal_executor && executor.needs_internal_driver() {
         let executor = executor.clone();
         std::thread::Builder::new()
             .name("zbus::Connection executor".into())

@@ -301,7 +301,7 @@ mod tests {
             Transport::Ibus(crate::address::transport::Ibus::new()).into(),
         );
 
-        #[cfg(all(feature = "vsock", feature = "p2p", not(feature = "tokio")))]
+        #[cfg(all(any(feature = "vsock", feature = "tokio-vsock"), feature = "p2p"))]
         {
             let guid = crate::Guid::generate();
             assert_eq!(
@@ -404,7 +404,7 @@ mod tests {
             "ibus:"
         );
 
-        #[cfg(all(feature = "vsock", feature = "p2p", not(feature = "tokio")))]
+        #[cfg(all(any(feature = "vsock", feature = "tokio-vsock"), feature = "p2p"))]
         {
             let guid = crate::Guid::generate();
             assert_eq!(

@@ -1735,27 +1735,21 @@ mod p2p_tests {
         )
     }
 
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     #[test]
     #[timeout(15000)]
     fn vsock_connect() {
         let _ = crate::utils::block_on(test_vsock_connect()).unwrap();
     }
 
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     async fn test_vsock_connect() -> Result<(Connection, Connection)> {
         #[cfg(feature = "tokio-vsock")]
         use futures_util::StreamExt;
 
         let guid = Guid::generate();
 
-        #[cfg(all(feature = "vsock", not(feature = "tokio")))]
+        #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
         let listener = vsock::VsockListener::bind_with_cid_port(vsock::VMADDR_CID_LOCAL, u32::MAX)?;
         #[cfg(feature = "tokio-vsock")]
         let listener = tokio_vsock::VsockListener::bind(tokio_vsock::VsockAddr::new(1, u32::MAX))?;
@@ -1764,7 +1758,7 @@ mod p2p_tests {
         let addr = format!("vsock:cid={},port={},guid={guid}", addr.cid(), addr.port());
 
         let server = async {
-            #[cfg(all(feature = "vsock", not(feature = "tokio")))]
+            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
             let server =
                 crate::Task::spawn_blocking(move || listener.incoming().next(), "").await?;
             #[cfg(feature = "tokio-vsock")]
@@ -1784,20 +1778,14 @@ mod p2p_tests {
         futures_util::try_join!(server, client)
     }
 
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     #[test]
     #[timeout(15000)]
     fn vsock_p2p() {
         crate::utils::block_on(test_vsock_p2p()).unwrap();
     }
 
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     async fn test_vsock_p2p() -> Result<()> {
         let (server1, client1) = vsock_p2p_pipe().await?;
         let (server2, client2) = vsock_p2p_pipe().await?;
@@ -1805,7 +1793,7 @@ mod p2p_tests {
         test_p2p(server1, client1, server2, client2).await
     }
 
-    #[cfg(all(feature = "vsock", not(feature = "tokio")))]
+    #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
     async fn vsock_p2p_pipe() -> Result<(Connection, Connection)> {
         let guid = Guid::generate();
 
