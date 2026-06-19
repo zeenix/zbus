@@ -64,3 +64,16 @@ pub(crate) mod timeout;
 // Not unix-specific itself but only used on unix.
 #[cfg(target_family = "unix")]
 pub(crate) mod process;
+
+#[cfg(all(test, feature = "tokio", feature = "async-io"))]
+mod tests {
+    #[test]
+    fn use_tokio_reflects_active_runtime() {
+        assert!(!super::use_tokio(), "no runtime is active here");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        assert!(
+            runtime.block_on(async { super::use_tokio() }),
+            "a tokio runtime is active",
+        );
+    }
+}
