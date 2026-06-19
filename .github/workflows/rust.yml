@@ -113,6 +113,11 @@ jobs:
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --tests -p zbus --no-default-features \
               --features tokio-vsock -- --skip fdpass_systemd
+          # Test tokio and async-io enabled together (additive features): the backend is then
+          # chosen at run time. `vsock` is included as it pulls in `async-io` alongside `tokio`.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
+              -- --skip fdpass_systemd
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc --no-default-features connection::Connection::executor
           # zvariant only with ostree tests (which implicitly enables `gvariant` feature too).
