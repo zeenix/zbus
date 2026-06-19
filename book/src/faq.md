@@ -166,6 +166,15 @@ feature:
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 ```
 
+Disabling `async-io` is recommended but not required. When both features are enabled, zbus picks the
+runtime at run time: it uses tokio when a tokio runtime is driving the current thread, and falls back
+to `async-io` otherwise. This keeps the features additive, so an `async-io`-based application keeps
+working even when another crate in the workspace enables zbus's `tokio` feature.
+
+This run-time selection applies to the async API. The blocking API (`zbus::blocking`) drives its
+connections through its own `block_on`, which uses tokio whenever the `tokio` feature is enabled, so
+those connections always run on tokio when that feature is on.
+
 **Note**: On Windows, the `async-io` feature is currently required for UNIX domain socket support,
 see [the corresponding tokio issue on GitHub][tctiog].
 
