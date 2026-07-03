@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms)]
 
 use std::{
+    collections::HashSet,
     error::Error,
     fs::{File, OpenOptions},
     io::Write,
@@ -13,7 +14,7 @@ use zbus::{
     names::BusName,
     zvariant::ObjectPath,
 };
-use zbus_xml::{Interface, Node};
+use zbus_xml::{Interface, Node, Warning};
 
 use zbus_xmlgen::write_interfaces;
 
@@ -49,7 +50,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         cli::Command::File { path } => {
             let input_src = path.file_name().unwrap().to_string_lossy().to_string();
             let f = File::open(path)?;
-            DBusInfo(Node::from_reader(f)?, None, None, input_src)
+            let (node, warnings) = Node::from_reader_with_warnings(f)?;
+            report_warnings(&warnings);
+            DBusInfo(node, None, None, input_src)
         }
     };
 
@@ -139,11 +142,19 @@ impl DBusInfo<'_> {
             .unwrap()
             .introspect()?;
 
-        Ok(DBusInfo(
-            Node::from_reader(xml.as_bytes())?,
-            Some(service),
-            Some(path),
-            input_src,
-        ))
+        let (node, warnings) = Node::from_reader_with_warnings(xml.as_bytes())?;
+        report_warnings(&warnings);
+
+        Ok(DBusInfo(node, Some(service), Some(path), input_src))
+    }
+}
+
+/// Warn on stderr about ignored, unsupported XML elements, once per element name.
+fn report_warnings(warnings: &[Warning]) {
+    let mut seen = HashSet::new();
+    for warning in warnings {
+        if seen.insert(warning.element()) {
+            eprintln!("Ignoring unsupported element `<{}>`", warning.element());
+        }
     }
 }
