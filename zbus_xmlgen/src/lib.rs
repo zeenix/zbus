@@ -156,6 +156,9 @@ impl GenTrait<'_> {
         let idx = iface.name().rfind('.').unwrap() + 1;
         let name = &iface.name()[idx..];
 
+        if let Some(docstring) = iface.docstring() {
+            write_doc_lines(w, docstring, "")?;
+        }
         write!(w, "#[proxy(interface = \"{}\"", iface.name())?;
         if let Some(service) = self.service {
             write!(w, ", default_service = \"{service}\"")?;
@@ -176,6 +179,7 @@ impl GenTrait<'_> {
             let name = to_identifier(&to_snakecase(m.name().as_str()));
             writeln!(w)?;
             writeln!(w, "    /// {} method", m.name())?;
+            write_member_docs(w, m.docstring(), m.args())?;
             if pascal_case(&name) != m.name().as_str() {
                 writeln!(w, "    #[zbus(name = \"{}\")]", m.name())?;
             }
@@ -190,6 +194,7 @@ impl GenTrait<'_> {
             let name = to_identifier(&to_snakecase(signal.name().as_str()));
             writeln!(w)?;
             writeln!(w, "    /// {} signal", signal.name())?;
+            write_member_docs(w, signal.docstring(), signal.args())?;
             if pascal_case(&name) != signal.name().as_str() {
                 writeln!(w, "    #[zbus(signal, name = \"{}\")]", signal.name())?;
             } else {
@@ -210,6 +215,7 @@ impl GenTrait<'_> {
 
             writeln!(w)?;
             writeln!(w, "    /// {} property", p.name())?;
+            write_member_docs(w, p.docstring(), &[])?;
             if p.access().read() {
                 writeln!(w, "{fn_attribute}")?;
                 let output = to_rust_type(p.ty(), false, false);
@@ -228,6 +234,192 @@ impl GenTrait<'_> {
         }
         writeln!(w, "}}")
     }
+}
+
+/// Write a docstring (from the Telepathy introspection extensions) as rustdoc comment lines.
+///
+/// The content is typically HTML, which rustdoc passes through; only the indentation is
+/// rewritten, as the original one is meaningless after the lines are prefixed with `///`.
+fn write_doc_lines<W: Write>(w: &mut W, docstring: &str, indent: &str) -> std::fmt::Result {
+    for line in doc_markdown(docstring).lines() {
+        if line.is_empty() {
+            writeln!(w, "{indent}///")?;
+        } else {
+            writeln!(w, "{indent}/// {line}")?;
+        }
+    }
+    Ok(())
+}
+
+/// Convert a Telepathy docstring — an HTML fragment — into Markdown for a rustdoc comment.
+///
+/// The docstrings embedded by the Telepathy extensions are HTML (`<p>`, `<em>`, and their own
+/// `<tp:rationale>`, …). Emitting them verbatim would leak the tags into the generated docs, so
+/// they are converted: block-level tags become paragraph breaks (a blank line), `<em>`,
+/// `<strong>` and `<code>` become their Markdown equivalents, any other tag is stripped, entity
+/// references are resolved and insignificant HTML whitespace is collapsed. The result is a
+/// sequence of single-line paragraphs separated by blank lines — so a bare carriage return
+/// cannot survive into a doc comment either.
+fn doc_markdown(docstring: &str) -> String {
+    fn flush(paragraphs: &mut Vec<String>, current: &mut String) {
+        let paragraph = current.split_whitespace().collect::<Vec<_>>().join(" ");
+        current.clear();
+        if !paragraph.is_empty() {
+            paragraphs.push(paragraph);
+        }
+    }
+
+    let mut paragraphs = Vec::new();
+    let mut current = String::new();
+    let mut rest = docstring;
+    while let Some(open) = rest.find('<') {
+        push_text(&mut current, &rest[..open]);
+        rest = &rest[open..];
+
+        // Comments, CDATA sections and processing instructions.
+        if let Some(after) = rest.strip_prefix("<!--") {
+            rest = after.split_once("-->").map_or("", |(_, after)| after);
+            continue;
+        }
+        if let Some(after) = rest.strip_prefix("<![CDATA[") {
+            let (cdata, after) = after.split_once("]]>").unwrap_or((after, ""));
+            current.push_str(cdata); // CDATA content is literal text.
+            rest = after;
+            continue;
+        }
+        if rest.starts_with("<?") {
+            rest = rest.split_once("?>").map_or("", |(_, after)| after);
+            continue;
+        }
+
+        let Some(close) = rest.find('>') else {
+            push_text(&mut current, rest);
+            return finish(paragraphs, current);
+        };
+        let tag = &rest[1..close];
+        rest = &rest[close + 1..];
+
+        let name = tag
+            .trim_start_matches('/')
+            .split([' ', '\t', '\n', '\r', '/'])
+            .next()
+            .unwrap_or("");
+        // Match on the local name, so a namespace prefix (e. g. `tp:`) doesn't matter.
+        match name
+            .rsplit(':')
+            .next()
+            .unwrap_or(name)
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "strong" | "b" => current.push_str("**"),
+            "em" | "i" => current.push('*'),
+            "code" | "tt" => current.push('`'),
+            "p" | "br" | "div" | "blockquote" | "ul" | "ol" | "li" | "dl" | "dt" | "dd" | "pre"
+            | "rationale" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                flush(&mut paragraphs, &mut current)
+            }
+            _ => {} // Strip any other tag.
+        }
+    }
+    push_text(&mut current, rest);
+    finish(paragraphs, current)
+}
+
+/// Join a docstring's paragraphs, flushing any final one.
+fn finish(mut paragraphs: Vec<String>, current: String) -> String {
+    let last = current.split_whitespace().collect::<Vec<_>>().join(" ");
+    if !last.is_empty() {
+        paragraphs.push(last);
+    }
+    paragraphs.join("\n\n")
+}
+
+/// Append `text` to `out`, resolving XML entity references (`&amp;`, `&#65;`, …).
+fn push_text(out: &mut String, text: &str) {
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        rest = &rest[amp..];
+        match rest[1..]
+            .split_once(';')
+            .and_then(|(entity, after)| decode_entity(entity).map(|c| (c, after)))
+        {
+            Some((c, after)) => {
+                out.push(c);
+                rest = after;
+            }
+            // Not a recognized reference: keep the `&` literal.
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+}
+
+/// Resolve an XML entity reference (the part between `&` and `;`).
+fn decode_entity(entity: &str) -> Option<char> {
+    match entity {
+        "amp" => return Some('&'),
+        "lt" => return Some('<'),
+        "gt" => return Some('>'),
+        "quot" => return Some('"'),
+        "apos" => return Some('\''),
+        _ => {}
+    }
+    let code = match entity.strip_prefix('#') {
+        Some(dec_or_hex) => match dec_or_hex.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+            None => dec_or_hex.parse().ok()?,
+        },
+        None => return None,
+    };
+    char::from_u32(code)
+}
+
+/// Write the docstrings of an interface member and of its args, if any, as rustdoc comments.
+fn write_member_docs<W: Write>(
+    w: &mut W,
+    docstring: Option<&str>,
+    args: &[Arg],
+) -> std::fmt::Result {
+    if let Some(docstring) = docstring {
+        writeln!(w, "    ///")?;
+        write_doc_lines(w, docstring, "    ")?;
+    }
+
+    let mut wrote_header = false;
+    for arg in args {
+        let (Some(name), Some(docstring)) = (arg.name(), arg.docstring()) else {
+            continue;
+        };
+        if !wrote_header {
+            writeln!(w, "    ///")?;
+            writeln!(w, "    /// # Arguments")?;
+            writeln!(w, "    ///")?;
+            wrote_header = true;
+        }
+        let markdown = doc_markdown(docstring);
+        let mut lines = markdown.lines();
+        writeln!(
+            w,
+            "    /// * `{}` - {}",
+            to_identifier(name),
+            lines.next().unwrap_or_default()
+        )?;
+        // Indent continuation lines so they stay part of the list item.
+        for line in lines {
+            if line.is_empty() {
+                writeln!(w, "    ///")?;
+            } else {
+                writeln!(w, "    ///   {line}")?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn hide_clippy_lints<W: Write>(write: &mut W, method: &zbus_xml::Method<'_>) -> std::fmt::Result {

@@ -52,3 +52,8 @@ fn struct_return() -> Result<(), Box<dyn Error>> {
 fn property_setters() -> Result<(), Box<dyn Error>> {
     gen_diff!("property_setters.xml", "property_setters.rs")
 }
+
+#[test]
+fn telepathy_docstrings() -> Result<(), Box<dyn Error>> {
+    gen_diff!("telepathy_docstrings.xml", "telepathy_docstrings.rs")
+}

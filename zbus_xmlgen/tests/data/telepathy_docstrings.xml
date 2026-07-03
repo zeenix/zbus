@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Modeled after the MPRIS org.mpris.MediaPlayer2.Playlists interface, which documents
+     itself through the Telepathy D-Bus introspection extensions. -->
+<node name="/com/example/Playlists" xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+  <interface name="com.example.Playlists">
+    <tp:docstring>
+      <p>Provides access to the media player's playlists.</p>
+      <p>
+        Since D-Bus does not directly support enums, or a
+        <strong>maybe</strong> type, they are described in this interface.
+      </p>
+    </tp:docstring>
+
+    <tp:simple-type name="Playlist_Id" type="o" array-name="Playlist_Id_List">
+      <tp:docstring>Unique playlist identifier.</tp:docstring>
+    </tp:simple-type>
+
+    <tp:enum name="Playlist_Ordering" type="s">
+      <tp:enumvalue suffix="Alphabetical" value="Alphabetical">
+        <tp:docstring>Alphabetical ordering by name, ascending.</tp:docstring>
+      </tp:enumvalue>
+      <tp:enumvalue suffix="UserDefined" value="UserDefined">
+        <tp:docstring>A user-defined ordering.</tp:docstring>
+      </tp:enumvalue>
+    </tp:enum>
+
+    <tp:struct name="Playlist" array-name="Playlist_List">
+      <tp:docstring>A data structure describing a playlist.</tp:docstring>
+      <tp:member type="o" tp:type="Playlist_Id" name="Id">
+        <tp:docstring>A unique identifier for the playlist.</tp:docstring>
+      </tp:member>
+      <tp:member type="s" name="Name">
+        <tp:docstring>The name of the playlist, typically given by the user.</tp:docstring>
+      </tp:member>
+      <tp:member type="s" name="Icon">
+        <tp:docstring>The URI of an (optional) icon.</tp:docstring>
+      </tp:member>
+    </tp:struct>
+
+    <method name="ActivatePlaylist">
+      <tp:docstring>
+        <p>Starts playing the given playlist.</p>
+        <p>
+          It is up to the media player whether this completely replaces the
+          current tracklist, or whether it is merely inserted into the
+          tracklist and the first track starts.
+        </p>
+      </tp:docstring>
+      <arg direction="in" name="playlist_id" type="o" tp:type="Playlist_Id">
+        <tp:docstring>The id of the playlist to activate.</tp:docstring>
+      </arg>
+    </method>
+
+    <method name="GetPlaylists">
+      <tp:docstring>Gets a set of playlists.</tp:docstring>
+      <arg direction="in" name="index" type="u">
+        <tp:docstring>The index of the first playlist to be fetched (according to the ordering).</tp:docstring>
+      </arg>
+      <arg direction="in" name="max_count" type="u">
+        <tp:docstring>The maximum number of playlists to fetch.</tp:docstring>
+      </arg>
+      <arg direction="in" name="order" type="s" tp:type="Playlist_Ordering">
+        <tp:docstring>The ordering that should be used.</tp:docstring>
+      </arg>
+      <arg direction="in" name="reverse_order" type="b">
+        <tp:docstring>Whether the order should be reversed.</tp:docstring>
+      </arg>
+      <arg direction="out" name="playlists" type="a(oss)" tp:type="Playlist[]">
+        <tp:docstring>
+          A list of (at most <em>max_count</em>) playlists.
+        </tp:docstring>
+      </arg>
+    </method>
+
+    <signal name="PlaylistChanged">
+      <tp:docstring>
+        <p>Indicates that either the Name or Icon attribute of a
+        playlist has changed.</p>
+        <p>Client implementations should be aware that this signal
+        may not be implemented.</p>
+        <tp:rationale>Without this signal, media players have no way to
+        notify clients of a change in the attributes of a playlist.</tp:rationale>
+      </tp:docstring>
+      <arg name="playlist" type="(oss)" tp:type="Playlist">
+        <tp:docstring>The playlist which details have changed.</tp:docstring>
+      </arg>
+    </signal>
+
+    <property name="Orderings" type="as" tp:type="Playlist_Ordering[]" access="read">
+      <tp:docstring>
+        <p>The available orderings. At least one must be offered.</p>
+        <tp:rationale>
+          Media players may not have access to all the data required for some
+          orderings.
+        </tp:rationale>
+      </tp:docstring>
+    </property>
+
+    <property name="PlaylistCount" type="u" access="read">
+      <tp:docstring>
+        <p>The number of playlists available.</p>
+      </tp:docstring>
+    </property>
+
+    <property name="Undocumented" type="s" access="readwrite"/>
+  </interface>
+</node>

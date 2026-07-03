@@ -16,3 +16,8 @@ mod property_setters {
     use zbus::proxy;
     include!("data/property_setters.rs");
 }
+
+mod telepathy_docstrings {
+    use zbus::proxy;
+    include!("data/telepathy_docstrings.rs");
+}
