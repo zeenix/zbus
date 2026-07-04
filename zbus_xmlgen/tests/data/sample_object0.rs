@@ -29,6 +29,12 @@ pub trait SampleInterface0 {
         foo: i32,
     ) -> zbus::Result<(String, std::collections::HashMap<u32, String>)>;
 
+    /// GetSignature method
+    fn get_signature(
+        &self,
+        challenge: &zbus::zvariant::Signature,
+    ) -> zbus::Result<zbus::zvariant::Signature>;
+
     /// MogrifyMe method
     fn mogrify_me(&self, bar: &(i32, i32, &[&zbus::zvariant::Value<'_>])) -> zbus::Result<()>;
 

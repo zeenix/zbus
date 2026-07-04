@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
     }
 
-    let mut output_target = match args.output.as_deref() {
+    let output_target = match args.output.as_deref() {
         Some("-") => OutputTarget::Stdout,
         Some(path) => {
             let file = OpenOptions::new()
@@ -83,27 +83,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let generator = CodeGenerator::new()
+        .with_node_types(node.telepathy_types())
         .with_service(service.as_ref())
         .with_path(path.as_ref())
         .with_format(true);
-
-    for interface in needed_ifaces {
-        let output = generator.file_code(
-            std::slice::from_ref(&interface),
+    let file_code = |interfaces: &[Interface<'_>]| {
+        generator.file_code(
+            interfaces,
             &fdo_standard_ifaces,
             &input_src,
             env!("CARGO_BIN_NAME"),
             env!("CARGO_PKG_VERSION"),
-        )?;
+        )
+    };
 
-        let interface_name = interface.name();
-        match output_target {
-            OutputTarget::Stdout => println!("{output}"),
-            OutputTarget::SingleFile(ref mut file) => {
-                file.write_all(output.as_bytes())?;
-                println!("Generated code for `{interface_name}`");
-            }
-            OutputTarget::MultipleFiles => {
+    match output_target {
+        OutputTarget::MultipleFiles => {
+            for interface in &needed_ifaces {
+                let output = file_code(std::slice::from_ref(interface))?;
+                let interface_name = interface.name();
                 let filename = interface_name
                     .split('.')
                     .next_back()
@@ -112,7 +110,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 std::fs::write(format!("{}.rs", &filename), output)?;
                 println!("Generated code for `{interface_name}` in {filename}.rs");
             }
-        };
+        }
+        // A single output is one document: all interfaces go into one `file_code` call, so
+        // the doc header and any shared type definitions appear only once.
+        _ if needed_ifaces.is_empty() => (),
+        OutputTarget::Stdout => println!("{}", file_code(&needed_ifaces)?),
+        OutputTarget::SingleFile(mut file) => {
+            file.write_all(file_code(&needed_ifaces)?.as_bytes())?;
+            for interface in &needed_ifaces {
+                println!("Generated code for `{}`", interface.name());
+            }
+        }
     }
 
     Ok(())
@@ -152,12 +160,12 @@ impl DBusInfo<'_> {
     }
 }
 
-/// Warn on stderr about ignored, unsupported XML elements, once per element name.
+/// Warn on stderr about ignored XML content, once per distinct message.
 fn report_warnings(warnings: &[Warning]) {
     let mut seen = HashSet::new();
     for warning in warnings {
-        if seen.insert(warning.element()) {
-            eprintln!("Ignoring unsupported element `<{}>`", warning.element());
+        if seen.insert(warning.message()) {
+            eprintln!("Warning: {}", warning.message());
         }
     }
 }

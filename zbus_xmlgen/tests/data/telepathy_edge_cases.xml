@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Adversarial Telepathy type definitions: everything that cannot become valid Rust must be
+     skipped, with the references falling back to the structural types. -->
+<node name="/com/example/EdgeCases" xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+  <interface name="com.example.EdgeCases">
+    <!-- Two distinct Telepathy names mapping to the same Rust name: the first wins. -->
+    <tp:struct name="Play_List">
+      <tp:member type="s" name="Name"/>
+    </tp:struct>
+    <tp:struct name="PlayList">
+      <tp:member type="u" name="Count"/>
+    </tp:struct>
+
+    <!-- Colliding with the items the proxy macro generates for this interface. -->
+    <tp:struct name="Edge_Cases_Proxy">
+      <tp:member type="s" name="Inner"/>
+    </tp:struct>
+    <tp:struct name="Changed_Args">
+      <tp:member type="s" name="Inner"/>
+    </tp:struct>
+
+    <!-- Enums that cannot be represented: duplicate discriminants, negative or out-of-range
+         values for the representation, colliding variant names, ambiguous string values. -->
+    <tp:enum name="Dup_Value" type="u">
+      <tp:enumvalue suffix="A" value="1"/>
+      <tp:enumvalue suffix="B" value="1"/>
+    </tp:enum>
+    <tp:enum name="Negative" type="u">
+      <tp:enumvalue suffix="MinusOne" value="-1"/>
+    </tp:enum>
+    <tp:enum name="Too_Big" type="y">
+      <tp:enumvalue suffix="Overflow" value="256"/>
+    </tp:enum>
+    <tp:enum name="Dup_Suffix" type="s">
+      <tp:enumvalue suffix="Foo_Bar" value="a"/>
+      <tp:enumvalue suffix="FooBar" value="b"/>
+    </tp:enum>
+    <tp:enum name="Dup_String" type="s">
+      <tp:enumvalue suffix="First" value="same"/>
+      <tp:enumvalue suffix="Second" value="same"/>
+    </tp:enum>
+
+    <!-- Unusual but representable values are normalized (leading + and zeros). -->
+    <tp:enum name="Odd_Values" type="i">
+      <tp:enumvalue suffix="Plus" value="+007"/>
+      <tp:enumvalue suffix="Minus" value="-1"/>
+    </tp:enum>
+
+    <!-- A named enum key would not satisfy the dictionary conversions, so keys are only
+         aliased to simple types; values may use any named type. -->
+    <tp:enum name="Status" type="s">
+      <tp:enumvalue suffix="Ok" value="Ok"/>
+    </tp:enum>
+    <tp:simple-type name="Status_Name" type="s"/>
+    <tp:mapping name="Status_Map">
+      <tp:member type="s" tp:type="Status" name="Key"/>
+      <tp:member type="s" tp:type="Status" name="Value"/>
+    </tp:mapping>
+    <tp:mapping name="Named_Key_Map">
+      <tp:member type="s" tp:type="Status_Name" name="Key"/>
+      <tp:member type="s" name="Value"/>
+    </tp:mapping>
+
+    <method name="Probe">
+      <tp:docstring>A docstring with a carriagereturn in the middle.</tp:docstring>
+      <arg direction="in" name="play_list" type="(s)" tp:type="Play_List"/>
+      <arg direction="in" name="dropped_twin" type="(u)" tp:type="PlayList"/>
+      <arg direction="in" name="dropped_enum" type="u" tp:type="Dup_Value"/>
+      <arg direction="out" name="statuses" type="a{ss}" tp:type="Status_Map"/>
+    </method>
+
+    <property name="OddValues" type="i" tp:type="Odd_Values" access="readwrite"/>
+    <property name="NamedKeys" type="a{ss}" tp:type="Named_Key_Map" access="read"/>
+
+    <signal name="Changed">
+      <arg name="status" type="s" tp:type="Status"/>
+    </signal>
+  </interface>
+</node>

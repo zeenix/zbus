@@ -12,6 +12,7 @@ macro_rules! gen_diff {
         let expected = expected.replace("\r\n", "\n");
         let node = Node::from_reader(input.as_bytes())?;
         let r#gen = CodeGenerator::new()
+            .with_node_types(node.telepathy_types())
             .with_format(true)
             .interface_code(&node.interfaces()[0])?;
 
@@ -55,9 +56,49 @@ fn telepathy_docstrings() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn telepathy_edge_cases() -> Result<(), Box<dyn Error>> {
+    gen_diff!("telepathy_edge_cases.xml", "telepathy_edge_cases.rs")
+}
+
+#[test]
+fn shared_node_types_in_one_file() -> Result<(), Box<dyn Error>> {
+    // Two interfaces referencing the same node-level definition in a single file: the Rust
+    // definition must be generated only once.
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <tp:struct name="Shared_Info">
+                <tp:member type="s" name="Info"/>
+            </tp:struct>
+            <interface name="org.test.iface1">
+                <method name="GetInfo">
+                    <arg direction="out" name="info" type="(s)" tp:type="Shared_Info"/>
+                </method>
+            </interface>
+            <interface name="org.test.iface2">
+                <method name="SetInfo">
+                    <arg direction="in" name="info" type="(s)" tp:type="Shared_Info"/>
+                </method>
+            </interface>
+        </node>
+    "#;
+
+    let node = Node::from_reader(input.as_bytes())?;
+    let code = CodeGenerator::new()
+        .with_node_types(node.telepathy_types())
+        .file_code(node.interfaces(), &[], "test", "test", "test")?;
+
+    assert_eq!(code.matches("pub struct SharedInfo").count(), 1);
+    // Both interfaces still use the shared type.
+    assert!(code.contains("zbus::Result<(SharedInfo,)>"));
+    assert!(code.contains("info: &SharedInfo"));
+
+    Ok(())
+}
+
+#[test]
 #[allow(deprecated)]
 fn deprecated_gen_trait() -> Result<(), Box<dyn Error>> {
-    // The deprecated `GenTrait` still works, matching `CodeGenerator`.
+    // The deprecated `GenTrait` still works, matching `CodeGenerator` sans node-level types.
     let input = include_str!("data/sample_object0.xml");
     let node = Node::from_reader(input.as_bytes())?;
     let interface = &node.interfaces()[0];

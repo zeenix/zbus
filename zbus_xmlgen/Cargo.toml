@@ -38,6 +38,9 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+# For the compile tests of code generated from Telepathy type definitions.
+serde.workspace = true
+serde_repr.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

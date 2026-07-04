@@ -1,5 +1,6 @@
 use snakecase::ascii::to_snakecase;
 use std::{
+    collections::{HashMap, HashSet},
     error::Error,
     fmt::{Display, Formatter, Write},
     process::{Command, Stdio},
@@ -9,7 +10,10 @@ use zbus::{
     names::BusName,
     zvariant::{ObjectPath, Signature},
 };
-use zbus_xml::{Arg, ArgDirection, Interface};
+use zbus_xml::{
+    Arg, ArgDirection, Interface, Property,
+    telepathy::{self, TypeDef},
+};
 
 #[deprecated(since = "5.4.0", note = "use `CodeGenerator::file_code` instead")]
 pub fn write_interfaces(
@@ -42,6 +46,7 @@ fn write_doc_header<W: std::fmt::Write>(
     w: &mut W,
     interfaces: &[Interface<'_>],
     standard_interfaces: &[Interface<'_>],
+    node_types: &[TypeDef],
     input_src: &str,
     cargo_bin_name: &str,
     cargo_bin_version: &str,
@@ -99,6 +104,29 @@ fn write_doc_header<W: std::fmt::Write>(
         )?;
     }
 
+    let emitted_types: Vec<_> = interfaces
+        .iter()
+        .flat_map(|interface| Types::new(interface, node_types).emit)
+        .collect();
+    if !emitted_types.is_empty() {
+        let serde_repr = emitted_types.iter().any(
+            |def| matches!(def, TypeDef::Enum(e) if matches!(enum_repr(e), Some(EnumRepr::Int(_)))),
+        );
+        let crates = if serde_repr {
+            "`serde` and `serde_repr` crates"
+        } else {
+            "`serde` crate"
+        };
+        write!(
+            w,
+            "//!
+             //! This file also contains Rust definitions for the Telepathy type extensions
+             //! (`tp:struct`, `tp:enum`, …) found in the introspection data. They rely on the
+             //! {crates}, which the crate this code is placed in needs to depend on.
+            ",
+        )?;
+    }
+
     write!(
         w,
         "//!
@@ -135,10 +163,14 @@ impl Display for GenTrait<'_> {
 /// Generates Rust code from D-Bus introspection data.
 ///
 /// The generator is configured through the builder-style `with_*` methods; the code is then
-/// produced by [`CodeGenerator::interface_code`] (a proxy trait for one interface) or
+/// produced by [`CodeGenerator::interface_code`] (a proxy trait for one interface, along with
+/// Rust definitions for the [Telepathy type definitions] it carries or references) or
 /// [`CodeGenerator::file_code`] (a complete source file).
+///
+/// [Telepathy type definitions]: zbus_xml::telepathy::TypeDef
 #[derive(Debug, Default, Clone)]
 pub struct CodeGenerator<'i> {
+    node_types: &'i [TypeDef],
     service: Option<&'i BusName<'i>>,
     path: Option<&'i ObjectPath<'i>>,
     format: bool,
@@ -147,9 +179,18 @@ pub struct CodeGenerator<'i> {
 impl<'i> CodeGenerator<'i> {
     /// Create a code generator with the default configuration.
     ///
-    /// No default service or path, no formatting.
+    /// No type definitions in scope, no default service or path, no formatting.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the Telepathy type definitions from the enclosing `<node>`.
+    ///
+    /// The ones an interface references get a Rust definition generated alongside the
+    /// definitions from the interface itself.
+    pub fn with_node_types(mut self, node_types: &'i [TypeDef]) -> Self {
+        self.node_types = node_types;
+        self
     }
 
     /// Set the well-known service name, for the proxies' `default_service`.
@@ -172,6 +213,11 @@ impl<'i> CodeGenerator<'i> {
         self
     }
 
+    /// The Telepathy type definitions from the enclosing `<node>`.
+    pub fn node_types(&self) -> &'i [TypeDef] {
+        self.node_types
+    }
+
     /// The well-known service name, if any.
     pub fn service(&self) -> Option<&'i BusName<'i>> {
         self.service
@@ -187,16 +233,13 @@ impl<'i> CodeGenerator<'i> {
         self.format
     }
 
-    /// Generate the code for `interface`: a proxy trait.
+    /// Generate the code for `interface`: a proxy trait, preceded by Rust definitions for the
+    /// Telepathy type definitions it carries or references.
     pub fn interface_code(&self, interface: &Interface<'_>) -> Result<String, std::fmt::Error> {
         let mut code = String::new();
-        self.write_interface(&mut code, interface)?;
+        self.write_interface(&mut code, interface, &mut HashSet::new())?;
 
-        Ok(if self.format {
-            format_generated_code(&code).unwrap_or(code)
-        } else {
-            code
-        })
+        Ok(format_if(self.format, code))
     }
 
     /// Generate a complete source file: a doc header followed by the code for `interfaces`.
@@ -217,24 +260,32 @@ impl<'i> CodeGenerator<'i> {
             &mut code,
             interfaces,
             standard_interfaces,
+            self.node_types,
             input_src,
             cargo_bin_name,
             cargo_bin_version,
         )?;
+        // Interfaces in one file may reference the same node-level type definitions; each
+        // Rust definition is written only once.
+        let mut emitted = HashSet::new();
         for interface in interfaces {
-            self.write_interface(&mut code, interface)?;
+            self.write_interface(&mut code, interface, &mut emitted)?;
         }
 
-        Ok(if self.format {
-            format_generated_code(&code).unwrap_or(code)
-        } else {
-            code
-        })
+        Ok(format_if(self.format, code))
     }
 
-    fn write_interface<W: Write>(&self, w: &mut W, iface: &Interface<'_>) -> std::fmt::Result {
+    fn write_interface<W: Write>(
+        &self,
+        w: &mut W,
+        iface: &Interface<'_>,
+        emitted: &mut HashSet<String>,
+    ) -> std::fmt::Result {
         let idx = iface.name().rfind('.').unwrap() + 1;
         let name = &iface.name()[idx..];
+
+        let types = Types::new(iface, self.node_types);
+        write_type_defs(w, &types, emitted)?;
 
         if let Some(docstring) = iface.docstring() {
             write_doc_lines(w, docstring, "")?;
@@ -255,7 +306,7 @@ impl<'i> CodeGenerator<'i> {
         let mut methods = iface.methods().to_vec();
         methods.sort_by(|a, b| a.name().partial_cmp(&b.name()).unwrap());
         for m in &methods {
-            let (inputs, output) = inputs_output_from_args(m.args());
+            let (inputs, output) = inputs_output_from_args(m.args(), &types);
             let name = to_identifier(&to_snakecase(m.name().as_str()));
             writeln!(w)?;
             writeln!(w, "    /// {} method", m.name())?;
@@ -263,14 +314,14 @@ impl<'i> CodeGenerator<'i> {
             if pascal_case(&name) != m.name().as_str() {
                 writeln!(w, "    #[zbus(name = \"{}\")]", m.name())?;
             }
-            hide_clippy_lints(w, m)?;
+            hide_clippy_lints(w, m, &types)?;
             writeln!(w, "    fn {name}({inputs}){output};")?;
         }
 
         let mut signals = iface.signals().to_vec();
         signals.sort_by(|a, b| a.name().partial_cmp(&b.name()).unwrap());
         for signal in &signals {
-            let args = parse_signal_args(signal.args());
+            let args = parse_signal_args(signal.args(), &types);
             let name = to_identifier(&to_snakecase(signal.name().as_str()));
             writeln!(w)?;
             writeln!(w, "    /// {} signal", signal.name())?;
@@ -296,16 +347,23 @@ impl<'i> CodeGenerator<'i> {
             writeln!(w)?;
             writeln!(w, "    /// {} property", p.name())?;
             write_member_docs(w, p.docstring(), &[])?;
+            // Named types satisfy both directions of the property value conversions, owned.
+            let named = types.resolve(p.tp_type(), p.ty(), false);
             if p.access().read() {
                 writeln!(w, "{fn_attribute}")?;
-                let output = to_rust_type(p.ty(), false, false);
-                hide_clippy_type_complexity_lint(w, p.ty())?;
+                let output = match &named {
+                    Some(named) => named.clone(),
+                    None => {
+                        hide_clippy_type_complexity_lint(w, p.ty())?;
+                        to_rust_type(p.ty(), false, false)
+                    }
+                };
                 writeln!(w, "    fn {name}(&self) -> zbus::Result<{output}>;",)?;
             }
 
             if p.access().write() {
                 writeln!(w, "{fn_attribute}")?;
-                let input = to_property_setter_type(p.ty());
+                let input = named.unwrap_or_else(|| to_property_setter_type(p.ty()));
                 writeln!(
                     w,
                     "    fn set_{name}(&self, value: {input}) -> zbus::Result<()>;",
@@ -502,7 +560,444 @@ fn write_member_docs<W: Write>(
     Ok(())
 }
 
-fn hide_clippy_lints<W: Write>(write: &mut W, method: &zbus_xml::Method<'_>) -> std::fmt::Result {
+/// The Telepathy type definitions in scope for an interface.
+struct Types<'i> {
+    /// The definitions whose Rust definition is generated, by their Telepathy name.
+    ///
+    /// Only these are used when resolving `tp:type` references; anything else falls back to
+    /// the structural Rust type.
+    generated: HashMap<&'i str, &'i TypeDef>,
+    /// The same definitions in emission order (the interface's own first, then the
+    /// referenced node-level ones).
+    emit: Vec<&'i TypeDef>,
+}
+
+impl<'i> Types<'i> {
+    fn new(interface: &'i Interface<'i>, node_types: &'i [TypeDef]) -> Self {
+        // All definitions in scope, the interface's own shadowing same-named node-level ones.
+        let mut by_name = HashMap::new();
+        for def in node_types.iter().chain(interface.telepathy_types()) {
+            by_name.insert(def.name(), def);
+        }
+
+        // The names the interface references through `tp:type`, transitively through other
+        // definitions' members.
+        let mut referenced = HashSet::new();
+        let mut pending: Vec<&str> = interface
+            .methods()
+            .iter()
+            .flat_map(|m| m.args())
+            .chain(interface.signals().iter().flat_map(|s| s.args()))
+            .filter_map(Arg::tp_type)
+            .chain(interface.properties().iter().filter_map(Property::tp_type))
+            .collect();
+        for def in interface.telepathy_types() {
+            member_references(def, &mut pending);
+        }
+        while let Some(reference) = pending.pop() {
+            let (name, _) = strip_arrays(reference);
+            if !referenced.insert(name) {
+                continue;
+            }
+            if let Some(def) = by_name.get(name) {
+                member_references(def, &mut pending);
+            }
+        }
+
+        // Each Rust type name is only generated once. Names that clash with the items the
+        // `proxy` macro will emit for this interface are off-limits from the start; the
+        // remaining conflicts (distinct Telepathy names mapping to one Rust name) are won by
+        // the first taker, in priority order: the interface's own definitions, then the
+        // referenced node-level ones. Losers are not generated, so references to them fall
+        // back to the structural type.
+        let idx = interface.name().rfind('.').unwrap() + 1;
+        let trait_name = &interface.name()[idx..];
+        let mut taken: HashSet<String> = ["Proxy", "ProxyBlocking"]
+            .iter()
+            .map(|suffix| format!("{trait_name}{suffix}"))
+            .chain(interface.signals().iter().flat_map(|signal| {
+                let signal = pascal_case(signal.name().as_str());
+                [
+                    signal.clone(),
+                    format!("{signal}Args"),
+                    format!("{signal}Stream"),
+                ]
+            }))
+            .collect();
+
+        let mut generated = HashMap::new();
+        let mut emit = Vec::new();
+        let node_defs = node_types
+            .iter()
+            .filter(|def| referenced.contains(def.name()));
+        for def in interface.telepathy_types().iter().chain(node_defs) {
+            if generatable(def)
+                && !generated.contains_key(def.name())
+                && taken.insert(type_name(def.name()))
+            {
+                generated.insert(def.name(), def);
+                emit.push(def);
+            }
+        }
+
+        Self { generated, emit }
+    }
+
+    /// Resolve a `tp:type` reference against `signature` into a generated Rust type.
+    ///
+    /// Returns `None` — leaving the caller to fall back to the structural Rust type — when
+    /// there is no reference, it doesn't name a generated definition, or `signature` doesn't
+    /// match the definition. `input` selects the borrowed form used for method inputs.
+    fn resolve(
+        &self,
+        reference: Option<&str>,
+        signature: &Signature,
+        input: bool,
+    ) -> Option<String> {
+        let (name, arrays) = strip_arrays(reference?);
+        let def = *self.generated.get(name)?;
+
+        let mut signature = signature;
+        for _ in 0..arrays {
+            match signature {
+                Signature::Array(child) => signature = child.signature(),
+                _ => return None,
+            }
+        }
+        if *signature != def.signature() {
+            return None;
+        }
+
+        let base = type_name(def.name());
+        if !input {
+            return Some((0..arrays).fold(base, |ty, _| format!("Vec<{ty}>")));
+        }
+        Some(if arrays > 0 {
+            let inner = (0..arrays - 1).fold(base, |ty, _| format!("Vec<{ty}>"));
+            format!("&[{inner}]")
+        } else if passed_by_value(def) {
+            base
+        } else {
+            format!("&{base}")
+        })
+    }
+
+    /// Like [`Types::resolve`], but only for names given to plain D-Bus types.
+    ///
+    /// Dictionary keys must remain basic types on the Rust side too — a struct or enum key
+    /// would not satisfy the dictionary conversions — so only [`telepathy::SimpleType`]
+    /// aliases are resolved for them.
+    fn resolve_simple(&self, reference: Option<&str>, signature: &Signature) -> Option<String> {
+        let (name, _) = strip_arrays(reference?);
+        match self.generated.get(name) {
+            Some(TypeDef::SimpleType(_)) => self.resolve(reference, signature, false),
+            _ => None,
+        }
+    }
+}
+
+/// Push the `tp:type` references of `def`'s members, if any, onto `pending`.
+fn member_references<'i>(def: &'i TypeDef, pending: &mut Vec<&'i str>) {
+    match def {
+        TypeDef::Struct(s) => pending.extend(s.members().iter().filter_map(|m| m.tp_type())),
+        TypeDef::Mapping(m) => {
+            pending.extend([m.key(), m.value()].into_iter().filter_map(|m| m.tp_type()))
+        }
+        _ => (),
+    }
+}
+
+/// Split a `tp:type` reference into the type name and its number of `[]` suffixes.
+fn strip_arrays(reference: &str) -> (&str, usize) {
+    let mut name = reference;
+    let mut arrays = 0;
+    while let Some(stripped) = name.strip_suffix("[]") {
+        name = stripped;
+        arrays += 1;
+    }
+    (name, arrays)
+}
+
+/// Whether a Rust definition can be generated for `def`.
+fn generatable(def: &TypeDef) -> bool {
+    if !is_valid_ident(&type_name(def.name())) {
+        return false;
+    }
+    match def {
+        TypeDef::SimpleType(_) | TypeDef::Mapping(_) => true,
+        TypeDef::Enum(e) => {
+            let Some(repr) = enum_repr(e) else {
+                return false;
+            };
+            // Variant names must be distinct identifiers (e. g. `Foo_Bar` and `FooBar` map
+            // to the same name), and the values must be distinct too: on the Rust side
+            // duplicate discriminants don't compile, and for string enums a duplicate makes
+            // the wire mapping ambiguous.
+            let mut names = HashSet::new();
+            let mut values = HashSet::new();
+            !e.values().is_empty()
+                && e.values().iter().all(|v| {
+                    let name = variant_name(v);
+                    is_valid_ident(&name)
+                        && names.insert(name)
+                        && match repr {
+                            EnumRepr::Int(int) => match enum_value(int, v.value()) {
+                                Some(value) => values.insert(value.to_string()),
+                                None => false,
+                            },
+                            EnumRepr::Str => values.insert(v.value().to_owned()),
+                        }
+                })
+        }
+        TypeDef::Struct(s) => {
+            let mut names = HashSet::new();
+            s.members().iter().all(|m| {
+                let name = field_name(m.name());
+                is_valid_ident(&name) && names.insert(name)
+            })
+        }
+    }
+}
+
+/// Parse the value of a numeric enum, checking that it fits the representation.
+fn enum_value(repr: &str, value: &str) -> Option<i128> {
+    let (min, max) = match repr {
+        "u8" => (0, u8::MAX as i128),
+        "i16" => (i16::MIN as i128, i16::MAX as i128),
+        "u16" => (0, u16::MAX as i128),
+        "i32" => (i32::MIN as i128, i32::MAX as i128),
+        "u32" => (0, u32::MAX as i128),
+        "i64" => (i64::MIN as i128, i64::MAX as i128),
+        "u64" => (0, u64::MAX as i128),
+        _ => return None,
+    };
+
+    value
+        .parse()
+        .ok()
+        .filter(|value| (min..=max).contains(value))
+}
+
+/// How a generated enum is represented on the wire.
+enum EnumRepr {
+    /// As an integer type, e. g. `u32`.
+    Int(&'static str),
+    /// As a string.
+    Str,
+}
+
+fn enum_repr(e: &telepathy::Enum) -> Option<EnumRepr> {
+    match e.ty().inner() {
+        Signature::U8 => Some(EnumRepr::Int("u8")),
+        Signature::I16 => Some(EnumRepr::Int("i16")),
+        Signature::U16 => Some(EnumRepr::Int("u16")),
+        Signature::I32 => Some(EnumRepr::Int("i32")),
+        Signature::U32 => Some(EnumRepr::Int("u32")),
+        Signature::I64 => Some(EnumRepr::Int("i64")),
+        Signature::U64 => Some(EnumRepr::Int("u64")),
+        Signature::Str => Some(EnumRepr::Str),
+        _ => None,
+    }
+}
+
+/// Whether values of the generated type are cheap enough to pass inputs by value.
+fn passed_by_value(def: &TypeDef) -> bool {
+    match def {
+        // Generated enums are `Copy`.
+        TypeDef::Enum(_) => true,
+        TypeDef::SimpleType(t) => matches!(
+            t.ty().inner(),
+            Signature::U8
+                | Signature::Bool
+                | Signature::I16
+                | Signature::U16
+                | Signature::I32
+                | Signature::U32
+                | Signature::I64
+                | Signature::U64
+                | Signature::F64
+        ),
+        _ => false,
+    }
+}
+
+/// The Rust name for a Telepathy type, e. g. `Playlist_Id` -> `PlaylistId`.
+fn type_name(name: &str) -> String {
+    to_identifier(&pascal_case(name))
+}
+
+/// The Rust name for an enum variant, from the value's `suffix`.
+fn variant_name(value: &telepathy::EnumValue) -> String {
+    to_identifier(&pascal_case(value.suffix()))
+}
+
+/// The Rust name for a struct field, from the member's `name`.
+fn field_name(name: &str) -> String {
+    to_identifier(&to_snakecase(name))
+}
+
+fn is_valid_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Format `code` through rustfmt if `format` is set, falling back to it unformatted.
+fn format_if(format: bool, code: String) -> String {
+    if !format {
+        return code;
+    }
+    match format_generated_code(&code) {
+        Ok(formatted) => formatted,
+        Err(e) => {
+            eprintln!("Failed to format generated code: {e}");
+            code
+        }
+    }
+}
+
+/// Write the Rust definitions for the type definitions in scope.
+///
+/// Definitions whose Rust name is already in `emitted` — node-level definitions shared with
+/// an earlier interface in the same file — are skipped.
+fn write_type_defs<W: Write>(
+    w: &mut W,
+    types: &Types<'_>,
+    emitted: &mut HashSet<String>,
+) -> std::fmt::Result {
+    for def in &types.emit {
+        if !emitted.insert(type_name(def.name())) {
+            continue;
+        }
+        match def {
+            TypeDef::SimpleType(t) => write_simple_type(w, t)?,
+            TypeDef::Enum(e) => write_enum(w, e)?,
+            TypeDef::Struct(s) => write_struct(w, s, types)?,
+            TypeDef::Mapping(m) => write_mapping(w, m, types)?,
+        }
+        writeln!(w)?;
+    }
+    Ok(())
+}
+
+fn write_simple_type<W: Write>(w: &mut W, t: &telepathy::SimpleType) -> std::fmt::Result {
+    if let Some(docstring) = t.docstring() {
+        write_doc_lines(w, docstring, "")?;
+    }
+    writeln!(
+        w,
+        "pub type {} = {};",
+        type_name(t.name()),
+        to_rust_type(t.ty(), false, false)
+    )
+}
+
+fn write_enum<W: Write>(w: &mut W, e: &telepathy::Enum) -> std::fmt::Result {
+    if let Some(docstring) = e.docstring() {
+        write_doc_lines(w, docstring, "")?;
+    }
+    let repr = enum_repr(e).expect("only generatable enums are emitted");
+    match repr {
+        EnumRepr::Int(int) => {
+            writeln!(
+                w,
+                "#[derive(Debug, Clone, Copy, PartialEq, Eq, \
+                 serde_repr::Deserialize_repr, serde_repr::Serialize_repr, \
+                 zbus::zvariant::Type, zbus::zvariant::Value, zbus::zvariant::OwnedValue)]"
+            )?;
+            writeln!(w, "#[zvariant(crate = \"zbus::zvariant\")]")?;
+            writeln!(w, "#[repr({int})]")?;
+            writeln!(w, "pub enum {} {{", type_name(e.name()))?;
+            for value in e.values() {
+                if let Some(docstring) = value.docstring() {
+                    write_doc_lines(w, docstring, "    ")?;
+                }
+                // Writing the parsed value normalizes forms Rust does not accept verbatim,
+                // like a leading `+`.
+                let discriminant =
+                    enum_value(int, value.value()).expect("only generatable enums are emitted");
+                writeln!(w, "    {} = {discriminant},", variant_name(value))?;
+            }
+        }
+        EnumRepr::Str => {
+            writeln!(
+                w,
+                "#[derive(Debug, Clone, Copy, PartialEq, Eq, \
+                 serde::Serialize, serde::Deserialize, \
+                 zbus::zvariant::Type, zbus::zvariant::Value, zbus::zvariant::OwnedValue)]"
+            )?;
+            writeln!(
+                w,
+                "#[zvariant(signature = \"s\", crate = \"zbus::zvariant\")]"
+            )?;
+            writeln!(w, "pub enum {} {{", type_name(e.name()))?;
+            for value in e.values() {
+                if let Some(docstring) = value.docstring() {
+                    write_doc_lines(w, docstring, "    ")?;
+                }
+                let variant = variant_name(value);
+                if variant != value.value() {
+                    writeln!(w, "    #[serde(rename = {0:?})]", value.value())?;
+                    writeln!(w, "    #[zvariant(rename = {0:?})]", value.value())?;
+                }
+                writeln!(w, "    {variant},")?;
+            }
+        }
+    }
+    writeln!(w, "}}")
+}
+
+fn write_struct<W: Write>(w: &mut W, s: &telepathy::Struct, types: &Types<'_>) -> std::fmt::Result {
+    if let Some(docstring) = s.docstring() {
+        write_doc_lines(w, docstring, "")?;
+    }
+    writeln!(
+        w,
+        "#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, \
+         zbus::zvariant::Type, zbus::zvariant::Value, zbus::zvariant::OwnedValue)]"
+    )?;
+    writeln!(w, "#[zvariant(crate = \"zbus::zvariant\")]")?;
+    writeln!(w, "pub struct {} {{", type_name(s.name()))?;
+    for member in s.members() {
+        if let Some(docstring) = member.docstring() {
+            write_doc_lines(w, docstring, "    ")?;
+        }
+        let ty = types
+            .resolve(member.tp_type(), member.ty(), false)
+            .unwrap_or_else(|| to_rust_type(member.ty(), false, false));
+        writeln!(w, "    pub {}: {},", field_name(member.name()), ty)?;
+    }
+    writeln!(w, "}}")
+}
+
+fn write_mapping<W: Write>(
+    w: &mut W,
+    m: &telepathy::Mapping,
+    types: &Types<'_>,
+) -> std::fmt::Result {
+    if let Some(docstring) = m.docstring() {
+        write_doc_lines(w, docstring, "")?;
+    }
+    let key = types
+        .resolve_simple(m.key().tp_type(), m.key().ty())
+        .unwrap_or_else(|| to_rust_type(m.key().ty(), false, false));
+    let value = types
+        .resolve(m.value().tp_type(), m.value().ty(), false)
+        .unwrap_or_else(|| to_rust_type(m.value().ty(), false, false));
+    writeln!(
+        w,
+        "pub type {} = std::collections::HashMap<{key}, {value}>;",
+        type_name(m.name()),
+    )
+}
+
+fn hide_clippy_lints<W: Write>(
+    write: &mut W,
+    method: &zbus_xml::Method<'_>,
+    types: &Types<'_>,
+) -> std::fmt::Result {
     // check for <https://rust-lang.github.io/rust-clippy/master/index.html#/too_many_arguments>
     // triggers when a functions has at least 7 paramters
     if method.args().len() >= 7 {
@@ -511,6 +1006,10 @@ fn hide_clippy_lints<W: Write>(write: &mut W, method: &zbus_xml::Method<'_>) -> 
 
     // check for <https://rust-lang.github.io/rust-clippy/master/index.html#/type_complexity>
     for arg in method.args() {
+        // A named type keeps the written-out type simple, no matter the signature.
+        if types.resolve(arg.tp_type(), arg.ty(), false).is_some() {
+            continue;
+        }
         let signature = arg.ty();
         hide_clippy_type_complexity_lint(write, signature)?;
     }
@@ -529,7 +1028,7 @@ fn hide_clippy_type_complexity_lint<W: Write>(
     Ok(())
 }
 
-fn inputs_output_from_args(args: &[Arg]) -> (String, String) {
+fn inputs_output_from_args(args: &[Arg], types: &Types<'_>) -> (String, String) {
     let mut inputs = vec!["&self".to_string()];
     let mut output: Vec<OutputArg> = vec![];
     let mut n = 0;
@@ -541,7 +1040,9 @@ fn inputs_output_from_args(args: &[Arg]) -> (String, String) {
     for a in args {
         match a.direction() {
             None | Some(ArgDirection::In) => {
-                let ty = to_rust_type(a.ty(), true, true);
+                let ty = types
+                    .resolve(a.tp_type(), a.ty(), true)
+                    .unwrap_or_else(|| to_rust_type(a.ty(), true, true));
                 let arg = if let Some(name) = a.name() {
                     to_identifier(name)
                 } else {
@@ -550,7 +1051,9 @@ fn inputs_output_from_args(args: &[Arg]) -> (String, String) {
                 inputs.push(format!("{arg}: {ty}"));
             }
             Some(ArgDirection::Out) => {
-                let ty = to_rust_type(a.ty(), false, false);
+                let ty = types
+                    .resolve(a.tp_type(), a.ty(), false)
+                    .unwrap_or_else(|| to_rust_type(a.ty(), false, false));
                 let is_struct = matches!(a.ty().inner(), Signature::Structure(_));
                 output.push(OutputArg { ty, is_struct });
             }
@@ -593,7 +1096,7 @@ struct OutputArg {
     is_struct: bool,
 }
 
-fn parse_signal_args(args: &[Arg]) -> String {
+fn parse_signal_args(args: &[Arg], types: &Types<'_>) -> String {
     let mut inputs = vec!["&self".to_string()];
     let mut n = 0;
     let mut gen_name = || {
@@ -602,7 +1105,10 @@ fn parse_signal_args(args: &[Arg]) -> String {
     };
 
     for a in args {
-        let ty = to_rust_type(a.ty(), true, false);
+        // Signal args are deserialized, so a named type is used in its owned form.
+        let ty = types
+            .resolve(a.tp_type(), a.ty(), false)
+            .unwrap_or_else(|| to_rust_type(a.ty(), true, false));
         let arg = if let Some(name) = a.name() {
             to_identifier(name)
         } else {
@@ -642,14 +1148,10 @@ fn to_rust_type(ty: &Signature, input: bool, as_ref: bool) -> String {
                 }
             }
             Signature::ObjectPath => "zbus::zvariant::OwnedObjectPath".into(),
-            Signature::Signature if input => {
-                if as_ref {
-                    "&zbus::zvariant::Signature<'_>".into()
-                } else {
-                    "zbus::zvariant::Signature<'_>".into()
-                }
-            }
-            Signature::Signature => "zbus::zvariant::OwnedSignature".into(),
+            // `zvariant::Signature` has been lifetime-less (with no `Owned` counterpart)
+            // since zvariant 5.
+            Signature::Signature if input && as_ref => "&zbus::zvariant::Signature".into(),
+            Signature::Signature => "zbus::zvariant::Signature".into(),
             Signature::Variant if input => {
                 if as_ref {
                     "&zbus::zvariant::Value<'_>".into()
