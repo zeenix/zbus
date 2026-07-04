@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 use std::{env, error::Error, io::Write, path::Path};
 
 use zbus_xml::Node;
-use zbus_xmlgen::GenTrait;
+use zbus_xmlgen::CodeGenerator;
 
 macro_rules! gen_diff {
     ($infile:literal, $outfile:literal) => {{
@@ -11,13 +11,9 @@ macro_rules! gen_diff {
         #[cfg(windows)]
         let expected = expected.replace("\r\n", "\n");
         let node = Node::from_reader(input.as_bytes())?;
-        let r#gen = GenTrait {
-            interface: &node.interfaces()[0],
-            path: None,
-            service: None,
-            format: true,
-        }
-        .to_string();
+        let r#gen = CodeGenerator::new()
+            .with_format(true)
+            .interface_code(&node.interfaces()[0])?;
 
         if env::var("TEST_OVERWRITE").is_ok() {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -56,4 +52,27 @@ fn property_setters() -> Result<(), Box<dyn Error>> {
 #[test]
 fn telepathy_docstrings() -> Result<(), Box<dyn Error>> {
     gen_diff!("telepathy_docstrings.xml", "telepathy_docstrings.rs")
+}
+
+#[test]
+#[allow(deprecated)]
+fn deprecated_gen_trait() -> Result<(), Box<dyn Error>> {
+    // The deprecated `GenTrait` still works, matching `CodeGenerator`.
+    let input = include_str!("data/sample_object0.xml");
+    let node = Node::from_reader(input.as_bytes())?;
+    let interface = &node.interfaces()[0];
+
+    let gen_trait = zbus_xmlgen::GenTrait {
+        interface,
+        path: None,
+        service: None,
+        format: true,
+    }
+    .to_string();
+    let code = CodeGenerator::new()
+        .with_format(true)
+        .interface_code(interface)?;
+    assert_eq!(gen_trait, code);
+
+    Ok(())
 }

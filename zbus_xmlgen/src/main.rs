@@ -16,7 +16,7 @@ use zbus::{
 };
 use zbus_xml::{Interface, Node, Warning};
 
-use zbus_xmlgen::write_interfaces;
+use zbus_xmlgen::CodeGenerator;
 
 mod cli;
 
@@ -82,12 +82,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => OutputTarget::MultipleFiles,
     };
 
+    let generator = CodeGenerator::new()
+        .with_service(service.as_ref())
+        .with_path(path.as_ref())
+        .with_format(true);
+
     for interface in needed_ifaces {
-        let output = write_interfaces(
+        let output = generator.file_code(
             std::slice::from_ref(&interface),
             &fdo_standard_ifaces,
-            service.clone(),
-            path.clone(),
             &input_src,
             env!("CARGO_BIN_NAME"),
             env!("CARGO_PKG_VERSION"),

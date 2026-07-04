@@ -11,6 +11,7 @@ use zbus::{
 };
 use zbus_xml::{Arg, ArgDirection, Interface};
 
+#[deprecated(since = "5.4.0", note = "use `CodeGenerator::file_code` instead")]
 pub fn write_interfaces(
     interfaces: &[Interface<'_>],
     standard_interfaces: &[Interface<'_>],
@@ -20,37 +21,19 @@ pub fn write_interfaces(
     cargo_bin_name: &str,
     cargo_bin_version: &str,
 ) -> Result<String, Box<dyn Error + 'static>> {
-    let mut unformatted = String::new();
+    let code = CodeGenerator::new()
+        .with_service(service.as_ref())
+        .with_path(path.as_ref())
+        .with_format(true)
+        .file_code(
+            interfaces,
+            standard_interfaces,
+            input_src,
+            cargo_bin_name,
+            cargo_bin_version,
+        )?;
 
-    write_doc_header(
-        &mut unformatted,
-        interfaces,
-        standard_interfaces,
-        input_src,
-        cargo_bin_name,
-        cargo_bin_version,
-    )?;
-
-    for interface in interfaces {
-        let r#gen = GenTrait {
-            interface,
-            service: service.as_ref(),
-            path: path.as_ref(),
-            format: false,
-        };
-
-        write!(unformatted, "{gen}")?;
-    }
-
-    let formatted = match format_generated_code(&unformatted) {
-        Ok(formatted) => formatted,
-        Err(e) => {
-            eprintln!("Failed to format generated code: {e}");
-            unformatted
-        }
-    };
-
-    Ok(formatted)
+    Ok(code)
 }
 
 /// Write a doc header, listing the included Interfaces and how the
@@ -128,6 +111,7 @@ fn write_doc_header<W: std::fmt::Write>(
     Ok(())
 }
 
+#[deprecated(since = "5.4.0", note = "use `CodeGenerator` instead")]
 pub struct GenTrait<'i> {
     pub interface: &'i Interface<'i>,
     pub service: Option<&'i BusName<'i>>,
@@ -135,24 +119,120 @@ pub struct GenTrait<'i> {
     pub format: bool,
 }
 
+#[allow(deprecated)]
 impl Display for GenTrait<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.format {
-            let mut unformatted = String::new();
-            self.write_interface(&mut unformatted)?;
+        let code = CodeGenerator::new()
+            .with_service(self.service)
+            .with_path(self.path)
+            .with_format(self.format)
+            .interface_code(self.interface)?;
 
-            let formatted = format_generated_code(&unformatted).unwrap_or(unformatted);
-
-            write!(f, "{formatted}")
-        } else {
-            self.write_interface(f)
-        }
+        write!(f, "{code}")
     }
 }
 
-impl GenTrait<'_> {
-    fn write_interface<W: Write>(&self, w: &mut W) -> std::fmt::Result {
-        let iface = self.interface;
+/// Generates Rust code from D-Bus introspection data.
+///
+/// The generator is configured through the builder-style `with_*` methods; the code is then
+/// produced by [`CodeGenerator::interface_code`] (a proxy trait for one interface) or
+/// [`CodeGenerator::file_code`] (a complete source file).
+#[derive(Debug, Default, Clone)]
+pub struct CodeGenerator<'i> {
+    service: Option<&'i BusName<'i>>,
+    path: Option<&'i ObjectPath<'i>>,
+    format: bool,
+}
+
+impl<'i> CodeGenerator<'i> {
+    /// Create a code generator with the default configuration.
+    ///
+    /// No default service or path, no formatting.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the well-known service name, for the proxies' `default_service`.
+    pub fn with_service(mut self, service: Option<&'i BusName<'i>>) -> Self {
+        self.service = service;
+        self
+    }
+
+    /// Set the object path, for the proxies' `default_path`.
+    pub fn with_path(mut self, path: Option<&'i ObjectPath<'i>>) -> Self {
+        self.path = path;
+        self
+    }
+
+    /// Set whether the generated code is passed through `rustfmt`.
+    ///
+    /// If `rustfmt` fails or is not available, the unformatted code is returned instead.
+    pub fn with_format(mut self, format: bool) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// The well-known service name, if any.
+    pub fn service(&self) -> Option<&'i BusName<'i>> {
+        self.service
+    }
+
+    /// The object path, if any.
+    pub fn path(&self) -> Option<&'i ObjectPath<'i>> {
+        self.path
+    }
+
+    /// Whether the generated code is passed through `rustfmt`.
+    pub fn format(&self) -> bool {
+        self.format
+    }
+
+    /// Generate the code for `interface`: a proxy trait.
+    pub fn interface_code(&self, interface: &Interface<'_>) -> Result<String, std::fmt::Error> {
+        let mut code = String::new();
+        self.write_interface(&mut code, interface)?;
+
+        Ok(if self.format {
+            format_generated_code(&code).unwrap_or(code)
+        } else {
+            code
+        })
+    }
+
+    /// Generate a complete source file: a doc header followed by the code for `interfaces`.
+    ///
+    /// `standard_interfaces` are only mentioned in the header, as zbus provides their
+    /// implementation; `input_src`, `cargo_bin_name` and `cargo_bin_version` document where
+    /// the code came from.
+    pub fn file_code(
+        &self,
+        interfaces: &[Interface<'_>],
+        standard_interfaces: &[Interface<'_>],
+        input_src: &str,
+        cargo_bin_name: &str,
+        cargo_bin_version: &str,
+    ) -> Result<String, std::fmt::Error> {
+        let mut code = String::new();
+        write_doc_header(
+            &mut code,
+            interfaces,
+            standard_interfaces,
+            input_src,
+            cargo_bin_name,
+            cargo_bin_version,
+        )?;
+        for interface in interfaces {
+            self.write_interface(&mut code, interface)?;
+        }
+
+        Ok(if self.format {
+            format_generated_code(&code).unwrap_or(code)
+        } else {
+            code
+        })
+    }
+
+    fn write_interface<W: Write>(&self, w: &mut W, iface: &Interface<'_>) -> std::fmt::Result {
         let idx = iface.name().rfind('.').unwrap() + 1;
         let name = &iface.name()[idx..];
 
