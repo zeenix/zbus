@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use zbus_xml::{ArgDirection, Node};
+use zbus_xml::{Arg, ArgDirection, Interface, Node, PropertyAccess};
 use zvariant::Signature;
 
 #[test]
@@ -187,6 +187,394 @@ fn ignores_unknown_elements_and_text() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// The expected shape of an argument: its `name`, signature and `direction`.
+type ArgSpec = (Option<&'static str>, &'static str, Option<ArgDirection>);
+
+const IN: Option<ArgDirection> = Some(ArgDirection::In);
+const OUT: Option<ArgDirection> = Some(ArgDirection::Out);
+/// A signal argument has no direction.
+const NONE: Option<ArgDirection> = None;
+
+/// Look up an interface by name, panicking with a helpful message if it is absent.
+fn interface<'n, 'a>(node: &'n Node<'a>, name: &str) -> &'n Interface<'a> {
+    node.interfaces()
+        .iter()
+        .find(|iface| iface.name() == name)
+        .unwrap_or_else(|| panic!("interface `{name}` not found"))
+}
+
+/// Assert that `args` matches `expected` exactly — count, and every name, signature and
+/// direction.
+fn assert_args(context: &str, args: &[Arg], expected: &[ArgSpec]) {
+    assert_eq!(
+        args.len(),
+        expected.len(),
+        "{context}: expected {} arg(s), got {}",
+        expected.len(),
+        args.len(),
+    );
+    for (i, (arg, &(name, ty, direction))) in args.iter().zip(expected).enumerate() {
+        assert_eq!(arg.name(), name, "{context}: arg {i} name");
+        assert!(
+            arg.ty() == ty,
+            "{context}: arg {i} type: expected `{ty}`, got `{}`",
+            arg.ty().to_string(),
+        );
+        assert_eq!(arg.direction(), direction, "{context}: arg {i} direction");
+    }
+}
+
+/// Assert that `iface`'s methods are exactly `expected` (name and full argument list each), in
+/// no particular order.
+fn assert_methods(iface: &Interface<'_>, expected: &[(&str, &[ArgSpec])]) {
+    assert_eq!(
+        iface.methods().len(),
+        expected.len(),
+        "{}: method count",
+        iface.name(),
+    );
+    for (name, args) in expected {
+        let method = iface
+            .methods()
+            .iter()
+            .find(|m| m.name() == *name)
+            .unwrap_or_else(|| panic!("method `{}.{name}` not found", iface.name()));
+        assert_args(&format!("{}.{name}", iface.name()), method.args(), args);
+    }
+}
+
+/// Assert that `iface`'s signals are exactly `expected` (name and full argument list each).
+fn assert_signals(iface: &Interface<'_>, expected: &[(&str, &[ArgSpec])]) {
+    assert_eq!(
+        iface.signals().len(),
+        expected.len(),
+        "{}: signal count",
+        iface.name(),
+    );
+    for (name, args) in expected {
+        let signal = iface
+            .signals()
+            .iter()
+            .find(|s| s.name() == *name)
+            .unwrap_or_else(|| panic!("signal `{}.{name}` not found", iface.name()));
+        assert_args(&format!("{}.{name}", iface.name()), signal.args(), args);
+    }
+}
+
+/// Assert that `iface`'s properties are exactly `expected` (name, signature and access each).
+fn assert_properties(iface: &Interface<'_>, expected: &[(&str, &str, PropertyAccess)]) {
+    assert_eq!(
+        iface.properties().len(),
+        expected.len(),
+        "{}: property count",
+        iface.name(),
+    );
+    for &(name, ty, access) in expected {
+        let property = iface
+            .properties()
+            .iter()
+            .find(|p| p.name() == name)
+            .unwrap_or_else(|| panic!("property `{}.{name}` not found", iface.name()));
+        assert!(
+            property.ty() == ty,
+            "{}.{name}: type: expected `{ty}`, got `{}`",
+            iface.name(),
+            property.ty().to_string(),
+        );
+        assert_eq!(property.access(), access, "{}.{name}: access", iface.name());
+    }
+}
+
+/// Introspection XML captured verbatim from live services (see `data/real_world/README.md`),
+/// covering the XML flavors produced by sd-bus, libdbus and GDBus.
+const REAL_WORLD_DATA: &[(&str, &str)] = &[
+    (
+        "dbus_daemon",
+        include_str!("data/real_world/dbus_daemon.xml"),
+    ),
+    (
+        "systemd1_manager",
+        include_str!("data/real_world/systemd1_manager.xml"),
+    ),
+    (
+        "systemd1_scope_unit",
+        include_str!("data/real_world/systemd1_scope_unit.xml"),
+    ),
+    (
+        "systemd1_unit_list",
+        include_str!("data/real_world/systemd1_unit_list.xml"),
+    ),
+    ("hostname1", include_str!("data/real_world/hostname1.xml")),
+    ("timedate1", include_str!("data/real_world/timedate1.xml")),
+    ("locale1", include_str!("data/real_world/locale1.xml")),
+    ("login1", include_str!("data/real_world/login1.xml")),
+    ("network1", include_str!("data/real_world/network1.xml")),
+    (
+        "polkit1_authority",
+        include_str!("data/real_world/polkit1_authority.xml"),
+    ),
+    ("packagekit", include_str!("data/real_world/packagekit.xml")),
+    (
+        "dconf_writer",
+        include_str!("data/real_world/dconf_writer.xml"),
+    ),
+];
+
+#[test]
+fn real_world_data() -> Result<(), Box<dyn Error>> {
+    for (name, xml) in REAL_WORLD_DATA {
+        // `h` (file descriptor) signatures are only supported by zvariant on Unix, so documents
+        // containing them (e.g. from systemd-logind) don't parse on other platforms.
+        if cfg!(not(unix)) && xml.contains(r#"type="h""#) {
+            assert!(
+                matches!(Node::try_from(*xml), Err(zbus_xml::Error::Variant(_))),
+                "{name}: expected fd signatures to be rejected on non-Unix"
+            );
+            continue;
+        }
+
+        let node = Node::try_from(*xml).map_err(|e| format!("{name}: {e}"))?;
+        let node_r = Node::from_reader(xml.as_bytes()).map_err(|e| format!("{name}: {e}"))?;
+        assert_eq!(node, node_r, "{name}: reader and str parses differ");
+
+        // Every service implements the standard Introspectable interface.
+        assert!(
+            node.interfaces()
+                .iter()
+                .any(|i| i.name() == "org.freedesktop.DBus.Introspectable"),
+            "{name}: missing org.freedesktop.DBus.Introspectable"
+        );
+
+        // The document survives a write/parse round-trip unchanged.
+        let mut writer = Vec::new();
+        node.to_writer(&mut writer)?;
+        let written = String::from_utf8(writer)?;
+        let reparsed = Node::try_from(written.as_str()).map_err(|e| format!("{name}: {e}"))?;
+        assert_eq!(node, reparsed, "{name}: round-trip changed the tree");
+    }
+
+    Ok(())
+}
+
+#[test]
+fn real_world_dbus_daemon() -> Result<(), Box<dyn Error>> {
+    // The dbus-daemon document is small and stable, so check its main interface exhaustively:
+    // every method, signal and property, with every argument's name, signature and direction.
+    let node = Node::try_from(include_str!("data/real_world/dbus_daemon.xml"))?;
+    let dbus = interface(&node, "org.freedesktop.DBus");
+
+    assert_methods(
+        dbus,
+        &[
+            ("Hello", &[(None, "s", OUT)]),
+            (
+                "RequestName",
+                &[(None, "s", IN), (None, "u", IN), (None, "u", OUT)],
+            ),
+            ("ReleaseName", &[(None, "s", IN), (None, "u", OUT)]),
+            (
+                "StartServiceByName",
+                &[(None, "s", IN), (None, "u", IN), (None, "u", OUT)],
+            ),
+            ("UpdateActivationEnvironment", &[(None, "a{ss}", IN)]),
+            ("NameHasOwner", &[(None, "s", IN), (None, "b", OUT)]),
+            ("ListNames", &[(None, "as", OUT)]),
+            ("ListActivatableNames", &[(None, "as", OUT)]),
+            ("AddMatch", &[(None, "s", IN)]),
+            ("RemoveMatch", &[(None, "s", IN)]),
+            ("GetNameOwner", &[(None, "s", IN), (None, "s", OUT)]),
+            ("ListQueuedOwners", &[(None, "s", IN), (None, "as", OUT)]),
+            (
+                "GetConnectionUnixUser",
+                &[(None, "s", IN), (None, "u", OUT)],
+            ),
+            (
+                "GetConnectionUnixProcessID",
+                &[(None, "s", IN), (None, "u", OUT)],
+            ),
+            (
+                "GetAdtAuditSessionData",
+                &[(None, "s", IN), (None, "ay", OUT)],
+            ),
+            (
+                "GetConnectionSELinuxSecurityContext",
+                &[(None, "s", IN), (None, "ay", OUT)],
+            ),
+            (
+                "GetConnectionAppArmorSecurityContext",
+                &[(None, "s", IN), (None, "s", OUT)],
+            ),
+            ("ReloadConfig", &[]),
+            ("GetId", &[(None, "s", OUT)]),
+            (
+                "GetConnectionCredentials",
+                &[(None, "s", IN), (None, "a{sv}", OUT)],
+            ),
+        ],
+    );
+
+    assert_signals(
+        dbus,
+        &[
+            (
+                "NameOwnerChanged",
+                &[(None, "s", NONE), (None, "s", NONE), (None, "s", NONE)],
+            ),
+            ("NameLost", &[(None, "s", NONE)]),
+            ("NameAcquired", &[(None, "s", NONE)]),
+            ("ActivatableServicesChanged", &[]),
+        ],
+    );
+
+    assert_properties(
+        dbus,
+        &[
+            ("Features", "as", PropertyAccess::Read),
+            ("Interfaces", "as", PropertyAccess::Read),
+        ],
+    );
+
+    // GDBus-style named arguments on the standard Properties interface round-trip too.
+    let properties = interface(&node, "org.freedesktop.DBus.Properties");
+    assert_signals(
+        properties,
+        &[(
+            "PropertiesChanged",
+            &[
+                (Some("interface_name"), "s", NONE),
+                (Some("changed_properties"), "a{sv}", NONE),
+                (Some("invalidated_properties"), "as", NONE),
+            ],
+        )],
+    );
+
+    Ok(())
+}
+
+#[test]
+fn real_world_systemd() -> Result<(), Box<dyn Error>> {
+    // The manager document contains `h` (file descriptor) signatures (e.g.
+    // `DumpByFileDescriptor`), which zvariant only supports on Unix.
+    if cfg!(unix) {
+        let node = Node::try_from(include_str!("data/real_world/systemd1_manager.xml"))?;
+        let manager = interface(&node, "org.freedesktop.systemd1.Manager");
+
+        // sd-bus emits named, directioned arguments; check a representative set fully.
+        assert_args(
+            "Manager.GetUnit",
+            manager
+                .methods()
+                .iter()
+                .find(|m| m.name() == "GetUnit")
+                .expect("GetUnit method")
+                .args(),
+            &[(Some("name"), "s", IN), (Some("unit"), "o", OUT)],
+        );
+        assert_args(
+            "Manager.StartUnit",
+            manager
+                .methods()
+                .iter()
+                .find(|m| m.name() == "StartUnit")
+                .expect("StartUnit method")
+                .args(),
+            &[
+                (Some("name"), "s", IN),
+                (Some("mode"), "s", IN),
+                (Some("job"), "o", OUT),
+            ],
+        );
+        assert_args(
+            "Manager.UnitNew",
+            manager
+                .signals()
+                .iter()
+                .find(|s| s.name() == "UnitNew")
+                .expect("UnitNew signal")
+                .args(),
+            &[(Some("id"), "s", NONE), (Some("unit"), "o", NONE)],
+        );
+        assert_args(
+            "Manager.JobNew",
+            manager
+                .signals()
+                .iter()
+                .find(|s| s.name() == "JobNew")
+                .expect("JobNew signal")
+                .args(),
+            &[
+                (Some("id"), "u", NONE),
+                (Some("job"), "o", NONE),
+                (Some("unit"), "s", NONE),
+            ],
+        );
+
+        let version = manager
+            .properties()
+            .iter()
+            .find(|p| p.name() == "Version")
+            .expect("Version property");
+        assert!(version.ty() == "s", "Version type");
+        assert_eq!(version.access(), PropertyAccess::Read);
+        assert!(version.access().read() && !version.access().write());
+        // sd-bus annotates properties with their change-signalling behavior.
+        let emits_changed = version
+            .annotations()
+            .iter()
+            .find(|a| a.name() == "org.freedesktop.DBus.Property.EmitsChangedSignal")
+            .expect("EmitsChangedSignal annotation");
+        assert_eq!(emits_changed.value(), "const");
+
+        // Writable properties exercise the readwrite access path.
+        for name in ["LogLevel", "LogTarget"] {
+            let property = manager
+                .properties()
+                .iter()
+                .find(|p| p.name() == name)
+                .unwrap_or_else(|| panic!("Manager.{name} property"));
+            assert!(property.ty() == "s", "Manager.{name}: type");
+            assert_eq!(property.access(), PropertyAccess::ReadWrite);
+            assert!(property.access().read() && property.access().write());
+        }
+    }
+
+    // The unit-list object carries the children of /org/freedesktop/systemd1/unit as named,
+    // interface-less sub-nodes.
+    let node = Node::try_from(include_str!("data/real_world/systemd1_unit_list.xml"))?;
+    assert!(!node.nodes().is_empty());
+    let init_scope = node
+        .nodes()
+        .iter()
+        .find(|n| n.name() == Some("init_2escope"))
+        .expect("init_2escope node");
+    assert!(init_scope.interfaces().is_empty());
+    assert!(init_scope.nodes().is_empty());
+
+    // A scope unit implements the generic Unit interface and the type-specific Scope interface,
+    // both carrying properties.
+    let node = Node::try_from(include_str!("data/real_world/systemd1_scope_unit.xml"))?;
+    for name in [
+        "org.freedesktop.systemd1.Unit",
+        "org.freedesktop.systemd1.Scope",
+    ] {
+        let iface = interface(&node, name);
+        assert!(!iface.properties().is_empty(), "{name}: has properties");
+    }
+    // The generic Unit interface exposes the well-known Id/ActiveState string properties.
+    let unit = interface(&node, "org.freedesktop.systemd1.Unit");
+    for name in ["Id", "ActiveState"] {
+        let property = unit
+            .properties()
+            .iter()
+            .find(|p| p.name() == name)
+            .unwrap_or_else(|| panic!("Unit.{name} property"));
+        assert!(property.ty() == "s", "Unit.{name}: type");
+        assert!(property.access().read(), "Unit.{name}: readable");
+    }
+
+    Ok(())
+}
+
 #[test]
 fn malformed_documents() {
     for input in [
@@ -243,6 +631,21 @@ fn error_position() {
         panic!("expected an XML error");
     };
     assert_eq!(e.position(), input.find('&').unwrap());
+
+    // A duplicate attribute points at the second (offending) name.
+    let input = r#"<node name="a" name="b"/>"#;
+    let Err(zbus_xml::Error::Xml(e)) = Node::try_from(input) else {
+        panic!("expected an XML error");
+    };
+    assert_eq!(e.position(), input.rfind("name").unwrap());
+
+    // A missing required attribute points at the element name.
+    let input = "<node><interface name=\"org.test.I\">\
+                 <property name=\"p\" type=\"s\"/></interface></node>";
+    let Err(zbus_xml::Error::Xml(e)) = Node::try_from(input) else {
+        panic!("expected an XML error");
+    };
+    assert_eq!(e.position(), input.find("property").unwrap());
 }
 
 #[test]
@@ -274,12 +677,91 @@ fn deeply_nested_documents() -> Result<(), Box<dyn Error>> {
         .join()
         .expect("parsing deeply nested documents must not overflow the stack");
 
-    // One level past the cap is rejected cleanly.
+    // One level past the cap is rejected cleanly, on both nesting axes.
     let too_deep = format!("{}{}", "<node>".repeat(1025), "</node>".repeat(1025));
     assert!(matches!(
         Node::try_from(too_deep.as_str()),
         Err(zbus_xml::Error::Xml(_))
     ));
+    let too_deep_foreign = format!(
+        "<node><interface name=\"org.test.I\">{}{}</interface></node>",
+        "<x>".repeat(1025),
+        "</x>".repeat(1025),
+    );
+    assert!(matches!(
+        Node::try_from(too_deep_foreign.as_str()),
+        Err(zbus_xml::Error::Xml(_))
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn io_error() {
+    // A failing reader surfaces as `Error::Io`.
+    struct FailingReader;
+    impl std::io::Read for FailingReader {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("boom"))
+        }
+    }
+    assert!(matches!(
+        Node::from_reader(FailingReader),
+        Err(zbus_xml::Error::Io(_))
+    ));
+}
+
+#[test]
+fn invalid_enum_attributes() -> Result<(), Box<dyn Error>> {
+    // An invalid `direction` or `access` value is a clean XML error.
+    let bad_direction = "<node><interface name=\"org.test.I\">\
+                         <method name=\"M\"><arg type=\"s\" direction=\"sideways\"/></method>\
+                         </interface></node>";
+    assert!(matches!(
+        Node::try_from(bad_direction),
+        Err(zbus_xml::Error::Xml(_))
+    ));
+
+    let bad_access = "<node><interface name=\"org.test.I\">\
+                      <property name=\"P\" type=\"s\" access=\"rw\"/></interface></node>";
+    assert!(matches!(
+        Node::try_from(bad_access),
+        Err(zbus_xml::Error::Xml(_))
+    ));
+
+    // A write-only property exercises the `PropertyAccess::Write` arm.
+    let write_only = "<node><interface name=\"org.test.I\">\
+                      <property name=\"P\" type=\"s\" access=\"write\"/></interface></node>";
+    let node = Node::try_from(write_only)?;
+    let access = node.interfaces()[0].properties()[0].access();
+    assert_eq!(access, PropertyAccess::Write);
+    assert!(access.write() && !access.read());
+
+    Ok(())
+}
+
+#[test]
+fn invalid_member_names() {
+    // An invalid method or signal name is an `Error::Name` (like the interface-name case in
+    // `malformed_documents`), exercising the same validated-name path for both members.
+    for input in [
+        "<node><interface name=\"org.test.I\"><method name=\"not valid\"/></interface></node>",
+        "<node><interface name=\"org.test.I\"><signal name=\"not valid\"/></interface></node>",
+    ] {
+        assert!(matches!(
+            Node::try_from(input),
+            Err(zbus_xml::Error::Name(_))
+        ));
+    }
+}
+
+#[test]
+fn root_element_name_is_ignored() -> Result<(), Box<dyn Error>> {
+    // The root element's name is not checked, for compatibility with servers that don't name it
+    // `node` (and with how the previous quick-xml-based versions behaved).
+    let node = Node::try_from("<weirdroot><interface name=\"org.test.I\"/></weirdroot>")?;
+    assert_eq!(node.interfaces().len(), 1);
+    assert_eq!(node.interfaces()[0].name(), "org.test.I");
 
     Ok(())
 }
