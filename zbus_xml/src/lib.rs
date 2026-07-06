@@ -12,6 +12,8 @@
 )))]
 
 mod error;
+#[allow(deprecated)]
+pub use error::{DeError, SeError};
 pub use error::{Error, Result, XmlError};
 
 mod xml;
