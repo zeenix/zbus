@@ -2301,6 +2301,7 @@ dependencies = [
  "doc-comment",
  "quick-xml",
  "serde",
+ "winnow 1.0.3",
  "zbus_names",
  "zvariant",
 ]

@@ -12,7 +12,9 @@
 )))]
 
 mod error;
-pub use error::{Error, Result};
+pub use error::{Error, Result, XmlError};
+
+mod xml;
 
 use quick_xml::{de::Deserializer, se::to_writer};
 use serde::{Deserialize, Serialize};
