@@ -12,12 +12,16 @@
 )))]
 
 mod error;
-pub use error::{Error, Result};
+#[allow(deprecated)]
+pub use error::{DeError, SeError};
+pub use error::{Error, Result, XmlError};
 
-use quick_xml::{de::Deserializer, se::to_writer};
+mod xml;
+use xml::escape;
+
 use serde::{Deserialize, Serialize};
 use std::{
-    io::{BufReader, Read, Write},
+    io::{BufWriter, Read, Write},
     ops::Deref,
 };
 
@@ -42,6 +46,15 @@ impl Annotation {
     pub fn value(&self) -> &str {
         &self.value
     }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(
+            w,
+            "<annotation name=\"{}\" value=\"{}\"/>",
+            escape(&self.name),
+            escape(&self.value)
+        )
+    }
 }
 
 /// A direction of an argument
@@ -51,6 +64,15 @@ pub enum ArgDirection {
     In,
     #[serde(rename = "out")]
     Out,
+}
+
+impl ArgDirection {
+    fn xml_value(&self) -> &'static str {
+        match self {
+            ArgDirection::In => "in",
+            ArgDirection::Out => "out",
+        }
+    }
 }
 
 /// An argument
@@ -86,6 +108,25 @@ impl Arg {
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
     }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(w, "<arg")?;
+        if let Some(name) = &self.name {
+            write!(w, " name=\"{}\"", escape(name))?;
+        }
+        write!(w, " type=\"{}\"", escape(&self.ty.to_string()))?;
+        if let Some(direction) = self.direction {
+            write!(w, " direction=\"{}\"", direction.xml_value())?;
+        }
+        if self.annotations.is_empty() {
+            return write!(w, "/>");
+        }
+        write!(w, ">")?;
+        for annotation in &self.annotations {
+            annotation.write_xml(w)?;
+        }
+        write!(w, "</arg>")
+    }
 }
 
 /// A method
@@ -113,6 +154,21 @@ impl Method<'_> {
     /// Return the method annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(w, "<method name=\"{}\"", escape(self.name.as_str()))?;
+        if self.args.is_empty() && self.annotations.is_empty() {
+            return write!(w, "/>");
+        }
+        write!(w, ">")?;
+        for arg in &self.args {
+            arg.write_xml(w)?;
+        }
+        for annotation in &self.annotations {
+            annotation.write_xml(w)?;
+        }
+        write!(w, "</method>")
     }
 }
 
@@ -143,6 +199,21 @@ impl Signal<'_> {
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
     }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(w, "<signal name=\"{}\"", escape(self.name.as_str()))?;
+        if self.args.is_empty() && self.annotations.is_empty() {
+            return write!(w, "/>");
+        }
+        write!(w, ">")?;
+        for arg in &self.args {
+            arg.write_xml(w)?;
+        }
+        for annotation in &self.annotations {
+            annotation.write_xml(w)?;
+        }
+        write!(w, "</signal>")
+    }
 }
 
 /// The possible property access types
@@ -163,6 +234,14 @@ impl PropertyAccess {
 
     pub fn write(&self) -> bool {
         matches!(self, PropertyAccess::Write | PropertyAccess::ReadWrite)
+    }
+
+    fn xml_value(&self) -> &'static str {
+        match self {
+            PropertyAccess::Read => "read",
+            PropertyAccess::Write => "write",
+            PropertyAccess::ReadWrite => "readwrite",
+        }
     }
 }
 
@@ -200,6 +279,24 @@ impl Property<'_> {
     /// Return the associated annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(
+            w,
+            "<property name=\"{}\" type=\"{}\" access=\"{}\"",
+            escape(self.name.as_str()),
+            escape(&self.ty.to_string()),
+            self.access.xml_value()
+        )?;
+        if self.annotations.is_empty() {
+            return write!(w, "/>");
+        }
+        write!(w, ">")?;
+        for annotation in &self.annotations {
+            annotation.write_xml(w)?;
+        }
+        write!(w, "</property>")
     }
 }
 
@@ -244,6 +341,31 @@ impl<'a> Interface<'a> {
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
     }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(w, "<interface name=\"{}\"", escape(self.name.as_str()))?;
+        if self.methods.is_empty()
+            && self.properties.is_empty()
+            && self.signals.is_empty()
+            && self.annotations.is_empty()
+        {
+            return write!(w, "/>");
+        }
+        write!(w, ">")?;
+        for method in &self.methods {
+            method.write_xml(w)?;
+        }
+        for property in &self.properties {
+            property.write_xml(w)?;
+        }
+        for signal in &self.signals {
+            signal.write_xml(w)?;
+        }
+        for annotation in &self.annotations {
+            annotation.write_xml(w)?;
+        }
+        write!(w, "</interface>")
+    }
 }
 
 /// An introspection tree node (typically the root of the XML document).
@@ -260,27 +382,21 @@ pub struct Node<'a> {
 
 impl<'a> Node<'a> {
     /// Parse the introspection XML document from reader.
-    pub fn from_reader<R: Read>(reader: R) -> Result<Node<'a>> {
-        let mut deserializer = Deserializer::from_reader(BufReader::new(reader));
-        deserializer.event_buffer_size(Some(4096_usize.try_into().unwrap()));
-        Ok(Node::deserialize(&mut deserializer)?)
+    ///
+    /// Note that `reader` is consumed until end-of-stream before parsing, so this must not be
+    /// used with a reader that stays open past the end of the document (e.g. a socket).
+    pub fn from_reader<R: Read>(mut reader: R) -> Result<Node<'a>> {
+        let mut input = String::new();
+        reader.read_to_string(&mut input)?;
+
+        xml::parse(&input)
     }
 
     /// Write the XML document to writer.
     pub fn to_writer<W: Write>(&self, writer: W) -> Result<()> {
-        // Need this wrapper until this is resolved: https://github.com/tafia/quick-xml/issues/499
-        struct Writer<T>(T);
-
-        impl<T> std::fmt::Write for Writer<T>
-        where
-            T: Write,
-        {
-            fn write_str(&mut self, s: &str) -> std::fmt::Result {
-                self.0.write_all(s.as_bytes()).map_err(|_| std::fmt::Error)
-            }
-        }
-
-        to_writer(Writer(writer), &self)?;
+        let mut writer = BufWriter::new(writer);
+        self.write_xml(&mut writer)?;
+        writer.flush()?;
 
         Ok(())
     }
@@ -299,6 +415,24 @@ impl<'a> Node<'a> {
     pub fn interfaces(&self) -> &[Interface<'a>] {
         &self.interfaces
     }
+
+    fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        write!(w, "<node")?;
+        if let Some(name) = &self.name {
+            write!(w, " name=\"{}\"", escape(name))?;
+        }
+        if self.interfaces.is_empty() && self.nodes.is_empty() {
+            return write!(w, "/>");
+        }
+        write!(w, ">")?;
+        for interface in &self.interfaces {
+            interface.write_xml(w)?;
+        }
+        for node in &self.nodes {
+            node.write_xml(w)?;
+        }
+        write!(w, "</node>")
+    }
 }
 
 impl<'a> TryFrom<&'a str> for Node<'a> {
@@ -306,16 +440,14 @@ impl<'a> TryFrom<&'a str> for Node<'a> {
 
     /// Parse the introspection XML document from `s`.
     fn try_from(s: &'a str) -> Result<Node<'a>> {
-        let mut deserializer = Deserializer::from_str(s);
-        deserializer.event_buffer_size(Some(4096_usize.try_into().unwrap()));
-        Ok(Node::deserialize(&mut deserializer)?)
+        xml::parse(s)
     }
 }
 
 /// A thin wrapper around `zvariant::parsed::Signature`.
 ///
-/// This is to allow `Signature` to be deserialized from an owned string, which is what quick-xml2
-/// deserializer does.
+/// This is to allow `Signature` to be deserialized from an owned string, which is what XML
+/// deserializers typically produce.
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct Signature(zvariant::Signature);
 

@@ -1,6 +1,6 @@
 [package]
 name = "zbus_xml"
-version = "5.1.1"
+version = "5.2.0"
 authors = ["Zeeshan Ali Khan <zeeshanak@gnome.org>"]
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -16,10 +16,18 @@ readme = "README.md"
 serde.workspace = true
 zvariant = { path = "../zvariant", version = "5.12.0" }
 zbus_names = { path = "../zbus_names", version = "4.3.2" }
-quick-xml.workspace = true
+winnow.workspace = true
 
 [dev-dependencies]
 doc-comment.workspace = true
+criterion.workspace = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "benchmarks"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true
