@@ -1,5 +1,5 @@
 use quick_xml::{de::DeError, se::SeError};
-use std::{convert::Infallible, error, fmt};
+use std::{convert::Infallible, error, fmt, io, sync::Arc};
 use zbus_names::Error as NamesError;
 use zvariant::Error as VariantError;
 
@@ -15,6 +15,8 @@ pub enum Error {
     Name(NamesError),
     /// An XML parsing error.
     Xml(XmlError),
+    /// An I/O error.
+    Io(Arc<io::Error>),
     /// An XML error from quick_xml
     QuickXml(DeError),
     /// An XML serialization error from quick_xml
@@ -40,6 +42,7 @@ impl error::Error for Error {
             Error::Variant(e) => Some(e),
             Error::Name(e) => Some(e),
             Error::Xml(e) => Some(e),
+            Error::Io(e) => Some(e),
             Error::QuickXml(e) => Some(e),
             Error::QuickXmlSer(e) => Some(e),
         }
@@ -52,6 +55,7 @@ impl fmt::Display for Error {
             Error::Variant(e) => write!(f, "{e}"),
             Error::Name(e) => write!(f, "{e}"),
             Error::Xml(e) => write!(f, "XML error: {e}"),
+            Error::Io(e) => write!(f, "I/O error: {e}"),
             Error::QuickXml(e) => write!(f, "XML error: {e}"),
             Error::QuickXmlSer(e) => write!(f, "XML serialization error: {e}"),
         }
@@ -73,6 +77,12 @@ impl From<NamesError> for Error {
 impl From<XmlError> for Error {
     fn from(val: XmlError) -> Self {
         Error::Xml(val)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(val: io::Error) -> Self {
+        Error::Io(Arc::new(val))
     }
 }
 
