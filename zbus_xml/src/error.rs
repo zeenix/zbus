@@ -2,12 +2,13 @@ use quick_xml::{de::DeError, se::SeError};
 use std::{convert::Infallible, error, fmt};
 use zvariant::Error as VariantError;
 
-/// The error type for `zbus_names`.
+/// The error type for `zbus_xml`.
 ///
 /// The various errors that can be reported by this crate.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    /// A zvariant error, e.g. an invalid signature.
     Variant(VariantError),
     /// An XML error from quick_xml
     QuickXml(DeError),
