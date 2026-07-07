@@ -23,6 +23,10 @@
      <method name="MogrifyMe">
        <arg name="bar" type="(iiav)" direction="in"/>
      </method>
+     <method name="GetSignature">
+       <arg name="challenge" type="g" direction="in"/>
+       <arg name="response" type="g" direction="out"/>
+     </method>
      <method name="BarplexSig">
        <arg direction="in" name="rule" type="(aiia{ss}iaiiasib)"/>
        <arg direction="out" type="a(so)"/>

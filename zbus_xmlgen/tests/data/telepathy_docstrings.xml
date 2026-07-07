@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Modeled after the MPRIS org.mpris.MediaPlayer2.Playlists interface, which documents
+     itself through the Telepathy D-Bus introspection extensions. -->
+<node name="/com/example/Playlists" xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+  <tp:simple-type name="Playlist_Id" type="o" array-name="Playlist_Id_List">
+    <tp:docstring>Unique playlist identifier.</tp:docstring>
+  </tp:simple-type>
+
+  <tp:simple-type name="Unreferenced" type="s">
+    <tp:docstring>Not referenced by the interface, so no Rust definition is generated.</tp:docstring>
+  </tp:simple-type>
+
+  <interface name="com.example.Playlists">
+    <tp:docstring>
+      <p>Provides access to the media player's playlists.</p>
+      <p>
+        Since D-Bus does not directly support enums, or a
+        <strong>maybe</strong> type, they are described in this interface.
+      </p>
+    </tp:docstring>
+
+    <tp:enum name="Playlist_Ordering" type="s">
+      <tp:enumvalue suffix="Alphabetical" value="Alphabetical">
+        <tp:docstring>Alphabetical ordering by name, ascending.</tp:docstring>
+      </tp:enumvalue>
+      <tp:enumvalue suffix="User_Defined" value="User">
+        <tp:docstring>A user-defined ordering.</tp:docstring>
+      </tp:enumvalue>
+    </tp:enum>
+
+    <tp:enum name="Loop_Status" type="u">
+      <tp:docstring>A repeat / loop status.</tp:docstring>
+      <tp:enumvalue suffix="None" value="0">
+        <tp:docstring>The playback will stop when there are no more tracks to play.</tp:docstring>
+      </tp:enumvalue>
+      <tp:enumvalue suffix="Track" value="1">
+        <tp:docstring>The current track will start again from the beginning once it has finished playing.</tp:docstring>
+      </tp:enumvalue>
+      <tp:enumvalue suffix="Playlist" value="2">
+        <tp:docstring>The playback loops through a list of tracks.</tp:docstring>
+      </tp:enumvalue>
+    </tp:enum>
+
+    <tp:struct name="Playlist" array-name="Playlist_List">
+      <tp:docstring>A data structure describing a playlist.</tp:docstring>
+      <tp:member type="o" tp:type="Playlist_Id" name="Id">
+        <tp:docstring>A unique identifier for the playlist.</tp:docstring>
+      </tp:member>
+      <tp:member type="s" name="Name">
+        <tp:docstring>The name of the playlist, typically given by the user.</tp:docstring>
+      </tp:member>
+      <tp:member type="s" name="Icon">
+        <tp:docstring>The URI of an (optional) icon.</tp:docstring>
+      </tp:member>
+    </tp:struct>
+
+    <tp:struct name="Maybe_Playlist">
+      <tp:docstring>A data structure describing a playlist, or nothing.</tp:docstring>
+      <tp:member type="b" name="Valid">
+        <tp:docstring>Whether this structure refers to a valid playlist.</tp:docstring>
+      </tp:member>
+      <tp:member type="(oss)" tp:type="Playlist" name="Playlist">
+        <tp:docstring>The playlist, providing Valid is true.</tp:docstring>
+      </tp:member>
+    </tp:struct>
+
+    <tp:mapping name="Metadata_Map">
+      <tp:docstring>A mapping from metadata attribute names to values.</tp:docstring>
+      <tp:member type="s" name="Attribute">
+        <tp:docstring>The name of the attribute.</tp:docstring>
+      </tp:member>
+      <tp:member type="v" name="Value">
+        <tp:docstring>The value of the attribute.</tp:docstring>
+      </tp:member>
+    </tp:mapping>
+
+    <method name="ActivatePlaylist">
+      <tp:docstring>
+        <p>Starts playing the given playlist.</p>
+        <p>
+          It is up to the media player whether this completely replaces the
+          current tracklist, or whether it is merely inserted into the
+          tracklist and the first track starts.
+        </p>
+      </tp:docstring>
+      <arg direction="in" name="playlist_id" type="o" tp:type="Playlist_Id">
+        <tp:docstring>The id of the playlist to activate.</tp:docstring>
+      </arg>
+    </method>
+
+    <method name="GetPlaylists">
+      <tp:docstring>Gets a set of playlists.</tp:docstring>
+      <arg direction="in" name="index" type="u">
+        <tp:docstring>The index of the first playlist to be fetched (according to the ordering).</tp:docstring>
+      </arg>
+      <arg direction="in" name="max_count" type="u">
+        <tp:docstring>The maximum number of playlists to fetch.</tp:docstring>
+      </arg>
+      <arg direction="in" name="order" type="s" tp:type="Playlist_Ordering">
+        <tp:docstring>The ordering that should be used.</tp:docstring>
+      </arg>
+      <arg direction="in" name="reverse_order" type="b">
+        <tp:docstring>Whether the order should be reversed.</tp:docstring>
+      </arg>
+      <arg direction="out" name="playlists" type="a(oss)" tp:type="Playlist[]">
+        <tp:docstring>
+          A list of (at most <em>max_count</em>) playlists.
+        </tp:docstring>
+      </arg>
+    </method>
+
+    <method name="GetMetadata">
+      <tp:docstring>Gets the metadata of a playlist.</tp:docstring>
+      <arg direction="in" name="mismatch" type="s" tp:type="Playlist">
+        <tp:docstring>A tp:type not matching the signature falls back to the plain type.</tp:docstring>
+      </arg>
+      <arg direction="out" name="metadata" type="a{sv}" tp:type="Metadata_Map">
+        <tp:docstring>The metadata of the playlist.</tp:docstring>
+      </arg>
+    </method>
+
+    <signal name="PlaylistChanged">
+      <tp:docstring>
+        <p>Indicates that either the Name or Icon attribute of a
+        playlist has changed.</p>
+        <p>Client implementations should be aware that this signal
+        may not be implemented.</p>
+        <tp:rationale>Without this signal, media players have no way to
+        notify clients of a change in the attributes of a playlist.</tp:rationale>
+      </tp:docstring>
+      <arg name="playlist" type="(oss)" tp:type="Playlist">
+        <tp:docstring>The playlist which details have changed.</tp:docstring>
+      </arg>
+    </signal>
+
+    <property name="Orderings" type="as" tp:type="Playlist_Ordering[]" access="read">
+      <tp:docstring>
+        <p>The available orderings. At least one must be offered.</p>
+        <tp:rationale>
+          Media players may not have access to all the data required for some
+          orderings.
+        </tp:rationale>
+      </tp:docstring>
+    </property>
+
+    <property name="ActivePlaylist" type="(b(oss))" tp:type="Maybe_Playlist" access="read">
+      <tp:docstring>
+        <p>The currently-active playlist.</p>
+        <p>
+          If there is no currently-active playlist, the structure's Valid field
+          will be false, and the Playlist details are undefined.
+        </p>
+      </tp:docstring>
+    </property>
+
+    <property name="LoopStatus" type="u" tp:type="Loop_Status" access="readwrite">
+      <tp:docstring>The current loop / repeat status.</tp:docstring>
+    </property>
+
+    <property name="PlaylistCount" type="u" access="read">
+      <tp:docstring>
+        <p>The number of playlists available.</p>
+      </tp:docstring>
+    </property>
+
+    <property name="Undocumented" type="s" access="readwrite"/>
+  </interface>
+</node>

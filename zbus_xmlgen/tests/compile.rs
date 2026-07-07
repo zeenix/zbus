@@ -16,3 +16,19 @@ mod property_setters {
     use zbus::proxy;
     include!("data/property_setters.rs");
 }
+
+mod telepathy_docstrings {
+    // The generated type aliases are only referenced from the (macro-consumed) trait.
+    #![allow(dead_code)]
+
+    use zbus::proxy;
+    include!("data/telepathy_docstrings.rs");
+}
+
+mod telepathy_edge_cases {
+    // The generated type aliases are only referenced from the (macro-consumed) trait.
+    #![allow(dead_code)]
+
+    use zbus::proxy;
+    include!("data/telepathy_edge_cases.rs");
+}

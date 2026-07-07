@@ -19,13 +19,81 @@ pub use error::{Error, Result, XmlError};
 mod xml;
 use xml::escape;
 
+pub mod telepathy;
+
 use serde::{Deserialize, Serialize};
 use std::{
+    fmt,
     io::{BufWriter, Read, Write},
     ops::Deref,
 };
 
 use zbus_names::{InterfaceName, MemberName, PropertyName};
+
+/// A warning about document content that was ignored during parsing.
+///
+/// The D-Bus introspection format is sometimes extended with elements from other vocabularies,
+/// most notably the [Telepathy extensions] (`tp:enum`, `tp:struct`, …). The parser skips over
+/// any element it has no use for — or understands but cannot make sense of, e. g. a Telepathy
+/// type definition missing a required attribute — and records a `Warning`, which
+/// [`Node::from_reader_with_warnings`] hands back to the caller.
+///
+/// [Telepathy extensions]: https://telepathy.freedesktop.org/spec/
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Warning {
+    element: String,
+    position: usize,
+    message: String,
+}
+
+impl Warning {
+    /// A warning about a skipped element that is not part of the introspection format.
+    pub(crate) fn unsupported(element: impl Into<String>, position: usize) -> Self {
+        let element = element.into();
+        let message = format!("unsupported element `<{element}>` ignored");
+        Self {
+            element,
+            position,
+            message,
+        }
+    }
+
+    /// A warning about a skipped element that is understood but could not be parsed.
+    pub(crate) fn malformed(
+        element: impl Into<String>,
+        position: usize,
+        reason: impl fmt::Display,
+    ) -> Self {
+        let element = element.into();
+        let message = format!("malformed element `<{element}>` ignored: {reason}");
+        Self {
+            element,
+            position,
+            message,
+        }
+    }
+
+    /// The name of the element that was ignored.
+    pub fn element(&self) -> &str {
+        &self.element
+    }
+
+    /// The byte offset in the document at which the element starts.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// A message describing what was ignored, and why.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (at byte offset {})", self.message, self.position)
+    }
+}
 
 /// Annotations are generic key/value pairs of metadata.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -86,6 +154,10 @@ pub struct Arg {
     direction: Option<ArgDirection>,
     #[serde(rename = "annotation", default)]
     annotations: Vec<Annotation>,
+    #[serde(skip)]
+    docstring: Option<String>,
+    #[serde(skip)]
+    tp_type: Option<String>,
 }
 
 impl Arg {
@@ -107,6 +179,23 @@ impl Arg {
     /// Return the associated annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    /// Return the content of the Telepathy `tp:docstring` extension element, if any.
+    ///
+    /// The content — typically HTML — is returned as it appears in the document, with the
+    /// surrounding whitespace trimmed. Note that docstrings are only captured when parsing;
+    /// the writer does not emit them.
+    pub fn docstring(&self) -> Option<&str> {
+        self.docstring.as_deref()
+    }
+
+    /// Return the named Telepathy type of the argument (its `tp:type` attribute), if any.
+    ///
+    /// The name refers to a [type definition](telepathy::TypeDef) in scope, with one `[]`
+    /// suffix per level of array nesting (e. g. `Playlist[]`).
+    pub fn tp_type(&self) -> Option<&str> {
+        self.tp_type.as_deref()
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -138,6 +227,8 @@ pub struct Method<'a> {
     args: Vec<Arg>,
     #[serde(rename = "annotation", default)]
     annotations: Vec<Annotation>,
+    #[serde(skip)]
+    docstring: Option<String>,
 }
 
 impl Method<'_> {
@@ -154,6 +245,15 @@ impl Method<'_> {
     /// Return the method annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    /// Return the content of the Telepathy `tp:docstring` extension element, if any.
+    ///
+    /// The content — typically HTML — is returned as it appears in the document, with the
+    /// surrounding whitespace trimmed. Note that docstrings are only captured when parsing;
+    /// the writer does not emit them.
+    pub fn docstring(&self) -> Option<&str> {
+        self.docstring.as_deref()
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -182,6 +282,8 @@ pub struct Signal<'a> {
     args: Vec<Arg>,
     #[serde(rename = "annotation", default)]
     annotations: Vec<Annotation>,
+    #[serde(skip)]
+    docstring: Option<String>,
 }
 
 impl Signal<'_> {
@@ -198,6 +300,15 @@ impl Signal<'_> {
     /// Return the signal annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    /// Return the content of the Telepathy `tp:docstring` extension element, if any.
+    ///
+    /// The content — typically HTML — is returned as it appears in the document, with the
+    /// surrounding whitespace trimmed. Note that docstrings are only captured when parsing;
+    /// the writer does not emit them.
+    pub fn docstring(&self) -> Option<&str> {
+        self.docstring.as_deref()
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -258,6 +369,10 @@ pub struct Property<'a> {
 
     #[serde(rename = "annotation", default)]
     annotations: Vec<Annotation>,
+    #[serde(skip)]
+    docstring: Option<String>,
+    #[serde(skip)]
+    tp_type: Option<String>,
 }
 
 impl Property<'_> {
@@ -279,6 +394,23 @@ impl Property<'_> {
     /// Return the associated annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    /// Return the content of the Telepathy `tp:docstring` extension element, if any.
+    ///
+    /// The content — typically HTML — is returned as it appears in the document, with the
+    /// surrounding whitespace trimmed. Note that docstrings are only captured when parsing;
+    /// the writer does not emit them.
+    pub fn docstring(&self) -> Option<&str> {
+        self.docstring.as_deref()
+    }
+
+    /// Return the named Telepathy type of the property (its `tp:type` attribute), if any.
+    ///
+    /// The name refers to a [type definition](telepathy::TypeDef) in scope, with one `[]`
+    /// suffix per level of array nesting (e. g. `Playlist[]`).
+    pub fn tp_type(&self) -> Option<&str> {
+        self.tp_type.as_deref()
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -314,6 +446,10 @@ pub struct Interface<'a> {
     signals: Vec<Signal<'a>>,
     #[serde(rename = "annotation", default)]
     annotations: Vec<Annotation>,
+    #[serde(skip)]
+    docstring: Option<String>,
+    #[serde(skip)]
+    telepathy_types: Vec<telepathy::TypeDef>,
 }
 
 impl<'a> Interface<'a> {
@@ -340,6 +476,20 @@ impl<'a> Interface<'a> {
     /// Return the associated annotations.
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
+    }
+
+    /// Return the content of the Telepathy `tp:docstring` extension element, if any.
+    ///
+    /// The content — typically HTML — is returned as it appears in the document, with the
+    /// surrounding whitespace trimmed. Note that docstrings are only captured when parsing;
+    /// the writer does not emit them.
+    pub fn docstring(&self) -> Option<&str> {
+        self.docstring.as_deref()
+    }
+
+    /// Return the Telepathy type definitions on this interface.
+    pub fn telepathy_types(&self) -> &[telepathy::TypeDef] {
+        &self.telepathy_types
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -378,6 +528,10 @@ pub struct Node<'a> {
     interfaces: Vec<Interface<'a>>,
     #[serde(rename = "node", default, borrow)]
     nodes: Vec<Node<'a>>,
+    #[serde(skip)]
+    docstring: Option<String>,
+    #[serde(skip)]
+    telepathy_types: Vec<telepathy::TypeDef>,
 }
 
 impl<'a> Node<'a> {
@@ -385,14 +539,33 @@ impl<'a> Node<'a> {
     ///
     /// Note that `reader` is consumed until end-of-stream before parsing, so this must not be
     /// used with a reader that stays open past the end of the document (e.g. a socket).
-    pub fn from_reader<R: Read>(mut reader: R) -> Result<Node<'a>> {
+    pub fn from_reader<R: Read>(reader: R) -> Result<Node<'a>> {
+        Ok(Node::from_reader_with_warnings(reader)?.0)
+    }
+
+    /// Parse the introspection XML document from reader, collecting warnings.
+    ///
+    /// In addition to the parsed node, a [`Warning`] is returned for every element that is not
+    /// part of the [introspection format] (except Telepathy docstrings, which are captured —
+    /// see [`Interface::docstring`]) and was therefore ignored, e. g. the type-definition
+    /// elements of the Telepathy extensions (`tp:enum`, `tp:struct`, …).
+    ///
+    /// Note that `reader` is consumed until end-of-stream before parsing, so this must not be
+    /// used with a reader that stays open past the end of the document (e.g. a socket).
+    ///
+    /// [introspection format]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
+    pub fn from_reader_with_warnings<R: Read>(mut reader: R) -> Result<(Node<'a>, Vec<Warning>)> {
         let mut input = String::new();
         reader.read_to_string(&mut input)?;
 
-        xml::parse(&input)
+        xml::parse_with_warnings(&input)
     }
 
     /// Write the XML document to writer.
+    ///
+    /// Note that data which is only captured when parsing — Telepathy docstrings, type
+    /// definitions and `tp:type` references — is not written. Consequently, a document that
+    /// carried any does not compare equal to its written-and-reparsed self.
     pub fn to_writer<W: Write>(&self, writer: W) -> Result<()> {
         let mut writer = BufWriter::new(writer);
         self.write_xml(&mut writer)?;
@@ -414,6 +587,20 @@ impl<'a> Node<'a> {
     /// Returns the interfaces on this node.
     pub fn interfaces(&self) -> &[Interface<'a>] {
         &self.interfaces
+    }
+
+    /// Return the content of the Telepathy `tp:docstring` extension element, if any.
+    ///
+    /// The content — typically HTML — is returned as it appears in the document, with the
+    /// surrounding whitespace trimmed. Note that docstrings are only captured when parsing;
+    /// the writer does not emit them.
+    pub fn docstring(&self) -> Option<&str> {
+        self.docstring.as_deref()
+    }
+
+    /// Return the Telepathy type definitions on this node.
+    pub fn telepathy_types(&self) -> &[telepathy::TypeDef] {
+        &self.telepathy_types
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {

@@ -2297,10 +2297,12 @@ dependencies = [
 
 [[package]]
 name = "zbus_xmlgen"
-version = "5.3.1"
+version = "5.4.0"
 dependencies = [
  "clap",
  "pretty_assertions",
+ "serde",
+ "serde_repr",
  "snakecase",
  "zbus",
  "zbus_xml",

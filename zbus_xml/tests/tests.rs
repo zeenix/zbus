@@ -765,3 +765,323 @@ fn root_element_name_is_ignored() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[test]
+fn docstrings() -> Result<(), Box<dyn Error>> {
+    // Telepathy-style docstrings are captured on interfaces, members and args, verbatim
+    // (including markup and references) but with the surrounding whitespace trimmed.
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <interface name="org.test.testinterface">
+                <tp:docstring>
+                    <p>An interface, closely modeled after the
+                    <strong>MPRIS</strong> ones &amp; documented inline.</p>
+                    <tp:rationale>
+                        <p>With a nested rationale.</p>
+                    </tp:rationale>
+                </tp:docstring>
+                <method name="TestMethod">
+                    <tp:docstring>Does the thing.</tp:docstring>
+                    <arg name="testarg" direction="in" type="s">
+                        <tp:docstring>The thing to do.</tp:docstring>
+                    </arg>
+                    <arg name="undocumented" direction="out" type="u"/>
+                </method>
+                <signal name="TestSignal">
+                    <tp:docstring>Emitted when the thing was done.</tp:docstring>
+                    <arg name="testarg" type="s">
+                        <tp:docstring>The thing that was done.</tp:docstring>
+                    </arg>
+                </signal>
+                <property name="TestProperty" type="b" access="read">
+                    <tp:docstring>Whether the thing has been done.</tp:docstring>
+                </property>
+                <property name="EmptyDocstring" type="b" access="read">
+                    <tp:docstring>   </tp:docstring>
+                    <tp:docstring/>
+                </property>
+            </interface>
+        </node>
+    "#;
+
+    let node = Node::try_from(input)?;
+    let interface = &node.interfaces()[0];
+    let docstring = interface.docstring().expect("interface docstring");
+    assert!(docstring.starts_with("<p>An interface,"));
+    assert!(docstring.contains("<strong>MPRIS</strong> ones &amp; documented inline.</p>"));
+    assert!(docstring.contains("<tp:rationale>"));
+    assert!(docstring.ends_with("</tp:rationale>"));
+
+    let method = &interface.methods()[0];
+    assert_eq!(method.docstring(), Some("Does the thing."));
+    assert_eq!(method.args()[0].docstring(), Some("The thing to do."));
+    assert_eq!(method.args()[1].docstring(), None);
+
+    let signal = &interface.signals()[0];
+    assert_eq!(signal.docstring(), Some("Emitted when the thing was done."));
+    assert_eq!(
+        signal.args()[0].docstring(),
+        Some("The thing that was done.")
+    );
+
+    assert_eq!(
+        interface.properties()[0].docstring(),
+        Some("Whether the thing has been done.")
+    );
+    // Whitespace-only and self-closing docstrings count as absent.
+    assert_eq!(interface.properties()[1].docstring(), None);
+
+    Ok(())
+}
+
+#[test]
+fn unsupported_element_warnings() -> Result<(), Box<dyn Error>> {
+    // Elements that have no place in the introspection format are skipped with a warning.
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <tp:flags name="Media_Caps" value-prefix="Cap" type="u">
+                <tp:flag suffix="Audio" value="1"/>
+            </tp:flags>
+            <interface name="org.test.testinterface">
+                <tp:docstring>Documented, not warned about.</tp:docstring>
+                <method name="TestMethod">
+                    <tp:possible-errors/>
+                </method>
+                <annotation name="org.test.Annotation" value="v">
+                    <unexpected/>
+                </annotation>
+            </interface>
+        </node>
+    "#;
+
+    let (node, warnings) = Node::from_reader_with_warnings(input.as_bytes())?;
+    assert_eq!(node.interfaces().len(), 1);
+    assert_eq!(
+        node.interfaces()[0].docstring(),
+        Some("Documented, not warned about.")
+    );
+
+    let elements: Vec<_> = warnings.iter().map(|w| w.element()).collect();
+    assert_eq!(elements, ["tp:flags", "tp:possible-errors", "unexpected"]);
+    // Nested children of a skipped element (`tp:flag`) are not warned about separately, and
+    // warnings point at the start of the offending element.
+    assert_eq!(warnings[0].position(), input.find("<tp:flags").unwrap());
+    assert!(warnings[0].message().contains("`<tp:flags>`"));
+    assert!(warnings[0].to_string().contains("`<tp:flags>`"));
+
+    // The warning-less API still just ignores everything.
+    assert_eq!(Node::try_from(input)?, node);
+
+    Ok(())
+}
+
+#[test]
+fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <tp:simple-type name="Playlist_Id" type="o" array-name="Playlist_Id_List">
+                <tp:docstring>Unique playlist identifier.</tp:docstring>
+            </tp:simple-type>
+            <interface name="org.test.testinterface">
+                <tp:enum name="Playlist_Ordering" type="s">
+                    <tp:docstring>The way to order playlists.</tp:docstring>
+                    <tp:enumvalue suffix="Alphabetical" value="Alphabetical">
+                        <tp:docstring>Alphabetical ordering, ascending.</tp:docstring>
+                    </tp:enumvalue>
+                    <tp:enumvalue suffix="UserDefined" value="User"/>
+                </tp:enum>
+                <tp:struct name="Playlist" array-name="Playlist_List">
+                    <tp:docstring>A data structure describing a playlist.</tp:docstring>
+                    <tp:member type="o" tp:type="Playlist_Id" name="Id">
+                        <tp:docstring>A unique identifier.</tp:docstring>
+                    </tp:member>
+                    <tp:member type="s" name="Name"/>
+                </tp:struct>
+                <tp:mapping name="String_Variant_Map">
+                    <tp:member type="s" name="Key"/>
+                    <tp:member type="v" name="Value"/>
+                </tp:mapping>
+                <method name="GetPlaylists">
+                    <arg direction="out" name="playlists" type="a(os)" tp:type="Playlist[]"/>
+                </method>
+                <property name="Orderings" type="as" tp:type="Playlist_Ordering[]" access="read"/>
+            </interface>
+        </node>
+    "#;
+
+    let (node, warnings) = Node::from_reader_with_warnings(input.as_bytes())?;
+    assert_eq!(warnings, []);
+
+    use zbus_xml::telepathy::TypeDef;
+
+    // Node-level definitions.
+    let [TypeDef::SimpleType(id)] = node.telepathy_types() else {
+        panic!("expected a simple type on the node");
+    };
+    assert_eq!(id.name(), "Playlist_Id");
+    assert_eq!(*id.ty().inner(), Signature::ObjectPath);
+    assert_eq!(id.docstring(), Some("Unique playlist identifier."));
+
+    // Interface-level definitions.
+    let interface = &node.interfaces()[0];
+    let [
+        TypeDef::Enum(ordering),
+        TypeDef::Struct(playlist),
+        TypeDef::Mapping(map),
+    ] = interface.telepathy_types()
+    else {
+        panic!("expected enum, struct and mapping on the interface");
+    };
+
+    assert_eq!(ordering.name(), "Playlist_Ordering");
+    assert_eq!(*ordering.ty().inner(), Signature::Str);
+    assert_eq!(ordering.docstring(), Some("The way to order playlists."));
+    assert_eq!(ordering.values().len(), 2);
+    assert_eq!(ordering.values()[0].suffix(), "Alphabetical");
+    assert_eq!(ordering.values()[0].value(), "Alphabetical");
+    assert_eq!(
+        ordering.values()[0].docstring(),
+        Some("Alphabetical ordering, ascending.")
+    );
+    assert_eq!(ordering.values()[1].suffix(), "UserDefined");
+    assert_eq!(ordering.values()[1].value(), "User");
+    assert_eq!(ordering.values()[1].docstring(), None);
+
+    assert_eq!(playlist.name(), "Playlist");
+    assert_eq!(
+        playlist.docstring(),
+        Some("A data structure describing a playlist.")
+    );
+    assert_eq!(playlist.members().len(), 2);
+    assert_eq!(playlist.members()[0].name(), "Id");
+    assert_eq!(*playlist.members()[0].ty().inner(), Signature::ObjectPath);
+    assert_eq!(playlist.members()[0].tp_type(), Some("Playlist_Id"));
+    assert_eq!(
+        playlist.members()[0].docstring(),
+        Some("A unique identifier.")
+    );
+    assert_eq!(playlist.members()[1].tp_type(), None);
+    assert_eq!(playlist.signature().to_string(), "(os)");
+
+    assert_eq!(map.name(), "String_Variant_Map");
+    assert_eq!(map.key().name(), "Key");
+    assert_eq!(map.value().name(), "Value");
+    assert_eq!(map.signature().to_string(), "a{sv}");
+
+    // `tp:type` references on args and properties.
+    let method = &interface.methods()[0];
+    assert_eq!(method.args()[0].tp_type(), Some("Playlist[]"));
+    assert_eq!(
+        interface.properties()[0].tp_type(),
+        Some("Playlist_Ordering[]")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn malformed_telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
+    // A type definition that cannot be parsed doesn't fail the document; it is skipped with a
+    // warning.
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <tp:simple-type type="o"/>
+            <tp:simple-type name="Bad_Type" type="!"/>
+            <tp:simple-type name="Empty_Type" type=""/>
+            <tp:enum name="No_Type">
+                <tp:enumvalue suffix="A" value="0"/>
+            </tp:enum>
+            <tp:enum name="Bad_Value" type="u">
+                <tp:enumvalue value="0"/>
+            </tp:enum>
+            <tp:struct name="Empty"/>
+            <tp:struct name="Bad_Member">
+                <tp:member name="No_Type_Either"/>
+            </tp:struct>
+            <tp:mapping name="Not_A_Pair">
+                <tp:member type="s" name="Key"/>
+            </tp:mapping>
+            <tp:mapping name="Bad_Key">
+                <tp:member type="v" name="Key"/>
+                <tp:member type="s" name="Value"/>
+            </tp:mapping>
+            <interface name="org.test.testinterface"/>
+        </node>
+    "#;
+
+    let (node, warnings) = Node::from_reader_with_warnings(input.as_bytes())?;
+    assert_eq!(node.telepathy_types(), []);
+    assert_eq!(node.interfaces().len(), 1);
+
+    let messages: Vec<_> = warnings.iter().map(|w| w.message()).collect();
+    assert_eq!(
+        messages,
+        [
+            "malformed element `<tp:simple-type>` ignored: missing attribute `name`",
+            "malformed element `<tp:simple-type>` ignored: invalid signature in `type`",
+            "malformed element `<tp:simple-type>` ignored: invalid signature in `type`",
+            "malformed element `<tp:enum>` ignored: missing attribute `type`",
+            "malformed element `<tp:enum>` ignored: an enumvalue is missing its `suffix` or \
+             `value` attribute",
+            "malformed element `<tp:struct>` ignored: no members",
+            "malformed element `<tp:struct>` ignored: a member is missing its `name` or `type` \
+             attribute, or has an invalid signature",
+            "malformed element `<tp:mapping>` ignored: expected exactly 2 members",
+            "malformed element `<tp:mapping>` ignored: the key is not a basic type",
+        ]
+    );
+    assert_eq!(
+        warnings[0].position(),
+        input.find("<tp:simple-type").unwrap()
+    );
+
+    // An empty struct member type composes into an invalid struct signature, so it must be
+    // rejected too.
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <tp:struct name="S"><tp:member name="m" type=""/></tp:struct>
+        </node>
+    "#;
+    let (node, warnings) = Node::from_reader_with_warnings(input.as_bytes())?;
+    assert_eq!(node.telepathy_types(), []);
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].message().contains("`<tp:struct>`"));
+
+    Ok(())
+}
+
+#[test]
+fn unknown_children_of_telepathy_definitions() -> Result<(), Box<dyn Error>> {
+    // Unknown elements are warned about wherever they appear, including inside the leaf
+    // elements of type definitions.
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <tp:simple-type name="Token" type="s">
+                <tp:added version="0.1"/>
+            </tp:simple-type>
+            <interface name="org.test.testinterface">
+                <tp:enum name="Level" type="u">
+                    <tp:enumvalue suffix="Low" value="0">
+                        <tp:changed version="0.2"/>
+                    </tp:enumvalue>
+                </tp:enum>
+                <tp:struct name="Pair">
+                    <tp:member name="first" type="s">
+                        <bogus/>
+                    </tp:member>
+                    <tp:member name="second" type="s"/>
+                </tp:struct>
+            </interface>
+        </node>
+    "#;
+
+    let (node, warnings) = Node::from_reader_with_warnings(input.as_bytes())?;
+    // The definitions themselves still parse fine.
+    assert_eq!(node.telepathy_types().len(), 1);
+    assert_eq!(node.interfaces()[0].telepathy_types().len(), 2);
+
+    let elements: Vec<_> = warnings.iter().map(|w| w.element()).collect();
+    assert_eq!(elements, ["tp:added", "tp:changed", "bogus"]);
+
+    Ok(())
+}

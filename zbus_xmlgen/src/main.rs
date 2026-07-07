@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms)]
 
 use std::{
+    collections::HashSet,
     error::Error,
     fs::{File, OpenOptions},
     io::Write,
@@ -13,9 +14,9 @@ use zbus::{
     names::BusName,
     zvariant::ObjectPath,
 };
-use zbus_xml::{Interface, Node};
+use zbus_xml::{Interface, Node, Warning};
 
-use zbus_xmlgen::write_interfaces;
+use zbus_xmlgen::CodeGenerator;
 
 mod cli;
 
@@ -49,7 +50,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         cli::Command::File { path } => {
             let input_src = path.file_name().unwrap().to_string_lossy().to_string();
             let f = File::open(path)?;
-            DBusInfo(Node::from_reader(f)?, None, None, input_src)
+            let (node, warnings) = Node::from_reader_with_warnings(f)?;
+            report_warnings(&warnings);
+            DBusInfo(node, None, None, input_src)
         }
     };
 
@@ -66,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
     }
 
-    let mut output_target = match args.output.as_deref() {
+    let output_target = match args.output.as_deref() {
         Some("-") => OutputTarget::Stdout,
         Some(path) => {
             let file = OpenOptions::new()
@@ -79,25 +82,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => OutputTarget::MultipleFiles,
     };
 
-    for interface in needed_ifaces {
-        let output = write_interfaces(
-            std::slice::from_ref(&interface),
+    let generator = CodeGenerator::new()
+        .with_node_types(node.telepathy_types())
+        .with_service(service.as_ref())
+        .with_path(path.as_ref())
+        .with_format(true);
+    let file_code = |interfaces: &[Interface<'_>]| {
+        generator.file_code(
+            interfaces,
             &fdo_standard_ifaces,
-            service.clone(),
-            path.clone(),
             &input_src,
             env!("CARGO_BIN_NAME"),
             env!("CARGO_PKG_VERSION"),
-        )?;
+        )
+    };
 
-        let interface_name = interface.name();
-        match output_target {
-            OutputTarget::Stdout => println!("{output}"),
-            OutputTarget::SingleFile(ref mut file) => {
-                file.write_all(output.as_bytes())?;
-                println!("Generated code for `{interface_name}`");
-            }
-            OutputTarget::MultipleFiles => {
+    match output_target {
+        OutputTarget::MultipleFiles => {
+            for interface in &needed_ifaces {
+                let output = file_code(std::slice::from_ref(interface))?;
+                let interface_name = interface.name();
                 let filename = interface_name
                     .split('.')
                     .next_back()
@@ -106,7 +110,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 std::fs::write(format!("{}.rs", &filename), output)?;
                 println!("Generated code for `{interface_name}` in {filename}.rs");
             }
-        };
+        }
+        // A single output is one document: all interfaces go into one `file_code` call, so
+        // the doc header and any shared type definitions appear only once.
+        _ if needed_ifaces.is_empty() => (),
+        OutputTarget::Stdout => println!("{}", file_code(&needed_ifaces)?),
+        OutputTarget::SingleFile(mut file) => {
+            file.write_all(file_code(&needed_ifaces)?.as_bytes())?;
+            for interface in &needed_ifaces {
+                println!("Generated code for `{}`", interface.name());
+            }
+        }
     }
 
     Ok(())
@@ -139,11 +153,19 @@ impl DBusInfo<'_> {
             .unwrap()
             .introspect()?;
 
-        Ok(DBusInfo(
-            Node::from_reader(xml.as_bytes())?,
-            Some(service),
-            Some(path),
-            input_src,
-        ))
+        let (node, warnings) = Node::from_reader_with_warnings(xml.as_bytes())?;
+        report_warnings(&warnings);
+
+        Ok(DBusInfo(node, Some(service), Some(path), input_src))
+    }
+}
+
+/// Warn on stderr about ignored XML content, once per distinct message.
+fn report_warnings(warnings: &[Warning]) {
+    let mut seen = HashSet::new();
+    for warning in warnings {
+        if seen.insert(warning.message()) {
+            eprintln!("Warning: {}", warning.message());
+        }
     }
 }
