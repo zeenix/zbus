@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.13.0 - 2026-07-07
+
+### Dependencies
+- ⬆️ Update libfuzzer-sys to v0.4.13 (#1815).
+
+### Fixed
+- 🐛 Don't double-wrap variant-typed fields in as_value. #1819
+
+### Testing
+- ✅ Cover nested a{sv}-in-a{sv} in nested_dict_value test.
+- ✅ Add test case for `amb` encoding (GVariant only).
+
 ## 5.12.0 - 2026-05-27
 
 ### Dependencies
