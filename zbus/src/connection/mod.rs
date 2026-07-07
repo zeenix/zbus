@@ -6,7 +6,10 @@ use std::{
     collections::HashMap,
     future::Future,
     io,
-    sync::{Arc, OnceLock, Weak},
+    sync::{
+        Arc, OnceLock, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tracing::{Instrument, debug, info_span, instrument, trace, trace_span, warn};
@@ -32,7 +35,7 @@ pub mod socket;
 pub use socket::Socket;
 
 mod socket_reader;
-use socket_reader::SocketReader;
+use socket_reader::{SocketReader, SocketStatus};
 
 mod pending_method_calls;
 use pending_method_calls::PendingMethodCalls;
@@ -54,7 +57,7 @@ pub(crate) struct ConnectionInner {
     unique_name: OnceLock<OwnedUniqueName>,
     registered_names: Mutex<HashMap<WellKnownName<'static>, NameStatus>>,
 
-    activity_event: Arc<Event>,
+    socket_status: Arc<SocketStatus>,
     socket_write: Mutex<Box<dyn socket::WriteHalf>>,
 
     // Our executor
@@ -220,7 +223,7 @@ impl Connection {
             return Err(Error::Unsupported);
         }
 
-        self.inner.activity_event.notify(usize::MAX);
+        self.inner.socket_status.activity_event.notify(usize::MAX);
         let mut write = self.inner.socket_write.lock().await;
 
         write.send_message(msg).await
@@ -1100,7 +1103,11 @@ impl Connection {
 
         let connection = Self {
             inner: Arc::new(ConnectionInner {
-                activity_event: Arc::new(Event::new()),
+                socket_status: Arc::new(SocketStatus {
+                    activity_event: Event::new(),
+                    closed: AtomicBool::new(false),
+                    closed_event: Event::new(),
+                }),
                 socket_write: Mutex::new(auth.socket_write),
                 server_guid: auth.server_guid,
                 #[cfg(unix)]
@@ -1144,7 +1151,31 @@ impl Connection {
     ///
     /// This function is meant for the caller to implement idle or timeout on inactivity.
     pub fn monitor_activity(&self) -> EventListener {
-        self.inner.activity_event.listen()
+        self.inner.socket_status.activity_event.listen()
+    }
+
+    /// Returns `true` if the connection has been closed.
+    ///
+    /// A connection is considered closed either when the remote peer disconnects, an I/O error
+    /// occurs on the socket, or [`Connection::close`] is called.
+    pub fn is_closed(&self) -> bool {
+        self.inner.socket_status.closed.load(Ordering::Relaxed)
+    }
+
+    /// Waits until the connection is closed.
+    ///
+    /// A connection is considered closed either when the remote peer disconnects, an I/O error
+    /// occurs on the socket, or [`Connection::close`] is called.
+    ///
+    /// Returns immediately if the connection is already closed.
+    pub async fn closed(&self) {
+        loop {
+            let listener = self.inner.socket_status.closed_event.listen();
+            if self.inner.socket_status.closed.load(Ordering::Acquire) {
+                return;
+            }
+            listener.await;
+        }
     }
 
     /// Return the peer credentials.
@@ -1199,14 +1230,21 @@ impl Connection {
     ///
     /// After this call, all reading and writing operations will fail.
     pub async fn close(self) -> Result<()> {
-        self.inner.activity_event.notify(usize::MAX);
-        self.inner
+        self.inner.socket_status.activity_event.notify(usize::MAX);
+        let result = self
+            .inner
             .socket_write
             .lock()
             .await
             .close()
             .await
-            .map_err(Into::into)
+            .map_err(Into::into);
+        self.inner
+            .socket_status
+            .closed
+            .store(true, Ordering::Release);
+        self.inner.socket_status.closed_event.notify(usize::MAX);
+        result
     }
 
     /// Gracefully close the connection, waiting for all other references to be dropped.
@@ -1275,7 +1313,7 @@ impl Connection {
                     already_read,
                     #[cfg(unix)]
                     already_received_fds,
-                    inner.activity_event.clone(),
+                    inner.socket_status.clone(),
                 )
                 .spawn(&inner.executor),
             )
