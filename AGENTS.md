@@ -2,6 +2,9 @@
 
 This file provides guidance to AI coding agents when working with code in this repository.
 
+For contribution conventions — commit-message format, atomic commits, code layout, and
+more — follow the guidelines in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Project Overview
 
 zbus is a pure Rust implementation of D-Bus communication providing a safe, high-level API without C library dependencies. It's organized as a Cargo workspace with multiple interconnected crates for different aspects of D-Bus functionality.
