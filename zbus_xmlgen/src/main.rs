@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .next_back()
                     .expect("Failed to split name");
                 let filename = to_snakecase(filename);
-                std::fs::write(format!("{}.rs", &filename), output)?;
+                std::fs::write(format!("{filename}.rs"), output)?;
                 println!("Generated code for `{interface_name}` in {filename}.rs");
             }
         }

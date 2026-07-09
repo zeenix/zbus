@@ -507,12 +507,10 @@ fn decode_entity(entity: &str) -> Option<char> {
         "apos" => return Some('\''),
         _ => {}
     }
-    let code = match entity.strip_prefix('#') {
-        Some(dec_or_hex) => match dec_or_hex.strip_prefix(['x', 'X']) {
-            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
-            None => dec_or_hex.parse().ok()?,
-        },
-        None => return None,
+    let dec_or_hex = entity.strip_prefix('#')?;
+    let code = match dec_or_hex.strip_prefix(['x', 'X']) {
+        Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+        None => dec_or_hex.parse().ok()?,
     };
     char::from_u32(code)
 }
