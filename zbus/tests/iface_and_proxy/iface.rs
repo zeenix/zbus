@@ -181,6 +181,29 @@ impl MyIface {
             .unwrap();
     }
 
+    // Same as `create_obj_inside`, but from a `&mut self` method. Dispatch holds a *write* lock on
+    // the calling interface for the whole duration of this method, so registering a secondary
+    // interface here exercises a different locking path than the `&self` variant above. Regression
+    // test for https://github.com/z-galaxy/zbus/issues/1845.
+    #[instrument]
+    async fn create_obj_inside_mut(
+        &mut self,
+        #[zbus(object_server)] object_server: &ObjectServer,
+        key: String,
+    ) {
+        debug!("`CreateObjInsideMut` called.");
+        // Mutate `self` so the write lock on this interface is genuinely held (and used) across the
+        // registration of the secondary interface below.
+        self.count += 1;
+        object_server
+            .at(
+                format!("/zbus/test/{key}"),
+                MyIface::new(self.next_tx.clone()),
+            )
+            .await
+            .unwrap();
+    }
+
     #[instrument]
     async fn destroy_obj(&self, key: &str) {
         debug!("`DestroyObj` called.");
