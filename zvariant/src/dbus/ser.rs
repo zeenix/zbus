@@ -473,13 +473,9 @@ where
                 "a struct".to_string(),
             ));
         };
-        let struct_field = fields.get(1).and_then(|f| {
-            if matches!(f, Signature::Structure(_)) {
-                Some(f)
-            } else {
-                None
-            }
-        });
+        let struct_field = fields
+            .get(1)
+            .filter(|&f| matches!(f, Signature::Structure(_)));
 
         ser.0.add_padding(STRUCT_ALIGNMENT_DBUS)?;
         let mut struct_ser = Self::structure(ser)?;

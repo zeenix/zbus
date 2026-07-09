@@ -687,10 +687,7 @@ impl<'a> Proxy<'a> {
     /// Use PropertiesCache::ready() to wait for the cache to be populated and to get any errors
     /// encountered in the population.
     pub(crate) fn get_property_cache(&self) -> Option<&Arc<PropertiesCache>> {
-        let cache = match &self.inner.property_cache {
-            Some(cache) => cache,
-            None => return None,
-        };
+        let cache = self.inner.property_cache.as_ref()?;
         let (cache, _) = &cache.get_or_init(|| {
             let proxy = self.owned_properties_proxy();
             let interface = self.interface().to_owned();
