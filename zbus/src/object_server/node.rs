@@ -44,10 +44,7 @@ impl Node {
             if i.is_empty() {
                 continue;
             }
-            match node.children.get(i) {
-                Some(n) => node = n,
-                None => return None,
-            }
+            node = node.children.get(i)?;
         }
 
         Some(node)
