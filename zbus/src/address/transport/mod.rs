@@ -6,14 +6,14 @@
 use crate::connection::socket::Command;
 #[cfg(windows)]
 use crate::win32::autolaunch_bus_address;
-use crate::{Error, Result};
+use crate::{Address, Error, Result};
 #[cfg(not(feature = "tokio"))]
 use async_io::Async;
-use std::collections::HashMap;
 #[cfg(not(feature = "tokio"))]
 use std::net::TcpStream;
 #[cfg(unix)]
 use std::os::unix::net::{SocketAddr, UnixStream};
+use std::{collections::HashMap, sync::Arc};
 #[cfg(feature = "tokio")]
 use tokio::net::TcpStream;
 #[cfg(feature = "tokio-vsock")]
@@ -100,7 +100,7 @@ pub enum Transport {
 
 impl Transport {
     #[cfg_attr(any(unix, windows), async_recursion::async_recursion)]
-    pub(super) async fn connect(self) -> Result<Stream> {
+    pub(super) async fn connect(self, address: Address) -> Result<Stream> {
         match self {
             Transport::Unix(unix) => {
                 // This is a `path` in case of Windows until uds_windows provides the needed API:
@@ -122,9 +122,11 @@ impl Transport {
                 let stream = crate::Task::spawn_blocking(
                     move || -> Result<_> {
                         #[cfg(unix)]
-                        let stream = UnixStream::connect_addr(&addr)?;
+                        let stream = UnixStream::connect_addr(&addr)
+                            .map_err(|e| Error::Connection(Arc::new(e), address))?;
                         #[cfg(windows)]
-                        let stream = UnixStream::connect(addr)?;
+                        let stream = UnixStream::connect(addr)
+                            .map_err(|e| Error::Connection(Arc::new(e), address))?;
                         stream.set_nonblocking(true)?;
 
                         Ok(stream)
@@ -156,10 +158,11 @@ impl Transport {
                 }
             }
             #[cfg(unix)]
-            Transport::Unixexec(unixexec) => unixexec.connect().await.map(Stream::Unixexec),
+            Transport::Unixexec(unixexec) => unixexec.connect(&address).await.map(Stream::Unixexec),
             #[cfg(all(feature = "vsock", not(feature = "tokio")))]
             Transport::Vsock(addr) => {
-                let stream = VsockStream::connect_with_cid_port(addr.cid(), addr.port())?;
+                let stream = VsockStream::connect_with_cid_port(addr.cid(), addr.port())
+                    .map_err(|e| Error::Connection(Arc::new(e), address))?;
                 Async::new(stream).map(Stream::Vsock).map_err(Into::into)
             }
 
@@ -168,13 +171,13 @@ impl Transport {
                 VsockStream::connect(tokio_vsock::VsockAddr::new(addr.cid(), addr.port()))
                     .await
                     .map(Stream::Vsock)
-                    .map_err(Into::into)
+                    .map_err(|e| Error::Connection(Arc::new(e), address))
             }
 
             Transport::Tcp(mut addr) => match addr.take_nonce_file() {
                 Some(nonce_file) => {
                     #[allow(unused_mut)]
-                    let mut stream = addr.connect().await?;
+                    let mut stream = addr.connect(&address).await?;
 
                     #[cfg(unix)]
                     let nonce_file = {
@@ -208,7 +211,7 @@ impl Transport {
 
                     Ok(Stream::Tcp(stream))
                 }
-                None => addr.connect().await.map(Stream::Tcp),
+                None => addr.connect(&address).await.map(Stream::Tcp),
             },
 
             #[cfg(windows)]
@@ -224,8 +227,8 @@ impl Transport {
 
             #[cfg(target_os = "macos")]
             Transport::Launchd(launchd) => {
-                let addr = launchd.bus_address().await?;
-                addr.connect().await
+                let transport = launchd.bus_address().await?;
+                transport.connect(address).await
             }
 
             #[cfg(unix)]

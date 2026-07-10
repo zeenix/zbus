@@ -1,5 +1,5 @@
 use super::encode_percents;
-use crate::{Error, Result};
+use crate::{Address, Error, Result};
 #[cfg(not(feature = "tokio"))]
 use async_io::Async;
 #[cfg(not(feature = "tokio"))]
@@ -8,6 +8,7 @@ use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     str::FromStr,
+    sync::Arc,
 };
 #[cfg(feature = "tokio")]
 use tokio::net::TcpStream;
@@ -128,20 +129,25 @@ impl Tcp {
     }
 
     #[cfg(not(feature = "tokio"))]
-    pub(super) async fn connect(self) -> Result<Async<TcpStream>> {
+    pub(super) async fn connect(self, address: &Address) -> Result<Async<TcpStream>> {
+        let address_clone = address.clone();
+        let family = self.family();
         let addrs = crate::Task::spawn_blocking(
             move || -> Result<Vec<SocketAddr>> {
-                let addrs = (self.host(), self.port()).to_socket_addrs()?.filter(|a| {
-                    if let Some(family) = self.family() {
-                        if family == TcpTransportFamily::Ipv4 {
-                            a.is_ipv4()
+                let addrs = (self.host(), self.port())
+                    .to_socket_addrs()
+                    .map_err(|e| Error::Connection(Arc::new(e), address_clone))?
+                    .filter(|a| {
+                        if let Some(family) = self.family() {
+                            if family == TcpTransportFamily::Ipv4 {
+                                a.is_ipv4()
+                            } else {
+                                a.is_ipv6()
+                            }
                         } else {
-                            a.is_ipv6()
+                            true
                         }
-                    } else {
-                        true
-                    }
-                });
+                    });
                 Ok(addrs.collect())
             },
             "connect tcp",
@@ -149,12 +155,16 @@ impl Tcp {
         .await
         .map_err(|e| Error::Address(format!("Failed to receive TCP addresses: {e}")))??;
 
+        let mut last_err = Error::Address(match family {
+            Some(family) => format!("no `{family}` addresses found for `{address}`"),
+            None => format!("no addresses found for `{address}`"),
+        });
+
         // we could attempt connections in parallel?
-        let mut last_err = Error::Address("Failed to connect".into());
         for addr in addrs {
             match Async::<TcpStream>::connect(addr).await {
                 Ok(stream) => return Ok(stream),
-                Err(e) => last_err = e.into(),
+                Err(e) => last_err = Error::Connection(Arc::new(e), address.clone()),
             }
         }
 
@@ -162,10 +172,10 @@ impl Tcp {
     }
 
     #[cfg(feature = "tokio")]
-    pub(super) async fn connect(self) -> Result<TcpStream> {
+    pub(super) async fn connect(self, address: &Address) -> Result<TcpStream> {
         TcpStream::connect((self.host(), self.port()))
             .await
-            .map_err(|e| Error::InputOutput(e.into()))
+            .map_err(|e| Error::Connection(Arc::new(e), address.clone()))
     }
 }
 

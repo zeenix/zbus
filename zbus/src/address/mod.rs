@@ -56,7 +56,9 @@ impl Address {
 
     #[cfg_attr(any(target_os = "macos", windows), async_recursion::async_recursion)]
     pub(crate) async fn connect(self) -> Result<Stream> {
-        self.transport.connect().await
+        // FIXME: Avoid the unconditional clone of the whole `Address`.
+        let address = self.clone();
+        self.transport.connect(address).await
     }
 
     /// Get the address for the session socket respecting the `DBUS_SESSION_BUS_ADDRESS` environment
