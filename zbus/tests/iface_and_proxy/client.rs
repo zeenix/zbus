@@ -367,6 +367,20 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     created_inside_proxy.ping().await?;
     proxy.destroy_obj("CreatedInside").await?;
 
+    // Same, but from a `&mut self` method, which holds a *write* lock on the calling interface
+    // across the registration. Regression test for #1845.
+    proxy
+        .inner()
+        .call_method("CreateObjInsideMut", &("CreatedInsideMut"))
+        .await?;
+    let created_inside_mut_proxy = MyIfaceProxy::builder(&conn)
+        .destination("org.freedesktop.MyService")?
+        .path("/zbus/test/CreatedInsideMut")?
+        .build()
+        .await?;
+    created_inside_mut_proxy.ping().await?;
+    proxy.destroy_obj("CreatedInsideMut").await?;
+
     // Test that interfaces emit signals when properties change
     // according to their emits_changed_signal flags.
     let mut props_changed = props_proxy.receive_properties_changed().await?;

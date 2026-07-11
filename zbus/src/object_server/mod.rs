@@ -118,6 +118,19 @@ impl ObjectServer {
     /// where this method becomes useful.
     ///
     /// If the interface already exists at this path, returns false.
+    ///
+    /// # Deadlocks
+    ///
+    /// It is fine to call this method from within an interface method (e.g. to register a child or
+    /// sibling object on demand), including from a `&mut self` method. There is however one
+    /// exception: registering an [`ObjectManager`] at an ancestor of the currently-executing
+    /// interface from within one of its `&mut self` methods will **deadlock**.
+    ///
+    /// This is because adding an `ObjectManager` reads the properties of every object under it (to
+    /// emit the initial `InterfacesAdded` signals), which requires a shared lock on each of those
+    /// interfaces — including the calling one, whose exclusive lock is held for the duration of the
+    /// `&mut self` method. Registering the `ObjectManager` up front (typically at connection
+    /// set-up), or from a `&self` method, avoids this.
     pub async fn at<'p, P, I>(&self, path: P, iface: I) -> Result<bool>
     where
         I: Interface,
