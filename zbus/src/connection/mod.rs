@@ -1735,6 +1735,41 @@ mod p2p_tests {
         )
     }
 
+    // With both backends compiled in, exercise the async-io one end to end. `utils::block_on`
+    // establishes a tokio runtime (so the other tests hit the tokio arm), so drive this with
+    // `async_io::block_on` and hand the builder async-io streams: the connection must then latch
+    // the async-io backend and spin up its internal driver thread.
+    #[cfg(all(unix, feature = "tokio", feature = "async-io"))]
+    #[test]
+    #[timeout(15000)]
+    fn unix_p2p_async_io_backend() {
+        async_io::block_on(async {
+            let (server1, client1) = async_io_unix_p2p_pipe().await.unwrap();
+            assert!(server1.executor().needs_internal_driver());
+            assert!(client1.executor().needs_internal_driver());
+            let (server2, client2) = async_io_unix_p2p_pipe().await.unwrap();
+
+            test_p2p(server1, client1, server2, client2).await.unwrap();
+        });
+    }
+
+    #[cfg(all(unix, feature = "tokio", feature = "async-io"))]
+    async fn async_io_unix_p2p_pipe() -> Result<(Connection, Connection)> {
+        use std::os::unix::net::UnixStream;
+
+        let guid = Guid::generate();
+        let (p0, p1) = UnixStream::pair().unwrap();
+
+        futures_util::try_join!(
+            Builder::async_io_unix_stream(p1).p2p().build(),
+            Builder::async_io_unix_stream(p0)
+                .server(guid)
+                .unwrap()
+                .p2p()
+                .build(),
+        )
+    }
+
     #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     #[test]
     #[timeout(15000)]
