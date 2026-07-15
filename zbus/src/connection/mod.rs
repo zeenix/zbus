@@ -1672,12 +1672,12 @@ mod p2p_tests {
             let p0 = listener.incoming().next().unwrap().unwrap();
 
             (
-                Builder::tcp_stream(p0)
+                Builder::async_io_tcp_stream(p0)
                     .server(guid)
                     .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
-                Builder::tcp_stream(p1).p2p(),
+                Builder::async_io_tcp_stream(p1).p2p(),
             )
         };
 
@@ -1729,10 +1729,15 @@ mod p2p_tests {
 
         let (p0, p1) = UnixStream::pair().unwrap();
 
-        futures_util::try_join!(
-            Builder::unix_stream(p1).p2p().build(),
-            Builder::unix_stream(p0).server(guid).unwrap().p2p().build(),
-        )
+        #[cfg(not(feature = "tokio"))]
+        let (b1, b0) = (
+            Builder::async_io_unix_stream(p1),
+            Builder::async_io_unix_stream(p0),
+        );
+        #[cfg(feature = "tokio")]
+        let (b1, b0) = (Builder::unix_stream(p1), Builder::unix_stream(p0));
+
+        futures_util::try_join!(b1.p2p().build(), b0.server(guid).unwrap().p2p().build(),)
     }
 
     // With both backends compiled in, exercise the async-io one end to end. `utils::block_on`

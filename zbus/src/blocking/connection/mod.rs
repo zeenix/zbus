@@ -342,6 +342,9 @@ mod tests {
         blocking::{MessageIterator, connection::Builder},
     };
 
+    // Exercises the deprecated `unix_stream` (which must keep working); the `async_io_unix_stream`
+    // replacement just forwards to the async builder covered elsewhere.
+    #[allow(deprecated)]
     #[test]
     #[timeout(15000)]
     fn unix_p2p() {

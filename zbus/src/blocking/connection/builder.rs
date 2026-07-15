@@ -102,13 +102,23 @@ impl<'a> Builder<'a> {
     ///
     /// This method expects a
     /// [`tokio::net::UnixStream`](https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html).
-    /// Without the `tokio` feature it accepts a [`std::os::unix::net::UnixStream`] instead.
+    /// Without the `tokio` feature it accepts a [`std::os::unix::net::UnixStream`] instead, but
+    /// that form is deprecated in favor of
+    /// [`async_io_unix_stream`](Self::async_io_unix_stream).
     ///
     /// Since tokio currently [does not support Unix domain sockets][tuds] on Windows, this method
     /// is not available when the `tokio` feature is enabled and building for Windows target.
     ///
     /// [tuds]: https://github.com/tokio-rs/tokio/issues/2201
+    #[cfg_attr(
+        not(feature = "tokio"),
+        deprecated(
+            since = "5.19.0",
+            note = "Use `async_io_unix_stream` to avoid a build failure if the `tokio` feature gets enabled"
+        )
+    )]
     #[cfg(any(unix, not(feature = "tokio")))]
+    #[allow(deprecated)] // forwards to the async builder's equally-deprecated `unix_stream`
     pub fn unix_stream(stream: UnixStream) -> Self {
         Self(crate::connection::Builder::unix_stream(stream))
     }
@@ -125,7 +135,16 @@ impl<'a> Builder<'a> {
     ///
     /// This method expects a
     /// [`tokio::net::TcpStream`](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html).
-    /// Without the `tokio` feature it accepts a [`std::net::TcpStream`] instead.
+    /// Without the `tokio` feature it accepts a [`std::net::TcpStream`] instead, but that form is
+    /// deprecated in favor of [`async_io_tcp_stream`](Self::async_io_tcp_stream).
+    #[cfg_attr(
+        not(feature = "tokio"),
+        deprecated(
+            since = "5.19.0",
+            note = "Use `async_io_tcp_stream` to avoid a build failure if the `tokio` feature gets enabled"
+        )
+    )]
+    #[allow(deprecated)] // forwards to the async builder's equally-deprecated `tcp_stream`
     pub fn tcp_stream(stream: TcpStream) -> Self {
         Self(crate::connection::Builder::tcp_stream(stream))
     }
