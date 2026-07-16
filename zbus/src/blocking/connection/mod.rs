@@ -250,6 +250,24 @@ impl Connection {
         self.inner.monitor_activity()
     }
 
+    /// Returns `true` if the connection has been closed.
+    ///
+    /// A connection is considered closed either when the remote peer disconnects, an I/O error
+    /// occurs on the socket, or [`Connection::close`] is called.
+    pub fn is_closed(&self) -> bool {
+        self.inner.is_closed()
+    }
+
+    /// Block until the connection is closed.
+    ///
+    /// A connection is considered closed either when the remote peer disconnects, an I/O error
+    /// occurs on the socket, or [`Connection::close`] is called.
+    ///
+    /// Returns immediately if the connection is already closed.
+    pub fn closed(&self) {
+        block_on(self.inner.closed())
+    }
+
     /// Return the peer credentials.
     ///
     /// The fields are populated on the best effort basis. Some or all fields may not even make

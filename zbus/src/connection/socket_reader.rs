@@ -1,4 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use event_listener::Event;
 use tracing::{debug, instrument, trace};
@@ -21,7 +27,7 @@ pub(crate) struct SocketReader {
     #[cfg(unix)]
     already_received_fds: Vec<std::os::fd::OwnedFd>,
     prev_seq: u64,
-    activity_event: Arc<Event>,
+    socket_status: Arc<SocketStatus>,
 }
 
 impl SocketReader {
@@ -31,7 +37,7 @@ impl SocketReader {
         pending_method_calls: PendingMethodCalls,
         already_received_bytes: Vec<u8>,
         #[cfg(unix)] already_received_fds: Vec<std::os::fd::OwnedFd>,
-        activity_event: Arc<Event>,
+        socket_status: Arc<SocketStatus>,
     ) -> Self {
         Self {
             socket,
@@ -41,7 +47,7 @@ impl SocketReader {
             #[cfg(unix)]
             already_received_fds,
             prev_seq: 0,
-            activity_event,
+            socket_status,
         }
     }
 
@@ -104,6 +110,8 @@ impl SocketReader {
 
             if msg.is_err() {
                 senders.clear();
+                self.socket_status.closed.store(true, Ordering::Release);
+                self.socket_status.closed_event.notify(usize::MAX);
                 trace!("Socket reading task stopped");
 
                 return;
@@ -137,7 +145,7 @@ impl SocketReader {
 
     #[instrument(skip(self), level = "trace")]
     async fn read_socket(&mut self) -> crate::Result<Message> {
-        self.activity_event.notify(usize::MAX);
+        self.socket_status.activity_event.notify(usize::MAX);
         let seq = self.prev_seq + 1;
         let msg = self
             .socket
@@ -152,4 +160,12 @@ impl SocketReader {
 
         Ok(msg)
     }
+}
+
+/// Socket-related state shared between [`super::ConnectionInner`] and the socket reader task.
+#[derive(Debug)]
+pub(super) struct SocketStatus {
+    pub activity_event: Event,
+    pub closed: AtomicBool,
+    pub closed_event: Event,
 }
