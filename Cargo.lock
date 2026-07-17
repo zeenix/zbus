@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "5.17.0"
+version = "5.18.0"
 dependencies = [
  "async-broadcast",
  "async-executor",
@@ -2184,7 +2184,7 @@ dependencies = [
 
 [[package]]
 name = "zbus_macros"
-version = "5.17.0"
+version = "5.18.0"
 dependencies = [
  "async-io",
  "futures-util",
@@ -2201,7 +2201,7 @@ dependencies = [
 
 [[package]]
 name = "zbus_names"
-version = "4.3.3"
+version = "4.3.4"
 dependencies = [
  "codspeed-criterion-compat",
  "serde",
@@ -2211,7 +2211,7 @@ dependencies = [
 
 [[package]]
 name = "zbus_xml"
-version = "5.2.0"
+version = "5.2.1"
 dependencies = [
  "codspeed-criterion-compat",
  "doc-comment",
@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "zbus_xmlgen"
-version = "5.4.0"
+version = "5.4.1"
 dependencies = [
  "clap",
  "pretty_assertions",
@@ -2316,7 +2316,7 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 
 [[package]]
 name = "zvariant"
-version = "5.13.0"
+version = "5.13.1"
 dependencies = [
  "arrayvec",
  "camino",
@@ -2340,7 +2340,7 @@ dependencies = [
 
 [[package]]
 name = "zvariant_derive"
-version = "5.13.0"
+version = "5.13.1"
 dependencies = [
  "enumflags2",
  "proc-macro-crate",
