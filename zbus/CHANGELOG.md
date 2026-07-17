@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - ✨ Add Connection::closed() and is_closed() API.
 
+### Documentation
+- 📝 Document ObjectManager-ancestor deadlock in ObjectServer::at.
+
+### Other
+- 🚨 Replace manual match-and-return with the ? operator.
+
+### Testing
+- ✅ Test registering an interface from a &mut self callback.
+
 ## 5.17.0 - 2026-07-07
 
 ### Changed
