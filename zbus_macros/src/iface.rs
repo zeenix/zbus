@@ -204,7 +204,7 @@ impl MethodInfo {
             .first()
             .ok_or_else(|| Error::new_spanned(ident, "not &self method"))?
         {
-            r.mutability.is_some()
+            matches!(r.kind, syn::ReceiverKind::Reference(_, _, Some(_)))
         } else if is_signal {
             false
         } else {
@@ -352,7 +352,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 *item = ImplItem::Fn(ImplItemFn {
                     attrs,
                     vis,
-                    defaultness: None,
+                    modifiers: syn::FnModifiers::default(),
                     sig,
                     // This empty block will be replaced below.
                     block: parse_quote!({}),
