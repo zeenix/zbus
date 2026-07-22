@@ -603,6 +603,13 @@ where
             Some(offsets) => offsets,
             None => return Ok(()),
         };
+
+        if self.ser.0.signature.is_fixed_sized() {
+            debug_assert!(offsets.is_empty());
+            let alignment = self.ser.0.signature.alignment(Format::GVariant);
+            self.ser.0.add_padding(alignment)?;
+        }
+
         let struct_len = self.ser.0.bytes_written - self.start;
         if struct_len == 0 {
             // Empty sequence
@@ -720,6 +727,11 @@ where
         self.seq.ser.0.signature = self.value_signature;
         value.serialize(&mut *self.seq.ser)?;
         self.seq.ser.0.signature = self.key_signature;
+
+        // A fixed-sized dictionary entry should be padded to its alignment.
+        if self.seq.offsets.is_none() {
+            self.seq.ser.0.add_padding(self.seq.element_alignment)?;
+        }
 
         if let Some(key_offset) = key_offset {
             let entry_size = self.seq.ser.0.bytes_written - self.key_start.unwrap_or(0);
