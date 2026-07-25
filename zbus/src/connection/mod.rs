@@ -611,7 +611,7 @@ impl Connection {
                     loop {
                         let signal = lost_stream.next().await;
                         let inner = match weak_conn.upgrade() {
-                            Some(conn) => conn.inner.clone(),
+                            Some(conn) => conn.inner,
                             None => break,
                         };
 
@@ -662,7 +662,7 @@ impl Connection {
                         loop {
                             let signal = acquired_stream.next().await;
                             let inner = match weak_conn.upgrade() {
-                                Some(conn) => conn.inner.clone(),
+                                Some(conn) => conn.inner,
                                 None => break,
                             };
                             match signal {

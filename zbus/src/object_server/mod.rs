@@ -175,7 +175,7 @@ impl ObjectServer {
                     ObjectManager::interfaces_added(&emitter, path.into(), interfaces).await?;
                 }
             } else if let Some(manager_path) = manager_path {
-                let emitter = SignalEmitter::new(&self.connection(), manager_path.clone())?;
+                let emitter = SignalEmitter::new(&self.connection(), manager_path)?;
                 let mut interfaces = HashMap::new();
                 let owned_props = node
                     .get_properties(self, &self.connection(), name.clone())
@@ -227,7 +227,7 @@ impl ObjectServer {
             return Err(Error::InterfaceNotFound);
         }
         if let Some(manager_path) = manager_path {
-            let ctxt = SignalEmitter::new(&self.connection(), manager_path.clone())?;
+            let ctxt = SignalEmitter::new(&self.connection(), manager_path)?;
             ObjectManager::interfaces_removed(&ctxt, path.clone(), (&[interface_name]).into())
                 .await?;
         }
@@ -301,8 +301,7 @@ impl ObjectServer {
         let lock = node
             .interface_lock(I::name())
             .ok_or(Error::InterfaceNotFound)?
-            .instance
-            .clone();
+            .instance;
 
         // Ensure what we return can later be dowcasted safely.
         lock.read()
