@@ -16,6 +16,7 @@ use zbus::{Connection, Guid, block_on, connection::Builder};
 
 /// Simulates the busd race: a bus client pipelines Hello during SASL auth, before the server
 /// has started polling. `build_message_stream` must still deliver it.
+#[allow(deprecated)] // exercises the deprecated `unix_stream`, which must keep working
 #[test]
 #[timeout(15000)]
 fn build_message_stream_does_not_drop_pipelined_hello() {

@@ -42,12 +42,9 @@ For example to create a bus-less peer-to-peer connection on Unix, you can do:
 ```rust,noplayground
 # #[tokio::main]
 # async fn main() -> zbus::Result<()> {
-# #[cfg(unix)]
+# #[cfg(all(unix, feature = "async-io"))]
 # {
-#[cfg(not(feature = "tokio"))]
 use std::os::unix::net::UnixStream;
-#[cfg(feature = "tokio")]
-use tokio::net::UnixStream;
 use zbus::{connection::Builder, Guid};
 
 let guid = Guid::generate();
@@ -55,15 +52,21 @@ let (p0, p1) = UnixStream::pair().unwrap();
 # #[allow(unused)]
 let (client_conn, server_conn) = futures_util::try_join!(
     // Client
-    Builder::unix_stream(p0).p2p().build(),
+    Builder::async_io_unix_stream(p0).p2p().build(),
     // Server
-    Builder::unix_stream(p1).server(guid)?.p2p().build(),
+    Builder::async_io_unix_stream(p1).server(guid)?.p2p().build(),
 )?;
 # }
 #
 # Ok(())
 # }
 ```
+
+`async_io_unix_stream` (and `async_io_tcp_stream`) take a [`std::os::unix::net::UnixStream`]. With `tokio`
+enabled you can instead pass a [`tokio::net::UnixStream`] to `unix_stream`.
+
+[`std::os::unix::net::UnixStream`]: https://doc.rust-lang.org/std/os/unix/net/struct.UnixStream.html
+[`tokio::net::UnixStream`]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html
 
 **Note:** the `p2p` and `server` methods of `connection::Builder` are only available when `p2p`
 cargo feature of `zbus` is enabled.

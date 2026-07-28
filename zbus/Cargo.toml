@@ -38,7 +38,7 @@ async-io = [
     "blocking",
 ]
 tokio = ["dep:tokio"]
-vsock = ["dep:vsock", "dep:async-io"]
+vsock = ["dep:vsock", "async-io"]
 tokio-vsock = ["dep:tokio-vsock", "tokio"]
 # Enable blocking API (default).
 blocking-api = ["zbus_macros/blocking-api"]
