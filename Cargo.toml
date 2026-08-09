@@ -36,6 +36,7 @@ zbus_xml = { path = "./zbus_xml" }
 zbus = { path = "./zbus" }
 
 # 3rd party
+zcheapstr = { version = "1.0.0", features = ["serde"] }
 snakecase = "0.1.0"
 pretty_assertions = "1.4"
 clap = { version = "4.5.4", features = ["derive", "wrap_help"] }
