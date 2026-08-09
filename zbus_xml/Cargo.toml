@@ -14,7 +14,7 @@ readme = "README.md"
 
 [dependencies]
 serde.workspace = true
-zvariant = { path = "../zvariant", version = "5.13.1" }
+zvariant = { path = "../zvariant", version = "5.14.0" }
 zbus_names = { path = "../zbus_names", version = "4.3.4" }
 winnow.workspace = true
 

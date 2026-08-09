@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.14.0 - 2026-08-09
+
+### Changed
+- ♻️ Use zcheapstr for the Str type.
+- ♻️ Remove unnecessary clones.
+
+### Dependencies
+- ➕ Add zcheapstr dependency. It's actually just a split.
+
+### Fixed
+- 🐛 insert tail padding to fixed-sized dictionary entry.
+- 🐛 insert tail padding to fixed-sized struct.
+
+### Testing
+- ✅ Add test case for `a{uy}` encoding.
+- ✅ Add test case for `(uy)` encoding.
+
 ## 5.13.1 - 2026-07-17
 
 ### Other
