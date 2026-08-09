@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.19.0 - 2026-08-09
+
+### Added
+- ✨ Add Builder::async_io_unix_stream and async_io_tcp_stream.
+- ✨ Make the tokio and async-io features additive.
+
+### Changed
+- ♻️ Remove unnecessary clones.
+
+### Deprecated
+- 🗑️ Deprecate unix_stream/tcp_stream when tokio is disabled.
+
+### Documentation
+- 📝 Document the tokio and async-io runtime selection.
+
+### Fixed
+- 🥅 throw Error::Connection on connection failure.
+- 🥅 Add new error variant Error::Connection.
+
+### Other
+- ✏️ Fix a typo in the executor docs.
+
+### Testing
+- ✅ Test runtime selection with both backends enabled.
+- ✅ add tests for Error::Connection.
+
 ## 5.18.0 - 2026-07-17
 
 ### Added
