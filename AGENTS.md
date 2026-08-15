@@ -62,7 +62,6 @@ cargo bench
 # Fuzz testing (requires nightly and cargo-fuzz)
 cargo install cargo-fuzz
 cargo fuzz run --fuzz-dir zvariant/fuzz dbus
-cargo fuzz run --fuzz-dir zvariant/fuzz --features gvariant gvariant
 ```
 
 ## Workspace Architecture

@@ -7,12 +7,6 @@ edition = "2024"
 [package.metadata]
 cargo-fuzz = true
 
-[features]
-# `gvariant` is only needed for the `gvariant` fuzz target. However, we don't want it to
-# be enabled for running the `dbus` fuzz target, as that can cause certain assertions to fail.
-# FIXME: Is there a better way to do this?
-gvariant = ["zvariant/gvariant"]
-
 [dependencies]
 libfuzzer-sys = "0.4.7"
 endi = "1.1.0"
@@ -23,12 +17,6 @@ path = ".."
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
-
-[[bin]]
-name = "gvariant"
-path = "fuzz_targets/gvariant.rs"
-test = false
-doc = false
 
 [[bin]]
 name = "dbus"

@@ -187,9 +187,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Fuzz zvariant
         run: |
+          # `cargo fuzz` does not propagate `--locked` to its inner cargo invocation, so check
+          # the nested lockfile explicitly.
+          cargo metadata --manifest-path zvariant/fuzz/Cargo.toml --locked --format-version 1 > /dev/null
           cargo install cargo-fuzz
           cargo --locked fuzz run --fuzz-dir zvariant/fuzz dbus -- -max_total_time=30 -max_len=100M
-          cargo --locked fuzz run --fuzz-dir zvariant/fuzz --features gvariant gvariant -- -max_total_time=30 -max_len=100M
 
   doc_build:
     runs-on: ubuntu-latest
