@@ -99,6 +99,8 @@ jobs:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
+      - name: Test zvariant with zvariant_utils/gvariant enabled without zvariant/gvariant
+        run: cargo --locked test -p zvariant --features zvariant_utils/gvariant
       - name: Build and Test
         run: |
           dbus-run-session --config-file /tmp/dbus-session-abstract.conf -- cargo --locked test --release --verbose -- basic_connection

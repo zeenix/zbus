@@ -31,6 +31,7 @@ where
         ctxt: Context,
     ) -> Result<Self> {
         assert_eq!(ctxt.format(), Format::DBus);
+        super::reject_maybe(signature)?;
 
         Ok(Self(crate::SerializerCommon {
             ctxt,
@@ -122,8 +123,16 @@ where
             .add_padding(self.0.signature.alignment(Format::DBus))?;
 
         let signature = self.0.signature;
-        if matches!(signature, Signature::Variant) {
-            self.0.value_sign = Some(Signature::from_str(v)?);
+        // A `g` or `v` value carries a signature; a maybe type in it is not valid D-Bus.
+        match signature {
+            Signature::Variant => {
+                super::reject_maybe_in_signature_str(v.as_bytes())?;
+                self.0.value_sign = Some(Signature::from_str(v)?);
+            }
+            Signature::Signature => {
+                super::reject_maybe_in_signature_str(v.as_bytes())?;
+            }
+            _ => {}
         }
 
         match signature {

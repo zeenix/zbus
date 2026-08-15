@@ -268,6 +268,22 @@ impl Signature {
         }
     }
 
+    /// Whether a maybe (`m`) type appears anywhere within this signature.
+    ///
+    /// The maybe type is GVariant-specific and has no representation in the D-Bus wire format, so
+    /// a signature bound for D-Bus must not contain one. This walks the whole signature tree,
+    /// since a maybe can be nested inside any container.
+    pub fn contains_maybe(&self) -> bool {
+        match self {
+            Signature::Array(child) => child.contains_maybe(),
+            Signature::Dict { key, value } => key.contains_maybe() || value.contains_maybe(),
+            Signature::Structure(fields) => fields.iter().any(Signature::contains_maybe),
+            #[cfg(feature = "gvariant")]
+            Signature::Maybe(_) => true,
+            _ => false,
+        }
+    }
+
     fn alignment_dbus(&self) -> usize {
         match self {
             Signature::U8 | Signature::Variant | Signature::Signature => 1,

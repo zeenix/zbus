@@ -81,6 +81,23 @@ where
             value.serialize(&mut ser)?;
             ser.0.bytes_written
         }
+        // `Format` can still have a `GVariant` variant here even with `zvariant`'s own
+        // `gvariant` feature disabled: if some other crate in the dependency graph (e.g.
+        // `zgvariant`) enables `zvariant_utils/gvariant`, Cargo feature unification adds the
+        // variant to this build regardless. `zvariant`'s own `#[cfg(feature = ...)]` can't
+        // detect that (Cargo features don't propagate that way), so the variant can't be
+        // named explicitly here without breaking the common case where it doesn't exist at
+        // all. Fall back to a wildcard instead: it's unreachable whenever `gvariant` is
+        // enabled (the two arms above are then exhaustive) or the variant doesn't exist.
+        #[cfg(not(feature = "gvariant"))]
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(Error::Message(
+                "GVariant support has moved to the `zgvariant` crate; enable `zvariant`'s \
+                 deprecated `gvariant` feature only for legacy compatibility"
+                    .to_owned(),
+            ));
+        }
     };
 
     let size = Size::new(len, ctxt);
@@ -197,6 +214,16 @@ where
             )?;
             value.serialize(&mut ser)?;
             ser.0.bytes_written
+        }
+        // See the comment on the equivalent arm in `serialized_size` above.
+        #[cfg(not(feature = "gvariant"))]
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(Error::Message(
+                "GVariant support has moved to the `zgvariant` crate; enable `zvariant`'s \
+                 deprecated `gvariant` feature only for legacy compatibility"
+                    .to_owned(),
+            ));
         }
     };
 

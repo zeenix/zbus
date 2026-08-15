@@ -215,6 +215,22 @@ where
         Signature::Structure { .. } => de.deserialize_seq(visitor),
         #[cfg(feature = "gvariant")]
         Signature::Maybe(_) => de.deserialize_option(visitor),
+        // `Signature` can still have a `Maybe` variant here even with `zvariant`'s own
+        // `gvariant` feature disabled: if some other crate in the dependency graph (e.g.
+        // `zgvariant`) enables `zvariant_utils/gvariant`, Cargo feature unification adds the
+        // variant to this build regardless. `zvariant`'s own `#[cfg(feature = ...)]` can't
+        // detect that (Cargo features don't propagate that way), so the variant can't be
+        // named explicitly here without breaking the common case where it doesn't exist at
+        // all. Fall back to a wildcard instead: it's unreachable whenever `gvariant` is
+        // enabled (all the arms above are then exhaustive) or the variant doesn't exist.
+        #[cfg(not(feature = "gvariant"))]
+        #[allow(unreachable_patterns)]
+        _ => Err(Error::SignatureMismatch(
+            signature.clone(),
+            "GVariant `Maybe` support has moved to the `zgvariant` crate; enable `zvariant`'s \
+             deprecated `gvariant` feature only for legacy compatibility"
+                .to_string(),
+        )),
     }
 }
 
