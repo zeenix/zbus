@@ -49,12 +49,14 @@ pub fn expand_serialize_derive(input: DeriveInput) -> Result<TokenStream, Error>
         ..
     } = StructAttributes::parse(&input.attrs)?;
     let value_is_variant = dict_value_is_variant(signature.as_deref(), input.span())?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
     let rename_all_str = rename_all.as_deref().unwrap_or("snake_case");
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
     let helper = format_ident!("__SerializeDict{}", name);
-    let zv = zvariant_path(crate_path.as_ref());
+    let zv = match parse_crate_path(crate_attr.as_deref())? {
+        Some(path) => quote! { ::#path },
+        None => zvariant_path(),
+    };
 
     let mut field_defs = Vec::new();
     let mut field_inits = Vec::new();
@@ -161,9 +163,11 @@ pub fn expand_deserialize_derive(input: DeriveInput) -> Result<TokenStream, Erro
         ..
     } = StructAttributes::parse(&input.attrs)?;
     let value_is_variant = dict_value_is_variant(signature.as_deref(), input.span())?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
     let rename_all_str = rename_all.as_deref().unwrap_or("snake_case");
-    let zv = zvariant_path(crate_path.as_ref());
+    let zv = match parse_crate_path(crate_attr.as_deref())? {
+        Some(path) => quote! { ::#path },
+        None => zvariant_path(),
+    };
 
     // Create a new generics with a 'de lifetime
     let mut generics = input.generics.clone();

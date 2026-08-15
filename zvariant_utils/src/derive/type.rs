@@ -5,19 +5,19 @@ use quote::{ToTokens, quote};
 use syn::{
     Attribute, Data, DataEnum, DeriveInput, Error, Fields, Generics, Ident, spanned::Spanned,
 };
-use zvariant_utils::signature::Signature;
 
-use crate::{signature::signature_to_tokens_with_crate, utils::*};
+use crate::signature::Signature;
 
-pub fn expand_derive(ast: DeriveInput) -> Result<TokenStream, Error> {
+use super::{Config, attrs::*, signature::signature_to_tokens_with_crate};
+
+/// Implements the `Type` trait for structs and enums.
+pub fn expand_type_derive(ast: DeriveInput, config: &Config) -> Result<TokenStream, Error> {
     let StructAttributes {
         signature,
         crate_path: crate_attr,
         ..
-    } = StructAttributes::parse(&ast.attrs)?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
-
-    let zv = zvariant_path(crate_path.as_ref());
+    } = StructAttributes::parse_with_lists(&ast.attrs, config.attr_lists)?;
+    let zv = config.resolve_path(crate_attr.as_deref())?;
     if let Some(signature_str) = signature {
         // Signature already provided, easy then!
 

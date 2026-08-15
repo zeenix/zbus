@@ -20,8 +20,10 @@ pub fn expand_derive(ast: DeriveInput, value_type: ValueType) -> Result<TokenStr
         crate_path: crate_attr,
         ..
     } = StructAttributes::parse(&ast.attrs)?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
-    let zv = zvariant_path(crate_path.as_ref());
+    let zv = match parse_crate_path(crate_attr.as_deref())? {
+        Some(path) => quote! { ::#path },
+        None => zvariant_path(),
+    };
 
     let signature = signature.map(|signature| match signature.as_str() {
         "dict" => "a{sv}".to_string(),

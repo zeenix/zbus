@@ -3,13 +3,14 @@ use std::str::FromStr;
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
 use syn::{Error, parse::Parse};
-use zvariant_utils::signature::Signature;
+
+use crate::signature::Signature;
 
 /// Expand the `signature!` macro implementation.
 ///
 /// Takes a string literal signature and converts it to compile-time tokens
 /// representing a const `Signature`.
-pub fn expand_signature_macro(input: TokenStream) -> Result<TokenStream, Error> {
+pub fn expand_signature_macro(input: TokenStream, zv: &TokenStream) -> Result<TokenStream, Error> {
     let SignatureInput {
         literal: signature_str,
     } = syn::parse2(input)?;
@@ -22,7 +23,7 @@ pub fn expand_signature_macro(input: TokenStream) -> Result<TokenStream, Error> 
         s => Signature::from_str(s).map_err(|e| Error::new(signature_str.span(), e))?,
     };
 
-    let signature_tokens = signature_to_tokens(&signature);
+    let signature_tokens = signature_to_tokens_with_crate(&signature, zv);
 
     Ok(signature_tokens)
 }
@@ -38,14 +39,6 @@ impl Parse for SignatureInput {
             literal: input.parse()?,
         })
     }
-}
-
-/// Converts a parsed `Signature` to compile-time token representation.
-///
-/// This function generates the Rust tokens that will construct the signature
-/// at compile time. Used by both the signature! macro and the Type derive macro.
-pub fn signature_to_tokens(signature: &Signature) -> TokenStream {
-    signature_to_tokens_with_crate(signature, &quote! { ::zvariant })
 }
 
 /// Converts a parsed `Signature` to compile-time token representation with a custom crate path.
