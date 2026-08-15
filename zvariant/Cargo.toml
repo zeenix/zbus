@@ -14,7 +14,7 @@ readme = "README.md"
 
 [features]
 default = []
-# FIXME: Also allow disabling D-Bus support
+# Deprecated: GVariant support has moved to the `zgvariant` crate and will be removed in 6.0.
 gvariant = ["zvariant_derive/gvariant", "zvariant_utils/gvariant"]
 # Legacy compatibility alias that still enables `gvariant`; its own tests moved to the
 # zgvariant repo.
