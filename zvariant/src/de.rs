@@ -6,6 +6,7 @@ use std::{marker::PhantomData, str};
 use std::os::fd::{AsFd, AsRawFd};
 
 #[cfg(feature = "gvariant")]
+#[allow(deprecated)]
 use crate::gvariant::Deserializer as GVDeserializer;
 use crate::{
     Basic, Error, Result, Signature, container_depths::ContainerDepths,
@@ -38,6 +39,7 @@ pub(crate) struct DeserializerCommon<'de, 'sig, 'f, F> {
 pub(crate) enum Deserializer<'ser, 'sig, 'f, F> {
     DBus(DBusDeserializer<'ser, 'sig, 'f, F>),
     #[cfg(feature = "gvariant")]
+    #[allow(deprecated)]
     GVariant(GVDeserializer<'ser, 'sig, 'f, F>),
 }
 

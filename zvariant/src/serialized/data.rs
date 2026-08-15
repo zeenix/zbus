@@ -233,6 +233,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
         let fds = &self.inner.fds;
         let mut de = match self.context.format() {
             #[cfg(feature = "gvariant")]
+            #[allow(deprecated)]
             Format::GVariant => {
                 #[cfg(unix)]
                 {
@@ -269,6 +270,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
 
         T::deserialize(&mut de).map(|t| match de {
             #[cfg(feature = "gvariant")]
+            #[allow(deprecated)]
             Deserializer::GVariant(de) => (t, de.0.pos),
             Deserializer::DBus(de) => (t, de.0.pos),
         })
@@ -306,6 +308,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
         let fds = &self.inner.fds;
         let mut de = match self.context.format() {
             #[cfg(feature = "gvariant")]
+            #[allow(deprecated)]
             Format::GVariant => {
                 #[cfg(unix)]
                 {
@@ -342,6 +345,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
 
         seed.deserialize(&mut de).map(|t| match de {
             #[cfg(feature = "gvariant")]
+            #[allow(deprecated)]
             Deserializer::GVariant(de) => (t, de.0.pos),
             Deserializer::DBus(de) => (t, de.0.pos),
         })

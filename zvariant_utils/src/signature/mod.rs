@@ -115,6 +115,8 @@ pub enum Signature {
     /// The signature for a structure.
     Structure(Fields),
     /// The signature for a maybe type (gvariant-specific).
+    ///
+    /// Only used with the GVariant format (see the `zgvariant` crate).
     #[cfg(feature = "gvariant")]
     Maybe(Child),
 }

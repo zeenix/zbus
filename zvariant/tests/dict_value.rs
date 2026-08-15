@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "gvariant", allow(deprecated))]
+
 use std::collections::{BTreeMap, HashMap};
 
 use endi::NATIVE_ENDIAN;

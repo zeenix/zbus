@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "gvariant", allow(deprecated))]
+
 use zvariant::LE;
 #[cfg(feature = "gvariant")]
 use zvariant::{serialized::Context, to_bytes};

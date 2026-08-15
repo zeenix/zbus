@@ -5,6 +5,7 @@ use std::io::{Seek, Write};
 use std::os::fd::OwnedFd;
 
 #[cfg(feature = "gvariant")]
+#[allow(deprecated)]
 use crate::gvariant::Serializer as GVSerializer;
 use crate::{
     Basic, DynamicType, Error, Result, Signature,
@@ -68,6 +69,7 @@ where
             ser.0.bytes_written
         }
         #[cfg(feature = "gvariant")]
+        #[allow(deprecated)]
         Format::GVariant => {
             let mut ser = GVSerializer::<NullWriteSeek>::new(
                 &signature,
@@ -184,6 +186,7 @@ where
             ser.0.bytes_written
         }
         #[cfg(feature = "gvariant")]
+        #[allow(deprecated)]
         Format::GVariant => {
             let mut ser = GVSerializer::<W>::new(
                 &signature,
