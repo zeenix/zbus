@@ -155,8 +155,7 @@ fn impl_struct(
                         .iter()
                         .map(|field| {
                             let FieldAttributes { rename, .. } =
-                                FieldAttributes::parse_with_lists(&field.attrs, attr_lists)
-                                    .unwrap_or_default();
+                                FieldAttributes::parse_with_lists(&field.attrs, attr_lists)?;
                             let field_name = field.ident.to_token_stream();
                             let key_name = rename_identifier(
                                 field.ident.as_ref().unwrap().to_string(),
@@ -200,8 +199,10 @@ fn impl_struct(
                                 }
                             };
 
-                            (fields_init, entries_init)
+                            Ok((fields_init, entries_init))
                         })
+                        .collect::<Result<Vec<_>, Error>>()?
+                        .into_iter()
                         .unzip();
 
                     (
@@ -424,4 +425,51 @@ fn enum_name_for_variant(
     let ident = v.ident.to_string();
 
     rename_identifier(ident, v.span(), rename_attr, rename_all_attr)
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::quote;
+    use syn::{DeriveInput, parse_quote};
+
+    use super::*;
+
+    fn config() -> Config {
+        Config {
+            attr_lists: &["zbus", "zvariant"],
+            default_path: quote! { ::zvariant },
+        }
+    }
+
+    #[test]
+    fn dict_signature_rejects_cross_namespace_duplicate_rename() {
+        let ast: DeriveInput = parse_quote! {
+            #[zvariant(signature = "dict")]
+            struct Foo {
+                #[zvariant(rename = "first")]
+                #[zbus(rename = "second")]
+                field: String,
+            }
+        };
+
+        let err = expand_value_derive(ast, ValueType::Value, &config()).unwrap_err();
+
+        assert!(
+            err.to_string().contains("duplicate"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[test]
+    fn dict_signature_expands_with_single_rename() {
+        let ast: DeriveInput = parse_quote! {
+            #[zvariant(signature = "dict")]
+            struct Foo {
+                #[zvariant(rename = "first")]
+                field: String,
+            }
+        };
+
+        assert!(expand_value_derive(ast, ValueType::Value, &config()).is_ok());
+    }
 }
