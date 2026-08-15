@@ -4,32 +4,40 @@ use syn::{
     Attribute, Data, DataEnum, DeriveInput, Error, Fields, Generics, Ident, Lifetime,
     LifetimeParam, Variant, spanned::Spanned,
 };
-use zvariant_utils::macros;
 
-use crate::utils::*;
+use crate::macros;
 
+use super::{Config, attrs::*};
+
+/// Which of the `Value`-family traits `expand_value_derive` should implement.
 pub enum ValueType {
     Value,
     OwnedValue,
 }
 
-pub fn expand_derive(ast: DeriveInput, value_type: ValueType) -> Result<TokenStream, Error> {
+/// Implements the `Value` or `OwnedValue` conversions, per `value_type`, for structs and enums.
+pub fn expand_value_derive(
+    ast: DeriveInput,
+    value_type: ValueType,
+    config: &Config,
+) -> Result<TokenStream, Error> {
     let StructAttributes {
         signature,
         rename_all,
         crate_path: crate_attr,
         ..
-    } = StructAttributes::parse(&ast.attrs)?;
-    let zv = match parse_crate_path(crate_attr.as_deref())? {
-        Some(path) => quote! { ::#path },
-        None => zvariant_path(),
-    };
+    } = StructAttributes::parse_with_lists(&ast.attrs, config.attr_lists)?;
+    let zv = config.resolve_path(crate_attr.as_deref())?;
 
     let signature = signature.map(|signature| match signature.as_str() {
         "dict" => "a{sv}".to_string(),
         _ => signature,
     });
 
+    let ctx = Ctx {
+        zv: &zv,
+        attr_lists: config.attr_lists,
+    };
     match &ast.data {
         Data::Struct(ds) => match &ds.fields {
             Fields::Named(_) | Fields::Unnamed(_) => impl_struct(
@@ -38,17 +46,24 @@ pub fn expand_derive(ast: DeriveInput, value_type: ValueType) -> Result<TokenStr
                 ast.generics,
                 &ds.fields,
                 signature,
-                &zv,
                 rename_all,
+                &ctx,
             ),
             Fields::Unit => Err(Error::new(ast.span(), "Unit structures not supported")),
         },
-        Data::Enum(data) => impl_enum(value_type, ast.ident, ast.generics, ast.attrs, data, &zv),
+        Data::Enum(data) => impl_enum(value_type, ast.ident, ast.generics, ast.attrs, data, &ctx),
         _ => Err(Error::new(
             ast.span(),
             "only structs and enums are supported",
         )),
     }
+}
+
+/// Codegen context threaded through the per-field/per-variant attribute parsing helpers.
+#[derive(Clone, Copy)]
+struct Ctx<'a> {
+    zv: &'a TokenStream,
+    attr_lists: &'static [&'static str],
 }
 
 fn impl_struct(
@@ -57,9 +72,10 @@ fn impl_struct(
     generics: Generics,
     fields: &Fields,
     signature: Option<String>,
-    zv: &TokenStream,
     rename_all: Option<String>,
+    ctx: &Ctx<'_>,
 ) -> Result<TokenStream, Error> {
+    let Ctx { zv, attr_lists } = *ctx;
     let statc_lifetime = LifetimeParam::new(Lifetime::new("'static", Span::call_site()));
     let (
         value_type,
@@ -139,7 +155,8 @@ fn impl_struct(
                         .iter()
                         .map(|field| {
                             let FieldAttributes { rename, .. } =
-                                FieldAttributes::parse(&field.attrs).unwrap_or_default();
+                                FieldAttributes::parse_with_lists(&field.attrs, attr_lists)
+                                    .unwrap_or_default();
                             let field_name = field.ident.to_token_stream();
                             let key_name = rename_identifier(
                                 field.ident.as_ref().unwrap().to_string(),
@@ -286,13 +303,14 @@ fn impl_enum(
     _generics: Generics,
     attrs: Vec<Attribute>,
     data: &DataEnum,
-    zv: &TokenStream,
+    ctx: &Ctx<'_>,
 ) -> Result<TokenStream, Error> {
+    let Ctx { zv, attr_lists } = *ctx;
     let repr: TokenStream = match attrs.iter().find(|attr| attr.path().is_ident("repr")) {
         Some(repr_attr) => repr_attr.parse_args()?,
         None => quote! { u32 },
     };
-    let enum_attrs = EnumAttributes::parse(&attrs)?;
+    let enum_attrs = EnumAttributes::parse_with_lists(&attrs, attr_lists)?;
     let str_enum = enum_attrs
         .signature
         .map(|sig| sig == "s")
@@ -301,7 +319,7 @@ fn impl_enum(
     let mut variant_names = vec![];
     let mut str_values = vec![];
     for variant in &data.variants {
-        let variant_attrs = VariantAttributes::parse(&variant.attrs)?;
+        let variant_attrs = VariantAttributes::parse_with_lists(&variant.attrs, attr_lists)?;
         // Ensure all variants of the enum are unit type
         match variant.fields {
             Fields::Unit => {

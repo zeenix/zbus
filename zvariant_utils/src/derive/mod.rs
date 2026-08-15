@@ -6,11 +6,17 @@ use quote::quote;
 pub mod attrs;
 pub use attrs::*;
 
+mod dict;
+pub use dict::{expand_deserialize_dict_derive, expand_serialize_dict_derive};
+
 mod signature;
 pub use signature::*;
 
 mod r#type;
 pub use r#type::expand_type_derive;
+
+mod value;
+pub use value::{ValueType, expand_value_derive};
 
 /// Configuration for a derive crate using this code generation.
 pub struct Config {

@@ -14,9 +14,7 @@
 use proc_macro::TokenStream;
 use syn::DeriveInput;
 
-mod dict;
 mod utils;
-mod value;
 
 /// Derive macro to add [`Type`] implementation to structs and enums.
 ///
@@ -284,7 +282,7 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(SerializeDict, attributes(zbus, zvariant))]
 pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
-    dict::expand_serialize_derive(input)
+    zvariant_utils::derive::expand_serialize_dict_derive(input, &utils::config())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -363,7 +361,7 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(DeserializeDict, attributes(zbus, zvariant))]
 pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
-    dict::expand_deserialize_derive(input)
+    zvariant_utils::derive::expand_deserialize_dict_derive(input, &utils::config())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -562,9 +560,13 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Value, attributes(zbus, zvariant))]
 pub fn value_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    value::expand_derive(ast, value::ValueType::Value)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    zvariant_utils::derive::expand_value_derive(
+        ast,
+        zvariant_utils::derive::ValueType::Value,
+        &utils::config(),
+    )
+    .unwrap_or_else(|err| err.to_compile_error())
+    .into()
 }
 
 /// Implements conversions for your type to/from [`OwnedValue`].
@@ -577,9 +579,13 @@ pub fn value_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(OwnedValue, attributes(zbus, zvariant))]
 pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    value::expand_derive(ast, value::ValueType::OwnedValue)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    zvariant_utils::derive::expand_value_derive(
+        ast,
+        zvariant_utils::derive::ValueType::OwnedValue,
+        &utils::config(),
+    )
+    .unwrap_or_else(|err| err.to_compile_error())
+    .into()
 }
 
 /// Constructs a const [`Signature`] with compile-time validation.
