@@ -4,30 +4,40 @@ use syn::{
     Attribute, Data, DataEnum, DeriveInput, Error, Fields, Generics, Ident, Lifetime,
     LifetimeParam, Variant, spanned::Spanned,
 };
-use zvariant_utils::macros;
 
-use crate::utils::*;
+use crate::macros;
 
+use super::{Config, attrs::*};
+
+/// Which of the `Value`-family traits `expand_value_derive` should implement.
 pub enum ValueType {
     Value,
     OwnedValue,
 }
 
-pub fn expand_derive(ast: DeriveInput, value_type: ValueType) -> Result<TokenStream, Error> {
+/// Implements the `Value` or `OwnedValue` conversions, per `value_type`, for structs and enums.
+pub fn expand_value_derive(
+    ast: DeriveInput,
+    value_type: ValueType,
+    config: &Config,
+) -> Result<TokenStream, Error> {
     let StructAttributes {
         signature,
         rename_all,
         crate_path: crate_attr,
         ..
-    } = StructAttributes::parse(&ast.attrs)?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
-    let zv = zvariant_path(crate_path.as_ref());
+    } = StructAttributes::parse_with_lists(&ast.attrs, config.attr_lists)?;
+    let zv = config.resolve_path(crate_attr.as_deref())?;
 
     let signature = signature.map(|signature| match signature.as_str() {
         "dict" => "a{sv}".to_string(),
         _ => signature,
     });
 
+    let ctx = Ctx {
+        zv: &zv,
+        attr_lists: config.attr_lists,
+    };
     match &ast.data {
         Data::Struct(ds) => match &ds.fields {
             Fields::Named(_) | Fields::Unnamed(_) => impl_struct(
@@ -36,17 +46,24 @@ pub fn expand_derive(ast: DeriveInput, value_type: ValueType) -> Result<TokenStr
                 ast.generics,
                 &ds.fields,
                 signature,
-                &zv,
                 rename_all,
+                &ctx,
             ),
             Fields::Unit => Err(Error::new(ast.span(), "Unit structures not supported")),
         },
-        Data::Enum(data) => impl_enum(value_type, ast.ident, ast.generics, ast.attrs, data, &zv),
+        Data::Enum(data) => impl_enum(value_type, ast.ident, ast.generics, ast.attrs, data, &ctx),
         _ => Err(Error::new(
             ast.span(),
             "only structs and enums are supported",
         )),
     }
+}
+
+/// Codegen context threaded through the per-field/per-variant attribute parsing helpers.
+#[derive(Clone, Copy)]
+struct Ctx<'a> {
+    zv: &'a TokenStream,
+    attr_lists: &'static [&'static str],
 }
 
 fn impl_struct(
@@ -55,9 +72,10 @@ fn impl_struct(
     generics: Generics,
     fields: &Fields,
     signature: Option<String>,
-    zv: &TokenStream,
     rename_all: Option<String>,
+    ctx: &Ctx<'_>,
 ) -> Result<TokenStream, Error> {
+    let Ctx { zv, attr_lists } = *ctx;
     let statc_lifetime = LifetimeParam::new(Lifetime::new("'static", Span::call_site()));
     let (
         value_type,
@@ -137,7 +155,7 @@ fn impl_struct(
                         .iter()
                         .map(|field| {
                             let FieldAttributes { rename, .. } =
-                                FieldAttributes::parse(&field.attrs).unwrap_or_default();
+                                FieldAttributes::parse_with_lists(&field.attrs, attr_lists)?;
                             let field_name = field.ident.to_token_stream();
                             let key_name = rename_identifier(
                                 field.ident.as_ref().unwrap().to_string(),
@@ -181,8 +199,10 @@ fn impl_struct(
                                 }
                             };
 
-                            (fields_init, entries_init)
+                            Ok((fields_init, entries_init))
                         })
+                        .collect::<Result<Vec<_>, Error>>()?
+                        .into_iter()
                         .unzip();
 
                     (
@@ -284,13 +304,14 @@ fn impl_enum(
     _generics: Generics,
     attrs: Vec<Attribute>,
     data: &DataEnum,
-    zv: &TokenStream,
+    ctx: &Ctx<'_>,
 ) -> Result<TokenStream, Error> {
+    let Ctx { zv, attr_lists } = *ctx;
     let repr: TokenStream = match attrs.iter().find(|attr| attr.path().is_ident("repr")) {
         Some(repr_attr) => repr_attr.parse_args()?,
         None => quote! { u32 },
     };
-    let enum_attrs = EnumAttributes::parse(&attrs)?;
+    let enum_attrs = EnumAttributes::parse_with_lists(&attrs, attr_lists)?;
     let str_enum = enum_attrs
         .signature
         .map(|sig| sig == "s")
@@ -299,7 +320,7 @@ fn impl_enum(
     let mut variant_names = vec![];
     let mut str_values = vec![];
     for variant in &data.variants {
-        let variant_attrs = VariantAttributes::parse(&variant.attrs)?;
+        let variant_attrs = VariantAttributes::parse_with_lists(&variant.attrs, attr_lists)?;
         // Ensure all variants of the enum are unit type
         match variant.fields {
             Fields::Unit => {
@@ -404,4 +425,51 @@ fn enum_name_for_variant(
     let ident = v.ident.to_string();
 
     rename_identifier(ident, v.span(), rename_attr, rename_all_attr)
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::quote;
+    use syn::{DeriveInput, parse_quote};
+
+    use super::*;
+
+    fn config() -> Config {
+        Config {
+            attr_lists: &["zbus", "zvariant"],
+            default_path: quote! { ::zvariant },
+        }
+    }
+
+    #[test]
+    fn dict_signature_rejects_cross_namespace_duplicate_rename() {
+        let ast: DeriveInput = parse_quote! {
+            #[zvariant(signature = "dict")]
+            struct Foo {
+                #[zvariant(rename = "first")]
+                #[zbus(rename = "second")]
+                field: String,
+            }
+        };
+
+        let err = expand_value_derive(ast, ValueType::Value, &config()).unwrap_err();
+
+        assert!(
+            err.to_string().contains("duplicate"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[test]
+    fn dict_signature_expands_with_single_rename() {
+        let ast: DeriveInput = parse_quote! {
+            #[zvariant(signature = "dict")]
+            struct Foo {
+                #[zvariant(rename = "first")]
+                field: String,
+            }
+        };
+
+        assert!(expand_value_derive(ast, ValueType::Value, &config()).is_ok());
+    }
 }

@@ -3,9 +3,9 @@ use std::str::FromStr;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Error, Field, punctuated::Punctuated, spanned::Spanned};
-use zvariant_utils::{macros, signature::Signature};
 
-use crate::utils::*;
+use super::{Config, attrs::*};
+use crate::{macros, signature::Signature};
 
 fn dict_name_for_field(
     f: &Field,
@@ -41,20 +41,22 @@ fn dict_value_is_variant(signature: Option<&str>, span: Span) -> Result<bool, Er
 }
 
 /// Implements `Serialize` for structs as D-Bus dictionaries via a serde helper.
-pub fn expand_serialize_derive(input: DeriveInput) -> Result<TokenStream, Error> {
+pub fn expand_serialize_dict_derive(
+    input: DeriveInput,
+    config: &Config,
+) -> Result<TokenStream, Error> {
     let StructAttributes {
         signature,
         rename_all,
         crate_path: crate_attr,
         ..
-    } = StructAttributes::parse(&input.attrs)?;
+    } = StructAttributes::parse_with_lists(&input.attrs, config.attr_lists)?;
     let value_is_variant = dict_value_is_variant(signature.as_deref(), input.span())?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
     let rename_all_str = rename_all.as_deref().unwrap_or("snake_case");
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
     let helper = format_ident!("__SerializeDict{}", name);
-    let zv = zvariant_path(crate_path.as_ref());
+    let zv = config.resolve_path(crate_attr.as_deref())?;
 
     let mut field_defs = Vec::new();
     let mut field_inits = Vec::new();
@@ -64,7 +66,8 @@ pub fn expand_serialize_derive(input: DeriveInput) -> Result<TokenStream, Error>
     for field in &data.fields {
         let ident = field.ident.as_ref().unwrap();
         let ty = &field.ty;
-        let FieldAttributes { rename, .. } = FieldAttributes::parse(&field.attrs)?;
+        let FieldAttributes { rename, .. } =
+            FieldAttributes::parse_with_lists(&field.attrs, config.attr_lists)?;
         let dict_name = dict_name_for_field(field, rename, rename_all.as_deref())?;
         let is_opt = macros::ty_is_option(ty);
         let field_def = match (value_is_variant, is_opt) {
@@ -152,18 +155,20 @@ pub fn expand_serialize_derive(input: DeriveInput) -> Result<TokenStream, Error>
 }
 
 /// Implements `Deserialize` for structs from D-Bus dictionaries via a serde helper.
-pub fn expand_deserialize_derive(input: DeriveInput) -> Result<TokenStream, Error> {
+pub fn expand_deserialize_dict_derive(
+    input: DeriveInput,
+    config: &Config,
+) -> Result<TokenStream, Error> {
     let StructAttributes {
         signature,
         rename_all,
         deny_unknown_fields,
         crate_path: crate_attr,
         ..
-    } = StructAttributes::parse(&input.attrs)?;
+    } = StructAttributes::parse_with_lists(&input.attrs, config.attr_lists)?;
     let value_is_variant = dict_value_is_variant(signature.as_deref(), input.span())?;
-    let crate_path = parse_crate_path(crate_attr.as_deref())?;
     let rename_all_str = rename_all.as_deref().unwrap_or("snake_case");
-    let zv = zvariant_path(crate_path.as_ref());
+    let zv = config.resolve_path(crate_attr.as_deref())?;
 
     // Create a new generics with a 'de lifetime
     let mut generics = input.generics.clone();
@@ -196,7 +201,8 @@ pub fn expand_deserialize_derive(input: DeriveInput) -> Result<TokenStream, Erro
     for field in &data.fields {
         let ident = field.ident.as_ref().unwrap();
         let ty = &field.ty;
-        let FieldAttributes { rename, .. } = FieldAttributes::parse(&field.attrs)?;
+        let FieldAttributes { rename, .. } =
+            FieldAttributes::parse_with_lists(&field.attrs, config.attr_lists)?;
         let dict_name = dict_name_for_field(field, rename, rename_all.as_deref())?;
         let is_opt = macros::ty_is_option(ty);
 
