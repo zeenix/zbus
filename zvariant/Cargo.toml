@@ -16,6 +16,8 @@ readme = "README.md"
 default = []
 # FIXME: Also allow disabling D-Bus support
 gvariant = ["zvariant_derive/gvariant", "zvariant_utils/gvariant"]
+# Legacy compatibility alias that still enables `gvariant`; its own tests moved to the
+# zgvariant repo.
 ostree-tests = ["gvariant"]
 # Enables ser/de of `Option<T>` as an array of 0 or 1 elements.
 option-as-array = []
