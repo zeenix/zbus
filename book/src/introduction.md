@@ -22,7 +22,8 @@ zbus project provides two crates:
 D-Bus defines a marshalling format for its messages. The [zvariant] crate provides a [serde]-based
 [API] to serialize/deserialize Rust data types to/from this format. Outside of D-Bus context, a
 modified form of this format, [GVariant](https://developer.gnome.org/documentation/specifications/gvariant-specification-1.0.html)
-is very commonly used for efficient storage of arbitrary data and is also supported by this crate.
+is very commonly used for efficient storage of arbitrary data and is supported by the separate
+[zgvariant](https://crates.io/crates/zgvariant) crate.
 
 ## zbus
 

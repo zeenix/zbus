@@ -115,6 +115,8 @@ pub enum Signature {
     /// The signature for a structure.
     Structure(Fields),
     /// The signature for a maybe type (gvariant-specific).
+    ///
+    /// Only used with the GVariant format (see the `zgvariant` crate).
     #[cfg(feature = "gvariant")]
     Maybe(Child),
 }
@@ -263,6 +265,22 @@ impl Signature {
             Format::DBus => self.alignment_dbus(),
             #[cfg(feature = "gvariant")]
             Format::GVariant => self.alignment_gvariant(),
+        }
+    }
+
+    /// Whether a maybe (`m`) type appears anywhere within this signature.
+    ///
+    /// The maybe type is GVariant-specific and has no representation in the D-Bus wire format, so
+    /// a signature bound for D-Bus must not contain one. This walks the whole signature tree,
+    /// since a maybe can be nested inside any container.
+    pub fn contains_maybe(&self) -> bool {
+        match self {
+            Signature::Array(child) => child.contains_maybe(),
+            Signature::Dict { key, value } => key.contains_maybe() || value.contains_maybe(),
+            Signature::Structure(fields) => fields.iter().any(Signature::contains_maybe),
+            #[cfg(feature = "gvariant")]
+            Signature::Maybe(_) => true,
+            _ => false,
         }
     }
 

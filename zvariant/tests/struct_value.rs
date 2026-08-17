@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "gvariant", allow(deprecated))]
+
 use serde::{Deserialize, Serialize};
 use zvariant::{LE, Str, Structure, Type, Value, as_value, serialized::Context, to_bytes};
 

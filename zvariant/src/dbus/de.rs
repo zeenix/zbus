@@ -28,6 +28,7 @@ impl<'de, 'sig, 'f, F> Deserializer<'de, 'sig, 'f, F> {
         ctxt: Context,
     ) -> Result<Self> {
         assert_eq!(ctxt.format(), Format::DBus);
+        super::reject_maybe(signature)?;
 
         Ok(Self(DeserializerCommon {
             ctxt,
@@ -235,6 +236,11 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
         }
         self.0.pos += 1; // skip trailing null byte
         let s = str::from_utf8(slice).map_err(Error::Utf8)?;
+
+        // A `g` or `v` value carries a signature; a maybe type in it is not valid D-Bus.
+        if matches!(self.0.signature, Signature::Signature | Signature::Variant) {
+            super::reject_maybe_in_signature_str(slice)?;
+        }
 
         visitor.visit_borrowed_str(s)
     }
@@ -681,6 +687,7 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
 
                 let slice = subslice(self.de.0.bytes, sig_start..sig_end)?;
                 let signature = Signature::from_bytes(slice)?;
+                super::reject_maybe(&signature)?;
 
                 let ctxt = Context::new(
                     Format::DBus,

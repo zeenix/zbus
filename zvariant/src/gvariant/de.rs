@@ -1,3 +1,7 @@
+// The whole module is already deprecated (see `gvariant` in `lib.rs`); every item here
+// necessarily references its now-deprecated siblings.
+#![allow(deprecated)]
+
 use serde::de::{self, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, Visitor};
 
 use std::{marker::PhantomData, str};

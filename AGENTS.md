@@ -62,14 +62,13 @@ cargo bench
 # Fuzz testing (requires nightly and cargo-fuzz)
 cargo install cargo-fuzz
 cargo fuzz run --fuzz-dir zvariant/fuzz dbus
-cargo fuzz run --fuzz-dir zvariant/fuzz --features gvariant gvariant
 ```
 
 ## Workspace Architecture
 
 ### Core Crates
 - **zbus**: Main D-Bus API (connection, proxy, object server)
-- **zvariant**: D-Bus/GVariant serialization with serde integration
+- **zvariant**: D-Bus serialization (GVariant support deprecated — see the zgvariant crate)
 - **zbus_names**: Type-safe D-Bus name handling
 - **zbus_macros**: Procedural macros for `#[interface]` and `#[proxy]`
 - **zbus_xml**: D-Bus introspection XML handling
