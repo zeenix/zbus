@@ -15,7 +15,7 @@ readme = "README.md"
 [dependencies]
 zvariant = { path = "../zvariant", features = [
     "enumflags2",
-], version = "5.13.1" }
+], version = "5.15.0" }
 
 serde.workspace = true
 winnow.workspace = true
