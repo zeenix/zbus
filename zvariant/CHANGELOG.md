@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.15.0 - 2026-08-18
+
+### CI
+- 💚 Work around nightly rustfmt macro mangling.
+
+### Deprecated
+- 🗑️ Deprecate GVariant support in zvariant.
+
+### Documentation
+- 📝 Point GVariant users to the zgvariant crate.
+
+### Fixed
+- 🐛 Support zvariant_utils/gvariant being enabled externally. #1910
+
+### Removed
+- 🔥 Remove the gvariant fuzz target.
+- 🔥 Remove gvariant benches, ostree tests and test data.
+
 ## 5.14.0 - 2026-08-09
 
 ### Changed
