@@ -199,19 +199,22 @@ where
 
 impl<'a, T> TryFrom<Value<'a>> for Optional<T>
 where
-    T: TryFrom<Value<'a>> + NoneValue + PartialEq<<T as NoneValue>::NoneType>,
+    T: TryFrom<Value<'a>> + NoneValue,
+    <T as NoneValue>::NoneType: Into<Value<'a>>,
     T::Error: Into<crate::Error>,
 {
     type Error = crate::Error;
 
     fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
-        T::try_from(value).map_err(Into::into).map(|value| {
-            if value == T::null_value() {
-                Optional::from(None)
-            } else {
-                Optional::from(Some(value))
-            }
-        })
+        // Check for the null sentinel before converting, since `T`'s conversion may
+        // legitimately reject it (e.g. name types validating the empty string).
+        if value == T::null_value().into() {
+            Ok(Optional::from(None))
+        } else {
+            T::try_from(value)
+                .map(|value| Optional::from(Some(value)))
+                .map_err(Into::into)
+        }
     }
 }
 

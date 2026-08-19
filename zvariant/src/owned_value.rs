@@ -170,7 +170,8 @@ where
 
 impl<'a, T> TryFrom<OwnedValue> for Optional<T>
 where
-    T: TryFrom<Value<'a>> + NoneValue + PartialEq<<T as NoneValue>::NoneType>,
+    T: TryFrom<Value<'a>> + NoneValue,
+    <T as NoneValue>::NoneType: Into<Value<'a>>,
     T::Error: Into<crate::Error>,
 {
     type Error = crate::Error;
