@@ -1,6 +1,6 @@
 use crate::{Error, Result, utils::define_name_type_impls};
 use serde::Serialize;
-use zvariant::{OwnedValue, Str, Type, Value};
+use zvariant::{Str, Type};
 
 /// String that identifies an [member (method or signal) name][in] on the bus.
 ///
@@ -26,13 +26,11 @@ use zvariant::{OwnedValue, Str, Type, Value};
 /// ```
 ///
 /// [in]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member
-#[derive(
-    Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue,
-)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct MemberName<'name>(Str<'name>);
 
 /// Owned sibling of [`MemberName`].
-#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue)]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct OwnedMemberName(#[serde(borrow)] MemberName<'static>);
 
 define_name_type_impls! {

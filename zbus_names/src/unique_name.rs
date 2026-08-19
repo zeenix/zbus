@@ -1,6 +1,6 @@
 use crate::{Error, Result, utils::define_name_type_impls};
 use serde::Serialize;
-use zvariant::{OwnedValue, Str, Type, Value};
+use zvariant::{Str, Type};
 
 /// String that identifies a [unique bus name][ubn].
 ///
@@ -25,13 +25,11 @@ use zvariant::{OwnedValue, Str, Type, Value};
 /// ```
 ///
 /// [ubn]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus
-#[derive(
-    Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue,
-)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct UniqueName<'name>(pub(crate) Str<'name>);
 
 /// Owned sibling of [`UniqueName`].
-#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue)]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct OwnedUniqueName(#[serde(borrow)] UniqueName<'static>);
 
 define_name_type_impls! {
@@ -76,4 +74,92 @@ pub(crate) fn validate_bytes(bytes: &[u8]) -> std::result::Result<(), ()> {
 
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zvariant::{OwnedValue, Value};
+
+    #[test]
+    fn value_conversion_rejects_empty_name() {
+        let value = Value::from("");
+        UniqueName::try_from(value).unwrap_err();
+        OwnedUniqueName::try_from(Value::from("")).unwrap_err();
+        OwnedUniqueName::try_from(OwnedValue::from(zvariant::Str::from(""))).unwrap_err();
+    }
+
+    #[test]
+    fn optional_value_conversion_maps_empty_name_to_none() {
+        use zvariant::Optional;
+
+        // An empty string is the D-Bus sentinel for "no name" and must map to `None`
+        // rather than fail validation.
+        let opt = Optional::<UniqueName<'_>>::try_from(Value::from("")).unwrap();
+        assert_eq!(Option::from(opt), None::<UniqueName<'_>>);
+
+        let opt = Optional::<UniqueName<'_>>::try_from(Value::from(":1.23")).unwrap();
+        assert_eq!(opt.as_ref().unwrap().as_str(), ":1.23");
+
+        // Non-empty invalid names must still be rejected.
+        Optional::<UniqueName<'_>>::try_from(Value::from("not a unique name")).unwrap_err();
+    }
+
+    #[test]
+    fn optional_owned_value_conversion_maps_empty_name_to_none() {
+        use zvariant::Optional;
+
+        // The path proxy property getters take: `TryFrom<OwnedValue>` on an owned type.
+        let owned = OwnedValue::from(zvariant::Str::from(""));
+        let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
+        assert!(Option::<OwnedUniqueName>::from(opt).is_none());
+
+        let owned = OwnedValue::from(zvariant::Str::from(":1.23"));
+        let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
+        assert_eq!(
+            Option::<OwnedUniqueName>::from(opt).unwrap().as_str(),
+            ":1.23"
+        );
+    }
+
+    #[test]
+    fn optional_name_wire_round_trip() {
+        use zvariant::{LE, Optional, serialized::Context, to_bytes};
+
+        let ctxt = Context::new_dbus(LE, 0);
+
+        // `NameOwnerChanged`-style: empty string on the wire means "no name".
+        let encoded = to_bytes(ctxt, &Optional::<UniqueName<'_>>::default()).unwrap();
+        let opt: Optional<UniqueName<'_>> = encoded.deserialize().unwrap().0;
+        assert!(Option::<UniqueName<'_>>::from(opt).is_none());
+
+        let name = UniqueName::try_from(":1.23").unwrap();
+        let encoded = to_bytes(ctxt, &Optional::from(Some(name.clone()))).unwrap();
+        let opt: Optional<UniqueName<'_>> = encoded.deserialize().unwrap().0;
+        assert_eq!(Option::from(opt), Some(name));
+
+        // Invalid non-empty names on the wire must still be rejected.
+        let encoded = to_bytes(ctxt, &"not a unique name").unwrap();
+        encoded
+            .deserialize::<Optional<UniqueName<'_>>>()
+            .unwrap_err();
+    }
+
+    #[test]
+    fn value_conversion_round_trips_valid_name() {
+        let name = UniqueName::try_from(":1.23").unwrap();
+        let value = Value::from(name.clone());
+        let parsed = UniqueName::try_from(value).unwrap();
+        assert_eq!(parsed, name);
+
+        let owned = OwnedValue::try_from(name.clone()).unwrap();
+        assert_eq!(UniqueName::try_from(owned).unwrap(), name);
+
+        let owned_name = OwnedUniqueName::from(name.clone());
+        let value: Value<'static> = Value::from(owned_name.clone());
+        assert_eq!(OwnedUniqueName::try_from(value).unwrap(), owned_name);
+
+        let owned = OwnedValue::try_from(owned_name.clone()).unwrap();
+        assert_eq!(OwnedUniqueName::try_from(owned).unwrap(), owned_name);
+    }
 }
