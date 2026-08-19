@@ -66,9 +66,10 @@ impl<'de, T: Type + serde::Deserialize<'de>> Visitor<'de> for DeserializeValueVi
             .next_element()?
             .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
         if T::SIGNATURE != &sig {
+            let expected = format!("a value of signature `{}`", T::SIGNATURE);
             return Err(serde::de::Error::invalid_value(
                 serde::de::Unexpected::Str(&sig.to_string()),
-                &"the value signature",
+                &expected.as_str(),
             ));
         }
 
