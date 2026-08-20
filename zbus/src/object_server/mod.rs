@@ -195,9 +195,10 @@ impl ObjectServer {
 
     /// Unregister a D-Bus [`Interface`] at a given path.
     ///
-    /// If there are no more interfaces left at that path, destroys the object as well, along
-    /// with any ancestor objects that are thereby left without interfaces or children of their
-    /// own. The root object is never destroyed. Returns whether the object was destroyed.
+    /// If there are no more interfaces or children left at that path, destroys the object as
+    /// well, along with any ancestor objects that are thereby left without interfaces or
+    /// children of their own. The root object is never destroyed. Returns whether the object
+    /// was destroyed.
     pub async fn remove<'p, I, P>(&self, path: P) -> Result<bool>
     where
         I: Interface,
@@ -209,9 +210,10 @@ impl ObjectServer {
 
     /// Unregister a D-Bus [`Interface`] at a given path, using its name.
     ///
-    /// If there are no more interfaces left at that path, destroys the object as well, along
-    /// with any ancestor objects that are thereby left without interfaces or children of their
-    /// own. The root object is never destroyed. Returns whether the object was destroyed.
+    /// If there are no more interfaces or children left at that path, destroys the object as
+    /// well, along with any ancestor objects that are thereby left without interfaces or
+    /// children of their own. The root object is never destroyed. Returns whether the object
+    /// was destroyed.
     pub async fn remove_named<'p, P>(
         &self,
         path: P,
@@ -231,11 +233,7 @@ impl ObjectServer {
         }
         // Prune before emitting the (fallible) signal, so that an emission failure can't leave
         // empty nodes behind.
-        let destroyed = if node.is_empty() {
-            root.remove_node(&path)
-        } else {
-            false
-        };
+        let destroyed = root.remove_node(&path);
         if let Some(manager_path) = manager_path {
             let ctxt = SignalEmitter::new(&self.connection(), manager_path)?;
             ObjectManager::interfaces_removed(&ctxt, path.clone(), (&[interface_name]).into())

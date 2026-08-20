@@ -97,20 +97,11 @@ impl Node {
         self.interfaces.remove(interface_name).is_some()
     }
 
-    pub(super) fn is_empty(&self) -> bool {
-        !self.interfaces.keys().any(|k| {
-            *k != Peer::name()
-                && *k != Introspectable::name()
-                && *k != Properties::name()
-                && *k != ObjectManager::name()
-        })
-    }
-
-    /// Remove the descendant node at `path`.
+    /// Remove the node at `path` if it's no longer needed, along with any ancestors that are
+    /// thereby no longer needed either.
     ///
-    /// Ancestors that are thereby left childless with only the default interfaces are removed as
-    /// well. Returns whether the node at `path` was removed. The root node itself is never
-    /// removed.
+    /// A node is still needed if it has children or non-default interfaces (or is the root
+    /// node). Returns whether the node at `path` was removed.
     pub(super) fn remove_node(&mut self, path: &ObjectPath<'_>) -> bool {
         let parts = path
             .split('/')
@@ -136,6 +127,10 @@ impl Node {
             }
             node = child;
         }
+        if !node.children.is_empty() || !node.has_default_interfaces_only() {
+            // The target node is still needed.
+            return false;
+        }
 
         // Second pass: unlink the target node and the now-useless part of its ancestor chain in
         // one go, by cutting the tree right below the deepest surviving ancestor.
@@ -156,8 +151,8 @@ impl Node {
 
     /// Whether the node only has the default interfaces that every node gets on creation.
     ///
-    /// Note that unlike [`Node::is_empty`], this considers `ObjectManager` a non-default
-    /// interface: a node explicitly serving one must survive the pruning of its children.
+    /// Note that this considers `ObjectManager` a non-default interface: it is explicitly
+    /// registered by the user, so a node serving one must not be removed behind their back.
     fn has_default_interfaces_only(&self) -> bool {
         self.interfaces
             .keys()

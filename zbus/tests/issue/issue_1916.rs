@@ -120,4 +120,37 @@ async fn issue_1916_async() {
     assert!(!object_server.remove::<Iface, _>("/").await.unwrap());
     let xml = introspect("/").await.unwrap();
     assert!(!xml.contains("org.zbus.Issue1916"), "leftover iface: {xml}");
+
+    // An object whose node still has children must not be destroyed, so that the children stay
+    // reachable.
+    object_server.at("/org/zbus", Iface).await.unwrap();
+    object_server.at("/org/zbus/child", Iface).await.unwrap();
+    assert!(!object_server.remove::<Iface, _>("/org/zbus").await.unwrap());
+    let xml = introspect("/org/zbus/child").await.unwrap();
+    assert!(
+        xml.contains("org.zbus.Issue1916"),
+        "child iface lost: {xml}"
+    );
+    // With its own interface already gone, removing the child now prunes the whole chain.
+    assert!(
+        object_server
+            .remove::<Iface, _>("/org/zbus/child")
+            .await
+            .unwrap()
+    );
+    let xml = introspect("/").await.unwrap();
+    assert!(!xml.contains("<node name="), "leftover nodes: {xml}");
+
+    // An `ObjectManager` registered at the path keeps the object alive as well.
+    object_server.at("/org/zbus", ObjectManager).await.unwrap();
+    object_server.at("/org/zbus", Iface).await.unwrap();
+    assert!(!object_server.remove::<Iface, _>("/org/zbus").await.unwrap());
+    assert!(
+        object_server
+            .remove::<ObjectManager, _>("/org/zbus")
+            .await
+            .unwrap()
+    );
+    let xml = introspect("/").await.unwrap();
+    assert!(!xml.contains("<node name="), "leftover nodes: {xml}");
 }
