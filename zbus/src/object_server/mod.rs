@@ -156,41 +156,45 @@ impl ObjectServer {
         let (node, manager_path) = root.get_child_mut(&path, true);
         let node = node.unwrap();
         let added = node.add_arc_interface(name.clone(), arc_iface);
-        if added {
-            if name == ObjectManager::name() {
-                // Just added an object manager. Need to signal all managed objects under it.
-                let emitter = SignalEmitter::new(&self.connection(), path)?;
-                let objects = node.get_managed_objects(self, &self.connection()).await?;
-                for (path, owned_interfaces) in objects {
-                    let interfaces = owned_interfaces
-                        .iter()
-                        .map(|(i, props)| {
-                            let props = props
-                                .iter()
-                                .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
-                                .collect::<Result<_>>();
-                            Ok((i.into(), props?))
-                        })
-                        .collect::<Result<_>>()?;
-                    ObjectManager::interfaces_added(&emitter, path.into(), interfaces).await?;
-                }
-            } else if let Some(manager_path) = manager_path {
-                let emitter = SignalEmitter::new(&self.connection(), manager_path)?;
-                let mut interfaces = HashMap::new();
-                let owned_props = node
-                    .get_properties(self, &self.connection(), name.clone())
-                    .await?;
-                let props = owned_props
+        if !added {
+            // The nodes on the path may have been auto-created just now for this very
+            // registration; remove the ones that nothing else needs.
+            root.remove_node(&path);
+            return Ok(false);
+        }
+        if name == ObjectManager::name() {
+            // Just added an object manager. Need to signal all managed objects under it.
+            let emitter = SignalEmitter::new(&self.connection(), path)?;
+            let objects = node.get_managed_objects(self, &self.connection()).await?;
+            for (path, owned_interfaces) in objects {
+                let interfaces = owned_interfaces
                     .iter()
-                    .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
+                    .map(|(i, props)| {
+                        let props = props
+                            .iter()
+                            .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
+                            .collect::<Result<_>>();
+                        Ok((i.into(), props?))
+                    })
                     .collect::<Result<_>>()?;
-                interfaces.insert(name, props);
-
-                ObjectManager::interfaces_added(&emitter, path, interfaces).await?;
+                ObjectManager::interfaces_added(&emitter, path.into(), interfaces).await?;
             }
+        } else if let Some(manager_path) = manager_path {
+            let emitter = SignalEmitter::new(&self.connection(), manager_path)?;
+            let mut interfaces = HashMap::new();
+            let owned_props = node
+                .get_properties(self, &self.connection(), name.clone())
+                .await?;
+            let props = owned_props
+                .iter()
+                .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
+                .collect::<Result<_>>()?;
+            interfaces.insert(name, props);
+
+            ObjectManager::interfaces_added(&emitter, path, interfaces).await?;
         }
 
-        Ok(added)
+        Ok(true)
     }
 
     /// Unregister a D-Bus [`Interface`] at a given path.

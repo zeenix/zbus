@@ -9,6 +9,13 @@ impl Iface {
     fn noop(&self) {}
 }
 
+struct StandardNamed;
+
+#[zbus::interface(name = "org.freedesktop.DBus.Properties")]
+impl StandardNamed {
+    fn noop(&self) {}
+}
+
 #[instrument]
 #[test]
 #[timeout(15000)]
@@ -153,4 +160,30 @@ async fn issue_1916_async() {
     );
     let xml = introspect("/").await.unwrap();
     assert!(!xml.contains("<node name="), "leftover nodes: {xml}");
+
+    // A failed registration (here due to the name colliding with a default interface) must not
+    // leave freshly auto-created nodes behind...
+    assert!(
+        !object_server
+            .at("/org/zbus/ghost", StandardNamed)
+            .await
+            .unwrap()
+    );
+    let xml = introspect("/").await.unwrap();
+    assert!(!xml.contains("<node name="), "leftover nodes: {xml}");
+
+    // ... while a failed registration at a path still in use must not remove anything.
+    object_server.at("/org/zbus/iface", Iface).await.unwrap();
+    assert!(!object_server.at("/org/zbus/iface", Iface).await.unwrap());
+    let xml = introspect("/org/zbus").await.unwrap();
+    assert!(
+        xml.contains("<node name=\"iface\">"),
+        "node wrongly pruned: {xml}"
+    );
+    assert!(
+        object_server
+            .remove::<Iface, _>("/org/zbus/iface")
+            .await
+            .unwrap()
+    );
 }
