@@ -106,8 +106,62 @@ impl Node {
         })
     }
 
-    pub(super) fn remove_node(&mut self, node: &str) -> bool {
-        self.children.remove(node).is_some()
+    /// Remove the descendant node at `path`.
+    ///
+    /// Ancestors that are thereby left childless with only the default interfaces are removed as
+    /// well. Returns whether the node at `path` was removed. The root node itself is never
+    /// removed.
+    pub(super) fn remove_node(&mut self, path: &ObjectPath<'_>) -> bool {
+        let parts = path
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>();
+        if parts.is_empty() {
+            return false;
+        }
+
+        // First pass: check that the whole path exists and find the deepest ancestor that has to
+        // stay: the last one along the path with other children or non-default interfaces of its
+        // own. Everything below it only exists to lead to the target node.
+        let mut node = &*self;
+        let mut keep_depth = 0;
+        for (depth, part) in parts.iter().enumerate() {
+            let Some(child) = node.children.get(*part) else {
+                return false;
+            };
+            if depth + 1 < parts.len()
+                && (child.children.len() > 1 || !child.has_default_interfaces_only())
+            {
+                keep_depth = depth + 1;
+            }
+            node = child;
+        }
+
+        // Second pass: unlink the target node and the now-useless part of its ancestor chain in
+        // one go, by cutting the tree right below the deepest surviving ancestor.
+        let mut node = &mut *self;
+        for part in &parts[..keep_depth] {
+            // The first pass established that the whole path exists.
+            node = node.children.get_mut(*part).unwrap();
+        }
+        let mut disposal = Vec::from_iter(node.children.remove(parts[keep_depth]));
+        let removed = !disposal.is_empty();
+        // Dispose of the detached subtree iteratively: dropping it in one go would recurse per
+        // level, as each node owns its children.
+        while let Some(mut node) = disposal.pop() {
+            disposal.extend(node.children.drain().map(|(_, child)| child));
+        }
+        removed
+    }
+
+    /// Whether the node only has the default interfaces that every node gets on creation.
+    ///
+    /// Note that unlike [`Node::is_empty`], this considers `ObjectManager` a non-default
+    /// interface: a node explicitly serving one must survive the pruning of its children.
+    fn has_default_interfaces_only(&self) -> bool {
+        self.interfaces
+            .keys()
+            .all(|k| *k == Peer::name() || *k == Introspectable::name() || *k == Properties::name())
     }
 
     pub(super) fn add_arc_interface(

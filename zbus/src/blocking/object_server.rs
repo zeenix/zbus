@@ -160,8 +160,9 @@ impl ObjectServer {
 
     /// Unregister a D-Bus [`crate::object_server::Interface`] at a given path.
     ///
-    /// If there are no more interfaces left at that path, destroys the object as well.
-    /// Returns whether the object was destroyed.
+    /// If there are no more interfaces left at that path, destroys the object as well, along
+    /// with any ancestor objects that are thereby left without interfaces or children of their
+    /// own. The root object is never destroyed. Returns whether the object was destroyed.
     pub fn remove<'p, I, P>(&self, path: P) -> Result<bool>
     where
         I: Interface,
