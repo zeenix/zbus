@@ -29,6 +29,7 @@ impl Node {
             path,
             ..Default::default()
         };
+        // Keep this set in sync with `is_default_interface`.
         assert!(node.add_interface(Peer));
         assert!(node.add_interface(Introspectable));
         assert!(node.add_interface(Properties));
@@ -154,9 +155,7 @@ impl Node {
     /// Note that this considers `ObjectManager` a non-default interface: it is explicitly
     /// registered by the user, so a node serving one must not be removed behind their back.
     fn has_default_interfaces_only(&self) -> bool {
-        self.interfaces
-            .keys()
-            .all(|k| *k == Peer::name() || *k == Introspectable::name() || *k == Properties::name())
+        self.interfaces.keys().all(is_default_interface)
     }
 
     pub(super) fn add_arc_interface(
@@ -269,13 +268,12 @@ impl Node {
         let mut node_list: Vec<_> = self.children.values().collect();
         while let Some(node) = node_list.pop() {
             let mut interfaces = HashMap::new();
-            for iface_name in node.interfaces.keys().filter(|n| {
-                // Filter standard interfaces.
-                *n != &Peer::name()
-                    && *n != &Introspectable::name()
-                    && *n != &Properties::name()
-                    && *n != &ObjectManager::name()
-            }) {
+            for iface_name in node
+                .interfaces
+                .keys()
+                // The default interfaces and `ObjectManager` itself are not managed.
+                .filter(|n| !is_default_interface(n) && **n != ObjectManager::name())
+            {
                 let props = node
                     .get_properties(object_server, connection, iface_name.clone())
                     .await?;
@@ -302,5 +300,43 @@ impl Node {
             .await
             .get_all(object_server, connection, None, &emitter)
             .await
+    }
+}
+
+/// Whether `name` is one of the default interfaces added to every node on creation.
+fn is_default_interface(name: &InterfaceName<'_>) -> bool {
+    *name == Peer::name() || *name == Introspectable::name() || *name == Properties::name()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_node_only_has_the_default_interfaces() {
+        // Guards the coupling between `Node::new` and `is_default_interface`: a default
+        // interface registered by one but unknown to the other would silently break pruning.
+        let node = Node::new("/".try_into().unwrap());
+        assert!(node.has_default_interfaces_only());
+    }
+
+    #[test]
+    fn deep_path_removal_needs_no_deep_stack() {
+        // Neither the removal walk nor the disposal of the removed nodes may recurse per path
+        // component: with this many components on a deliberately small stack, a recursive
+        // implementation aborts with a stack overflow.
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(|| {
+                let path_str = format!("/{}", ["n"; 2000].join("/"));
+                let path = ObjectPath::try_from(path_str.as_str()).unwrap();
+                let mut root = Node::new("/".try_into().unwrap());
+                root.get_child_mut(&path, true);
+                assert!(root.remove_node(&path));
+                assert!(root.children.is_empty());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }
