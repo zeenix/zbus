@@ -9,7 +9,7 @@ use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
 use std::{
     collections::{HashMap, HashSet},
-    vec,
+    mem, vec,
 };
 #[cfg(feature = "tokio")]
 use tokio::net::TcpStream;
@@ -596,9 +596,9 @@ impl<'a> Builder<'a> {
 
         // SAFETY: `Authenticated` is always built with these fields set to `Some`.
         let socket_read = auth.socket_read.take().unwrap();
-        let already_received_bytes = auth.already_received_bytes.drain(..).collect();
+        let already_received_bytes = mem::take(&mut auth.already_received_bytes);
         #[cfg(unix)]
-        let already_received_fds = auth.already_received_fds.drain(..).collect();
+        let already_received_fds = mem::take(&mut auth.already_received_fds);
 
         let mut conn = Connection::new(auth, is_bus_conn, executor, self.method_timeout).await?;
         conn.set_max_queued(self.max_queued.unwrap_or(DEFAULT_MAX_QUEUED));
