@@ -29,6 +29,7 @@ impl Node {
             path,
             ..Default::default()
         };
+        // Keep this set in sync with `is_default_interface`.
         assert!(node.add_interface(Peer));
         assert!(node.add_interface(Introspectable));
         assert!(node.add_interface(Properties));
@@ -97,17 +98,64 @@ impl Node {
         self.interfaces.remove(interface_name).is_some()
     }
 
-    pub(super) fn is_empty(&self) -> bool {
-        !self.interfaces.keys().any(|k| {
-            *k != Peer::name()
-                && *k != Introspectable::name()
-                && *k != Properties::name()
-                && *k != ObjectManager::name()
-        })
+    /// Remove the node at `path` if it's no longer needed, along with any ancestors that are
+    /// thereby no longer needed either.
+    ///
+    /// A node is still needed if it has children or non-default interfaces (or is the root
+    /// node). Returns whether the node at `path` was removed.
+    pub(super) fn remove_node(&mut self, path: &ObjectPath<'_>) -> bool {
+        let parts = path
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>();
+        if parts.is_empty() {
+            return false;
+        }
+
+        // First pass: check that the whole path exists and find the deepest ancestor that has to
+        // stay: the last one along the path with other children or non-default interfaces of its
+        // own. Everything below it only exists to lead to the target node.
+        let mut node = &*self;
+        let mut keep_depth = 0;
+        for (depth, part) in parts.iter().enumerate() {
+            let Some(child) = node.children.get(*part) else {
+                return false;
+            };
+            if depth + 1 < parts.len()
+                && (child.children.len() > 1 || !child.has_default_interfaces_only())
+            {
+                keep_depth = depth + 1;
+            }
+            node = child;
+        }
+        if !node.children.is_empty() || !node.has_default_interfaces_only() {
+            // The target node is still needed.
+            return false;
+        }
+
+        // Second pass: unlink the target node and the now-useless part of its ancestor chain in
+        // one go, by cutting the tree right below the deepest surviving ancestor.
+        let mut node = &mut *self;
+        for part in &parts[..keep_depth] {
+            // The first pass established that the whole path exists.
+            node = node.children.get_mut(*part).unwrap();
+        }
+        let mut disposal = Vec::from_iter(node.children.remove(parts[keep_depth]));
+        let removed = !disposal.is_empty();
+        // Dispose of the detached subtree iteratively: dropping it in one go would recurse per
+        // level, as each node owns its children.
+        while let Some(mut node) = disposal.pop() {
+            disposal.extend(node.children.drain().map(|(_, child)| child));
+        }
+        removed
     }
 
-    pub(super) fn remove_node(&mut self, node: &str) -> bool {
-        self.children.remove(node).is_some()
+    /// Whether the node only has the default interfaces that every node gets on creation.
+    ///
+    /// Note that this considers `ObjectManager` a non-default interface: it is explicitly
+    /// registered by the user, so a node serving one must not be removed behind their back.
+    fn has_default_interfaces_only(&self) -> bool {
+        self.interfaces.keys().all(is_default_interface)
     }
 
     pub(super) fn add_arc_interface(
@@ -220,13 +268,12 @@ impl Node {
         let mut node_list: Vec<_> = self.children.values().collect();
         while let Some(node) = node_list.pop() {
             let mut interfaces = HashMap::new();
-            for iface_name in node.interfaces.keys().filter(|n| {
-                // Filter standard interfaces.
-                *n != &Peer::name()
-                    && *n != &Introspectable::name()
-                    && *n != &Properties::name()
-                    && *n != &ObjectManager::name()
-            }) {
+            for iface_name in node
+                .interfaces
+                .keys()
+                // The default interfaces and `ObjectManager` itself are not managed.
+                .filter(|n| !is_default_interface(n) && **n != ObjectManager::name())
+            {
                 let props = node
                     .get_properties(object_server, connection, iface_name.clone())
                     .await?;
@@ -253,5 +300,43 @@ impl Node {
             .await
             .get_all(object_server, connection, None, &emitter)
             .await
+    }
+}
+
+/// Whether `name` is one of the default interfaces added to every node on creation.
+fn is_default_interface(name: &InterfaceName<'_>) -> bool {
+    *name == Peer::name() || *name == Introspectable::name() || *name == Properties::name()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_node_only_has_the_default_interfaces() {
+        // Guards the coupling between `Node::new` and `is_default_interface`: a default
+        // interface registered by one but unknown to the other would silently break pruning.
+        let node = Node::new("/".try_into().unwrap());
+        assert!(node.has_default_interfaces_only());
+    }
+
+    #[test]
+    fn deep_path_removal_needs_no_deep_stack() {
+        // Neither the removal walk nor the disposal of the removed nodes may recurse per path
+        // component: with this many components on a deliberately small stack, a recursive
+        // implementation aborts with a stack overflow.
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(|| {
+                let path_str = format!("/{}", ["n"; 2000].join("/"));
+                let path = ObjectPath::try_from(path_str.as_str()).unwrap();
+                let mut root = Node::new("/".try_into().unwrap());
+                root.get_child_mut(&path, true);
+                assert!(root.remove_node(&path));
+                assert!(root.children.is_empty());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

@@ -156,47 +156,53 @@ impl ObjectServer {
         let (node, manager_path) = root.get_child_mut(&path, true);
         let node = node.unwrap();
         let added = node.add_arc_interface(name.clone(), arc_iface);
-        if added {
-            if name == ObjectManager::name() {
-                // Just added an object manager. Need to signal all managed objects under it.
-                let emitter = SignalEmitter::new(&self.connection(), path)?;
-                let objects = node.get_managed_objects(self, &self.connection()).await?;
-                for (path, owned_interfaces) in objects {
-                    let interfaces = owned_interfaces
-                        .iter()
-                        .map(|(i, props)| {
-                            let props = props
-                                .iter()
-                                .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
-                                .collect::<Result<_>>();
-                            Ok((i.into(), props?))
-                        })
-                        .collect::<Result<_>>()?;
-                    ObjectManager::interfaces_added(&emitter, path.into(), interfaces).await?;
-                }
-            } else if let Some(manager_path) = manager_path {
-                let emitter = SignalEmitter::new(&self.connection(), manager_path)?;
-                let mut interfaces = HashMap::new();
-                let owned_props = node
-                    .get_properties(self, &self.connection(), name.clone())
-                    .await?;
-                let props = owned_props
+        if !added {
+            // The nodes on the path may have been auto-created just now for this very
+            // registration; remove the ones that nothing else needs.
+            root.remove_node(&path);
+            return Ok(false);
+        }
+        if name == ObjectManager::name() {
+            // Just added an object manager. Need to signal all managed objects under it.
+            let emitter = SignalEmitter::new(&self.connection(), path)?;
+            let objects = node.get_managed_objects(self, &self.connection()).await?;
+            for (path, owned_interfaces) in objects {
+                let interfaces = owned_interfaces
                     .iter()
-                    .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
+                    .map(|(i, props)| {
+                        let props = props
+                            .iter()
+                            .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
+                            .collect::<Result<_>>();
+                        Ok((i.into(), props?))
+                    })
                     .collect::<Result<_>>()?;
-                interfaces.insert(name, props);
-
-                ObjectManager::interfaces_added(&emitter, path, interfaces).await?;
+                ObjectManager::interfaces_added(&emitter, path.into(), interfaces).await?;
             }
+        } else if let Some(manager_path) = manager_path {
+            let emitter = SignalEmitter::new(&self.connection(), manager_path)?;
+            let mut interfaces = HashMap::new();
+            let owned_props = node
+                .get_properties(self, &self.connection(), name.clone())
+                .await?;
+            let props = owned_props
+                .iter()
+                .map(|(k, v)| Ok((k.as_str(), Value::try_from(v)?)))
+                .collect::<Result<_>>()?;
+            interfaces.insert(name, props);
+
+            ObjectManager::interfaces_added(&emitter, path, interfaces).await?;
         }
 
-        Ok(added)
+        Ok(true)
     }
 
     /// Unregister a D-Bus [`Interface`] at a given path.
     ///
-    /// If there are no more interfaces left at that path, destroys the object as well.
-    /// Returns whether the object was destroyed.
+    /// If there are no more interfaces or children left at that path, destroys the object as
+    /// well, along with any ancestor objects that are thereby left without interfaces or
+    /// children of their own. The root object is never destroyed. Returns whether the object
+    /// was destroyed.
     pub async fn remove<'p, I, P>(&self, path: P) -> Result<bool>
     where
         I: Interface,
@@ -208,8 +214,10 @@ impl ObjectServer {
 
     /// Unregister a D-Bus [`Interface`] at a given path, using its name.
     ///
-    /// If there are no more interfaces left at that path, destroys the object as well.
-    /// Returns whether the object was destroyed.
+    /// If there are no more interfaces or children left at that path, destroys the object as
+    /// well, along with any ancestor objects that are thereby left without interfaces or
+    /// children of their own. The root object is never destroyed. Returns whether the object
+    /// was destroyed.
     pub async fn remove_named<'p, P>(
         &self,
         path: P,
@@ -222,28 +230,20 @@ impl ObjectServer {
         let path = path.try_into().map_err(Into::into)?;
         let mut root = self.root.write().await;
         let (node, manager_path) = root.get_child_mut(&path, false);
+        let manager_path = manager_path.map(ObjectPath::into_owned);
         let node = node.ok_or(Error::InterfaceNotFound)?;
         if !node.remove_interface(&interface_name) {
             return Err(Error::InterfaceNotFound);
         }
+        // Prune before emitting the (fallible) signal, so that an emission failure can't leave
+        // empty nodes behind.
+        let destroyed = root.remove_node(&path);
         if let Some(manager_path) = manager_path {
             let ctxt = SignalEmitter::new(&self.connection(), manager_path)?;
             ObjectManager::interfaces_removed(&ctxt, path.clone(), (&[interface_name]).into())
                 .await?;
         }
-        if node.is_empty() {
-            let mut path_parts = path.rsplit('/').filter(|i| !i.is_empty());
-            let last_part = path_parts.next().unwrap();
-            let ppath = ObjectPath::from_string_unchecked(
-                path_parts.fold(String::new(), |a, p| format!("/{p}{a}")),
-            );
-            root.get_child_mut(&ppath, false)
-                .0
-                .unwrap()
-                .remove_node(last_part);
-            return Ok(true);
-        }
-        Ok(false)
+        Ok(destroyed)
     }
 
     /// Get the interface at the given path.

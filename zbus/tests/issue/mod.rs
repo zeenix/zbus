@@ -7,6 +7,7 @@ mod issue_121;
 mod issue_122;
 mod issue_1478;
 mod issue_173;
+mod issue_1916;
 mod issue_260;
 mod issue_466;
 mod issue_68;
