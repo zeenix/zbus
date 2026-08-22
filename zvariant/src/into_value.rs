@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::HashMap, hash::BuildHasher, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
+    sync::Arc,
+};
 
 #[cfg(feature = "gvariant")]
 #[allow(deprecated)]
@@ -122,6 +127,18 @@ where
 {
     fn from(v: &'b Vec<V>) -> Value<'v> {
         Value::Array(v.into())
+    }
+}
+
+impl<'a, 'k, 'v, K, V> From<BTreeMap<K, V>> for Value<'a>
+where
+    'k: 'a,
+    'v: 'a,
+    K: Type + Into<Value<'k>> + std::cmp::Ord,
+    V: Type + Into<Value<'v>>,
+{
+    fn from(value: BTreeMap<K, V>) -> Self {
+        Self::Dict(value.into())
     }
 }
 
