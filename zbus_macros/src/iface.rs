@@ -439,6 +439,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
             reply,
             member_name,
             cfg_attrs,
+            doc_attrs,
             ..
         } = method_info;
 
@@ -471,7 +472,14 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 *method_clone.sig.inputs.first_mut().unwrap() = parse_quote!(&self);
                 method_clone.vis = Visibility::Inherited;
                 let sig = &method_clone.sig;
+                let signal_docs = if doc_attrs.is_empty() {
+                    let doc = format!("Emit the “{member_name}” signal.");
+                    quote! { #[doc = #doc] }
+                } else {
+                    quote! { #(#doc_attrs)* }
+                };
                 signals_trait_methods.extend(quote! {
+                    #signal_docs
                     #sig;
                 });
                 method_clone.block = parse_quote!({
