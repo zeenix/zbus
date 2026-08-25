@@ -764,7 +764,11 @@ impl Connection {
     /// The unique name of the connection, if set/applicable.
     ///
     /// The unique name is assigned by the message bus, or set manually using
-    /// [`Connection::set_unique_name`].
+    #[cfg_attr(feature = "bus-impl", doc = "[`Connection::set_unique_name`].")]
+    #[cfg_attr(
+        not(feature = "bus-impl"),
+        doc = "`Connection::set_unique_name` (requires the `bus-impl` feature)."
+    )]
     pub fn unique_name(&self) -> Option<&OwnedUniqueName> {
         self.inner.unique_name.get()
     }
