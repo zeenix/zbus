@@ -6,6 +6,10 @@ use std::future::ready;
 use zbus::{block_on, fdo, object_server::SignalEmitter, proxy::CacheProperties};
 use zbus_macros::{DBusError, interface, proxy};
 
+// `::mybus` only resolves because of this alias; the test below exercises the `crate` attribute
+// on a `Value`-taking property setter.
+extern crate zbus as mybus;
+
 mod param {
     #[zbus_macros::proxy(
         interface = "org.freedesktop.zbus_macros.ProxyParam",
@@ -501,4 +505,25 @@ fn signature_macro_resolves_zvariant_through_zbus() {
 
     assert_eq!(DICT.to_string(), "a{sv}");
     assert_eq!(signature!("s").to_string(), "s");
+}
+
+#[test]
+fn interface_property_setter_with_crate_attr() {
+    use mybus::{object_server::Interface, zvariant::Value};
+
+    struct CrateAttrProperties;
+
+    #[interface(name = "org.freedesktop.CrateAttrProperties", crate = "mybus")]
+    impl CrateAttrProperties {
+        #[zbus(property)]
+        fn set_owned(&self, _value: u32) {}
+
+        #[zbus(property)]
+        fn set_borrowed(&self, _value: Value<'_>) {}
+    }
+
+    assert_eq!(
+        CrateAttrProperties::name(),
+        "org.freedesktop.CrateAttrProperties"
+    );
 }

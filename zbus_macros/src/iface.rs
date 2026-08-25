@@ -543,8 +543,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     // * For all other arg types, we convert the passed value to `OwnedValue` first
                     //   and then pass it as `Value` (so `TryFrom<OwnedValue>` is required).
                     let value_to_owned = quote! {
-                        match ::zbus::zvariant::Value::try_to_owned(value) {
-                            ::std::result::Result::Ok(val) => ::zbus::zvariant::Value::from(val),
+                        match #zbus::zvariant::Value::try_to_owned(value) {
+                            ::std::result::Result::Ok(val) => #zbus::zvariant::Value::from(val),
                             ::std::result::Result::Err(e) => {
                                 return ::std::result::Result::Err(
                                     ::std::convert::Into::into(#zbus::Error::Variant(::std::convert::Into::into(e)))
@@ -583,7 +583,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                     .args
                                     .first()
                                     .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
-                                    .map(|_| quote!(match ::zbus::zvariant::Value::try_clone(value) {
+                                    .map(|_| quote!(match #zbus::zvariant::Value::try_clone(value) {
                                         ::std::result::Result::Ok(val) => val,
                                         ::std::result::Result::Err(e) => {
                                             return ::std::result::Result::Err(
@@ -1706,5 +1706,43 @@ impl Proxy {
                 #methods
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    /// Property setters must name the crate the user asked for, not a literal `::zbus`.
+    #[test]
+    fn property_setter_honours_crate_attribute() {
+        let args = Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse2(quote! { name = "org.freedesktop.CrateAttrTest", crate = "mybus" })
+            .unwrap();
+        let input: ItemImpl = parse_quote! {
+            impl CrateAttrTest {
+                #[zbus(property)]
+                fn set_owned(&self, _value: u32) {}
+
+                #[zbus(property)]
+                fn set_borrowed(&self, _value: Value<'_>) {}
+            }
+        };
+
+        let expanded = expand(args, input).unwrap().to_string();
+
+        assert!(
+            !expanded.contains(":: zbus ::"),
+            "generated code names ::zbus instead of the requested crate: {expanded}"
+        );
+        assert!(
+            expanded.contains(":: mybus :: zvariant :: Value :: try_to_owned"),
+            "generated code lost the owned-value conversion: {expanded}"
+        );
+        assert!(
+            expanded.contains(":: mybus :: zvariant :: Value :: try_clone"),
+            "generated code lost the borrowed-value conversion: {expanded}"
+        );
     }
 }
