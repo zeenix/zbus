@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zvariant::{
-    LE, OwnedValue, Type, Value,
+    LE, OwnedValue, Signature, Type, Value,
     as_value::{self, optional},
     serialized::{Context, Format},
 };
@@ -148,4 +148,14 @@ fn derive_with_crate_attr() {
     }
 
     assert_eq!(TestCrateAttrEnum::SIGNATURE, "y");
+}
+
+#[test]
+fn signature_macro_uses_detected_crate_path() {
+    use zvariant::signature;
+
+    const DICT: Signature = signature!("a{sv}");
+
+    assert_eq!(DICT.to_string(), "a{sv}");
+    assert_eq!(signature!("(su)").to_string(), "(su)");
 }

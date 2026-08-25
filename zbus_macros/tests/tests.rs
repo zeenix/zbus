@@ -490,3 +490,15 @@ fn test_proxy_object_list() {
     check_return(proxy.get_test_objects().unwrap());
     check_return(proxy.objects().unwrap());
 }
+
+// This crate has no `zvariant` dependency, so the path `signature!` expands to has to resolve
+// through the `zbus` re-export.
+#[test]
+fn signature_macro_resolves_zvariant_through_zbus() {
+    use zbus::zvariant::{Signature, signature};
+
+    const DICT: Signature = signature!("a{sv}");
+
+    assert_eq!(DICT.to_string(), "a{sv}");
+    assert_eq!(signature!("s").to_string(), "s");
+}

@@ -667,9 +667,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// [`Signature`]: https://docs.rs/zvariant/latest/zvariant/enum.Signature.html
 #[proc_macro]
 pub fn signature(input: TokenStream) -> TokenStream {
-    // The `signature!` macro has always emitted hardcoded `::zvariant` paths (it never used
-    // proc-macro-crate detection); keep that behaviour.
-    zvariant_utils::derive::expand_signature_macro(input.into(), &quote::quote! { ::zvariant })
+    zvariant_utils::derive::expand_signature_macro(input.into(), &utils::config().default_path)
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
