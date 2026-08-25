@@ -163,7 +163,7 @@ feature:
 # Sample Cargo.toml snippet.
 [dependencies]
 # Also disable the default `async-io` feature to avoid unused dependencies.
-zbus = { version = "5", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["tokio"] }
 ```
 
 Disabling `async-io` is recommended but not required. When both features are enabled, zbus picks the
