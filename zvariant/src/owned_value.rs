@@ -13,10 +13,6 @@ use crate::{
 #[cfg(unix)]
 use crate::Fd;
 
-#[cfg(feature = "gvariant")]
-#[allow(deprecated)]
-use crate::Maybe;
-
 // FIXME: Replace with a generic impl<T: TryFrom<Value>> TryFrom<OwnedValue> for T?
 // https://github.com/z-galaxy/zbus/issues/138
 
@@ -101,17 +97,6 @@ ov_try_from_ref!(&'a Str<'a>);
 ov_try_from_ref!(&'a Structure<'a>);
 #[cfg(unix)]
 ov_try_from_ref!(&'a Fd<'a>);
-
-// `#[allow(deprecated)]` can't attach to a macro invocation directly, hence the wrapping
-// module.
-#[cfg(feature = "gvariant")]
-#[allow(deprecated)]
-mod maybe_owned_value_impls {
-    use super::*;
-
-    ov_try_from!(Maybe<'static>);
-    ov_try_from_ref!(&'a Maybe<'a>);
-}
 
 impl<'a, T> TryFrom<OwnedValue> for Vec<T>
 where
@@ -285,16 +270,6 @@ try_to_value!(Dict<'a, 'a>);
 try_to_value!(Structure<'a>);
 #[cfg(unix)]
 try_to_value!(Fd<'a>);
-
-// `#[allow(deprecated)]` can't attach to a macro invocation directly, hence the wrapping
-// module.
-#[cfg(feature = "gvariant")]
-#[allow(deprecated)]
-mod maybe_try_to_value_impl {
-    use super::*;
-
-    try_to_value!(Maybe<'a>);
-}
 
 impl From<OwnedValue> for Value<'_> {
     fn from(v: OwnedValue) -> Self {

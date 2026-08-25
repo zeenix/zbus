@@ -1,11 +1,11 @@
-#![cfg_attr(feature = "gvariant", allow(deprecated))]
-
 use std::collections::{BTreeMap, HashMap};
 
 use endi::NATIVE_ENDIAN;
 use zvariant::{
-    DeserializeDict, Dict, OwnedObjectPath, SerializeDict, Str, Type, Value, as_value::optional,
-    serialized::Context, to_bytes,
+    DeserializeDict, Dict, OwnedObjectPath, SerializeDict, Str, Type, Value,
+    as_value::{Serialize, optional},
+    serialized::Context,
+    to_bytes,
 };
 
 #[macro_use]
@@ -24,18 +24,6 @@ fn dict_value() {
     let decoded: HashMap<i64, &str> = encoded.deserialize().unwrap().0;
     assert_eq!(decoded[&1], "123");
     assert_eq!(decoded[&2], "456");
-
-    // GVariant format now
-    #[cfg(feature = "gvariant")]
-    {
-        let ctxt = Context::new_gvariant(NATIVE_ENDIAN, 0);
-        let gv_encoded = to_bytes(ctxt, &map).unwrap();
-        assert_eq!(gv_encoded.len(), 30);
-        let map: HashMap<i64, &str> = encoded.deserialize().unwrap().0;
-        assert_eq!(map[&1], "123");
-        assert_eq!(map[&2], "456");
-    }
-    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
 
     // As Value
     let v: Value<'_> = Dict::from(map).into();
@@ -84,37 +72,13 @@ fn dict_value() {
     ];
     assert_eq!(actual, expect);
 
-    #[cfg(feature = "gvariant")]
-    {
-        // GVariant-format requires framing offsets for dict entries with variable-length keys
-        // so let's test that.
-        let mut map: HashMap<&str, &str> = HashMap::new();
-        map.insert("hi", "1234");
-        map.insert("world", "561");
-        let ctxt = Context::new_gvariant(NATIVE_ENDIAN, 0);
-        let gv_encoded = to_bytes(ctxt, &map).unwrap();
-        assert_eq!(gv_encoded.len(), 22);
-        let map: HashMap<&str, &str> = gv_encoded.deserialize().unwrap().0;
-        assert_eq!(map["hi"], "1234");
-        assert_eq!(map["world"], "561");
-
-        // Ensure SerializeValue produces the same result as Value
-        // Tests for https://github.com/z-galaxy/zbus/issues/868
-        let mut map = std::collections::HashMap::<&str, &str>::new();
-        map.insert("k", "v");
-        let gv_ser_value_encoded =
-            zvariant::to_bytes(ctxt, &zvariant::as_value::Serialize(&map)).unwrap();
-        let gv_value_encoded = to_bytes(ctxt, &zvariant::Value::new(map)).unwrap();
-        assert_eq!(*gv_value_encoded, *gv_ser_value_encoded);
-
-        // Now the same but empty dict this time
-        let map: HashMap<&str, &str> = HashMap::new();
-        let gv_encoded = to_bytes(ctxt, &map).unwrap();
-        assert_eq!(gv_encoded.len(), 0);
-        let map: HashMap<&str, &str> = gv_encoded.deserialize().unwrap().0;
-        assert_eq!(map.len(), 0);
-    }
-    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
+    // `as_value::Serialize` must produce the same encoding as wrapping the value in `Value`
+    // directly (https://github.com/z-galaxy/zbus/issues/868).
+    let mut map = HashMap::<&str, &str>::new();
+    map.insert("k", "v");
+    let ser_value_encoded = to_bytes(ctxt, &Serialize(&map)).unwrap();
+    let value_encoded = to_bytes(ctxt, &Value::new(map)).unwrap();
+    assert_eq!(*value_encoded, *ser_value_encoded);
 
     // Dict<u32, u8>
     let mut map: HashMap<u32, u8> = HashMap::new();
@@ -128,19 +92,6 @@ fn dict_value() {
     );
     let decoded: HashMap<u32, u8> = encoded.deserialize().unwrap().0;
     assert_eq!(decoded, map);
-
-    // GVariant format now
-    #[cfg(feature = "gvariant")]
-    {
-        let ctxt = Context::new_gvariant(NATIVE_ENDIAN, 0);
-        let encoded = to_bytes(ctxt, &map).unwrap();
-        assert_eq!(
-            encoded.bytes(),
-            [0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]
-        );
-        let map: HashMap<u32, u8> = encoded.deserialize().unwrap().0;
-        assert_eq!(decoded, map);
-    }
 
     // Now a hand-crafted Dict Value but with a Value as value
     let mut dict = Dict::new(<&str>::SIGNATURE, Value::SIGNATURE);
@@ -241,24 +192,6 @@ fn dict_value() {
     let decoded: TestParseUnknown<'_> = encoded.deserialize().unwrap().0;
     assert_eq!(decoded.rest.len(), 1);
     assert_eq!(decoded.rest["user"], Value::new("me"));
-
-    #[cfg(feature = "gvariant")]
-    {
-        let test = Test {
-            process_id: Some(42),
-            group_id: None,
-            user: "me".to_string(),
-        };
-
-        let ctxt = Context::new_gvariant(NATIVE_ENDIAN, 0);
-        let encoded = to_bytes(ctxt, &test).unwrap();
-        let _: Test = encoded.deserialize().unwrap().0;
-        let decoded = encoded.deserialize::<TestMissing>();
-        assert!(decoded.is_err());
-        let _: TestSkipUnknown = encoded.deserialize().unwrap().0;
-        let decoded = encoded.deserialize::<TestDenyUnknown>();
-        assert!(decoded.is_err());
-    }
 
     #[derive(Default, Debug, SerializeDict, DeserializeDict, Type)]
     #[zvariant(signature = "dict")]

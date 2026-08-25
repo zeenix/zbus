@@ -14,11 +14,6 @@ readme = "README.md"
 
 [features]
 default = []
-# Deprecated: GVariant support has moved to the `zgvariant` crate and will be removed in 6.0.
-gvariant = ["zvariant_derive/gvariant", "zvariant_utils/gvariant"]
-# Legacy compatibility alias that still enables `gvariant`; its own tests moved to the
-# zgvariant repo.
-ostree-tests = ["gvariant"]
 # Enables ser/de of `Option<T>` as an array of 0 or 1 elements.
 option-as-array = []
 camino = ["dep:camino"]
@@ -46,7 +41,6 @@ camino = { workspace = true, optional = true }
 [dev-dependencies]
 serde_json.workspace = true
 serde_repr.workspace = true
-fastrand.workspace = true
 criterion.workspace = true
 chrono = { workspace = true, features = [
     "serde",

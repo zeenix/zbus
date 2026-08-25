@@ -8,8 +8,6 @@ use zvariant::{
 fn f64_value() {
     let encoded = f64_type_test(Format::DBus, 99999.99999_f64, 8, 16);
     assert!((NATIVE_ENDIAN.read_f64(&encoded) - 99999.99999_f64).abs() < f64::EPSILON);
-    #[cfg(feature = "gvariant")]
-    f64_type_test(Format::GVariant, 99999.99999_f64, 8, 10);
 }
 
 fn f64_type_test(

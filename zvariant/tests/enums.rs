@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "gvariant", allow(deprecated))]
-
 use zvariant::{serialized::Context, to_bytes_for_signature};
 
 #[macro_use]
@@ -18,24 +16,13 @@ fn enums() {
         Variant3,
     }
 
-    let ctxts_n_expected_lens = [
-        // Unit variants are encoded as u32 and that has the same encoding in both formats.
-        [
-            (Context::new_dbus(zvariant::BE, 0), 4usize),
-            (Context::new_dbus(zvariant::BE, 1), 7),
-            (Context::new_dbus(zvariant::BE, 2), 6),
-            (Context::new_dbus(zvariant::BE, 3), 5),
-            (Context::new_dbus(zvariant::BE, 4), 4),
-        ],
-        #[cfg(feature = "gvariant")]
-        [
-            (Context::new_gvariant(zvariant::BE, 0), 4usize),
-            (Context::new_gvariant(zvariant::BE, 1), 7),
-            (Context::new_gvariant(zvariant::BE, 2), 6),
-            (Context::new_gvariant(zvariant::BE, 3), 5),
-            (Context::new_gvariant(zvariant::BE, 4), 4),
-        ],
-    ];
+    let ctxts_n_expected_lens = [[
+        (Context::new_dbus(zvariant::BE, 0), 4usize),
+        (Context::new_dbus(zvariant::BE, 1), 7),
+        (Context::new_dbus(zvariant::BE, 2), 6),
+        (Context::new_dbus(zvariant::BE, 3), 5),
+        (Context::new_dbus(zvariant::BE, 4), 4),
+    ]];
     for ctxts_n_expected_len in ctxts_n_expected_lens {
         for (ctxt, expected_len) in ctxts_n_expected_len {
             let encoded = to_bytes_for_signature(ctxt, "u", &Unit::Variant2).unwrap();
@@ -52,23 +39,13 @@ fn enums() {
         Variant3(&'s str),
     }
 
-    let ctxts_n_expected_lens = [
-        [
-            (Context::new_dbus(zvariant::BE, 0), 14usize),
-            (Context::new_dbus(zvariant::BE, 1), 21),
-            (Context::new_dbus(zvariant::BE, 2), 20),
-            (Context::new_dbus(zvariant::BE, 3), 19),
-            (Context::new_dbus(zvariant::BE, 4), 18),
-        ],
-        #[cfg(feature = "gvariant")]
-        [
-            (Context::new_gvariant(zvariant::BE, 0), 10usize),
-            (Context::new_gvariant(zvariant::BE, 1), 13),
-            (Context::new_gvariant(zvariant::BE, 2), 12),
-            (Context::new_gvariant(zvariant::BE, 3), 11),
-            (Context::new_gvariant(zvariant::BE, 4), 10),
-        ],
-    ];
+    let ctxts_n_expected_lens = [[
+        (Context::new_dbus(zvariant::BE, 0), 14usize),
+        (Context::new_dbus(zvariant::BE, 1), 21),
+        (Context::new_dbus(zvariant::BE, 2), 20),
+        (Context::new_dbus(zvariant::BE, 3), 19),
+        (Context::new_dbus(zvariant::BE, 4), 18),
+    ]];
     for ctxts_n_expected_len in ctxts_n_expected_lens {
         for (ctxt, expected_len) in ctxts_n_expected_len {
             let encoded =
@@ -85,23 +62,13 @@ fn enums() {
         Struct { y: u8, t: u32 },
     }
 
-    let ctxts_n_expected_lens = [
-        [
-            (Context::new_dbus(zvariant::BE, 0), 16usize),
-            (Context::new_dbus(zvariant::BE, 1), 23),
-            (Context::new_dbus(zvariant::BE, 2), 22),
-            (Context::new_dbus(zvariant::BE, 3), 21),
-            (Context::new_dbus(zvariant::BE, 4), 20),
-        ],
-        #[cfg(feature = "gvariant")]
-        [
-            (Context::new_gvariant(zvariant::BE, 0), 12usize),
-            (Context::new_gvariant(zvariant::BE, 1), 15),
-            (Context::new_gvariant(zvariant::BE, 2), 14),
-            (Context::new_gvariant(zvariant::BE, 3), 13),
-            (Context::new_gvariant(zvariant::BE, 4), 12),
-        ],
-    ];
+    let ctxts_n_expected_lens = [[
+        (Context::new_dbus(zvariant::BE, 0), 16usize),
+        (Context::new_dbus(zvariant::BE, 1), 23),
+        (Context::new_dbus(zvariant::BE, 2), 22),
+        (Context::new_dbus(zvariant::BE, 3), 21),
+        (Context::new_dbus(zvariant::BE, 4), 20),
+    ]];
     // TODO: Provide convenience API to create complex signatures
     let signature = "(u(yu))";
     for ctxts_n_expected_len in ctxts_n_expected_lens {

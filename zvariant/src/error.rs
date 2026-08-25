@@ -50,8 +50,6 @@ pub enum Error {
     PaddingNot0(u8),
     /// The deserialized file descriptor is not in the given FD index.
     UnknownFd,
-    /// Missing framing offset at the end of a GVariant-encoded container,
-    MissingFramingOffset,
     /// The type (signature as first argument) being (de)serialized is not supported by the format.
     IncompatibleFormat(Signature, crate::serialized::Format),
     /// The provided signature (first argument) was not valid for reading as the requested type.
@@ -79,7 +77,6 @@ impl PartialEq for Error {
             (Error::PaddingNot0(p), Error::PaddingNot0(other)) => p == other,
             (Error::UnknownFd, Error::UnknownFd) => true,
             (Error::MaxDepthExceeded(max1), Error::MaxDepthExceeded(max2)) => max1 == max2,
-            (Error::MissingFramingOffset, Error::MissingFramingOffset) => true,
             (
                 Error::IncompatibleFormat(sig1, format1),
                 Error::IncompatibleFormat(sig2, format2),
@@ -116,10 +113,6 @@ impl fmt::Display for Error {
             Error::Utf8(e) => write!(f, "{e}"),
             Error::PaddingNot0(b) => write!(f, "Unexpected non-0 padding byte `{b}`"),
             Error::UnknownFd => write!(f, "File descriptor not in the given FD index"),
-            Error::MissingFramingOffset => write!(
-                f,
-                "Missing framing offset at the end of GVariant-encoded container"
-            ),
             Error::IncompatibleFormat(sig, format) => {
                 write!(f, "Type `{sig}` is not compatible with `{format}` format",)
             }
@@ -149,7 +142,6 @@ impl Clone for Error {
             Error::Utf8(e) => Error::Utf8(*e),
             Error::PaddingNot0(b) => Error::PaddingNot0(*b),
             Error::UnknownFd => Error::UnknownFd,
-            Error::MissingFramingOffset => Error::MissingFramingOffset,
             Error::IncompatibleFormat(sig, format) => {
                 Error::IncompatibleFormat(sig.clone(), *format)
             }

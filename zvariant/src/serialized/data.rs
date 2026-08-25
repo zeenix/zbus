@@ -232,24 +232,6 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
         #[cfg(unix)]
         let fds = &self.inner.fds;
         let mut de = match self.context.format() {
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Format::GVariant => {
-                #[cfg(unix)]
-                {
-                    crate::gvariant::Deserializer::new(
-                        self.bytes(),
-                        Some(fds),
-                        &signature,
-                        self.context,
-                    )
-                }
-                #[cfg(not(unix))]
-                {
-                    crate::gvariant::Deserializer::<()>::new(self.bytes(), &signature, self.context)
-                }
-            }
-            .map(Deserializer::GVariant)?,
             Format::DBus => {
                 #[cfg(unix)]
                 {
@@ -266,30 +248,21 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
                 }
             }
             .map(Deserializer::DBus)?,
-            // `Format` can still have a `GVariant` variant here even with `zvariant`'s own
-            // `gvariant` feature disabled: if some other crate in the dependency graph (e.g.
-            // `zgvariant`) enables `zvariant_utils/gvariant`, Cargo feature unification adds
-            // the variant to this build regardless. `zvariant`'s own `#[cfg(feature = ...)]`
-            // can't detect that (Cargo features don't propagate that way), so the variant
+            // `Format` can carry a `GVariant` variant even though `zvariant` has no GVariant
+            // support: another crate in the dependency graph (e.g. `zgvariant`) can enable
+            // `zvariant_utils/gvariant`, and Cargo feature unification then adds the variant
+            // to this build. `zvariant` can't detect that with a `#[cfg]`, so the variant
             // can't be named explicitly here without breaking the common case where it
-            // doesn't exist at all. Fall back to a wildcard instead: it's unreachable
-            // whenever `gvariant` is enabled (the two arms above are then exhaustive) or the
-            // variant doesn't exist.
-            #[cfg(not(feature = "gvariant"))]
+            // doesn't exist at all. Fall back to a wildcard instead.
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(Error::Message(
-                    "GVariant support has moved to the `zgvariant` crate; enable `zvariant`'s \
-                     deprecated `gvariant` feature only for legacy compatibility"
-                        .to_owned(),
+                    "GVariant support has moved to the `zgvariant` crate".to_owned(),
                 ));
             }
         };
 
         T::deserialize(&mut de).map(|t| match de {
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Deserializer::GVariant(de) => (t, de.0.pos),
             Deserializer::DBus(de) => (t, de.0.pos),
         })
     }
@@ -325,24 +298,6 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
         #[cfg(unix)]
         let fds = &self.inner.fds;
         let mut de = match self.context.format() {
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Format::GVariant => {
-                #[cfg(unix)]
-                {
-                    crate::gvariant::Deserializer::new(
-                        self.bytes(),
-                        Some(fds),
-                        &signature,
-                        self.context,
-                    )
-                }
-                #[cfg(not(unix))]
-                {
-                    crate::gvariant::Deserializer::new(self.bytes(), &signature, self.context)
-                }
-            }
-            .map(Deserializer::GVariant)?,
             Format::DBus => {
                 #[cfg(unix)]
                 {
@@ -360,21 +315,15 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
             }
             .map(Deserializer::DBus)?,
             // See the comment on the equivalent arm in `deserialize_for_signature` above.
-            #[cfg(not(feature = "gvariant"))]
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(Error::Message(
-                    "GVariant support has moved to the `zgvariant` crate; enable `zvariant`'s \
-                     deprecated `gvariant` feature only for legacy compatibility"
-                        .to_owned(),
+                    "GVariant support has moved to the `zgvariant` crate".to_owned(),
                 ));
             }
         };
 
         seed.deserialize(&mut de).map(|t| match de {
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Deserializer::GVariant(de) => (t, de.0.pos),
             Deserializer::DBus(de) => (t, de.0.pos),
         })
     }

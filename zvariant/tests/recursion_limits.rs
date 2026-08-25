@@ -59,5 +59,4 @@ fn recursion_limits() {
     // TODO:
     //
     // * Test deserializers.
-    // * Test gvariant format.
 }

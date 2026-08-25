@@ -2343,7 +2343,6 @@ dependencies = [
  "codspeed-criterion-compat",
  "endi",
  "enumflags2",
- "fastrand",
  "heapless",
  "serde",
  "serde_bytes",

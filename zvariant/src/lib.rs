@@ -45,13 +45,6 @@ pub use ser::*;
 mod de;
 
 pub mod dbus;
-#[cfg(feature = "gvariant")]
-#[deprecated(
-    since = "5.15.0",
-    note = "GVariant support is deprecated and will be removed in zvariant 6.0. Use the \
-            `zgvariant` crate instead."
-)]
-pub mod gvariant;
 
 pub mod signature;
 pub use signature::Signature;
@@ -61,12 +54,6 @@ pub use crate::str::*;
 
 mod structure;
 pub use crate::structure::*;
-
-#[cfg(feature = "gvariant")]
-mod maybe;
-#[cfg(feature = "gvariant")]
-#[allow(deprecated)]
-pub use crate::maybe::*;
 
 mod optional;
 pub use crate::optional::*;
@@ -90,11 +77,6 @@ mod into_value;
 
 mod owned_value;
 pub use owned_value::*;
-
-#[cfg(feature = "gvariant")]
-mod framing_offset_size;
-#[cfg(feature = "gvariant")]
-mod framing_offsets;
 
 mod container_depths;
 

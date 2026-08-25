@@ -18,7 +18,6 @@ proc-macro = true
 
 [features]
 default = []
-gvariant = ["zvariant_utils/gvariant"]
 
 [dependencies]
 proc-macro2.workspace = true

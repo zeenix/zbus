@@ -99,7 +99,7 @@ jobs:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Test zvariant with zvariant_utils/gvariant enabled without zvariant/gvariant
+      - name: Test zvariant with zvariant_utils/gvariant enabled elsewhere in the graph
         run: cargo --locked test -p zvariant --features zvariant_utils/gvariant
       - name: Build and Test
         run: |
@@ -122,8 +122,6 @@ jobs:
               -- --skip fdpass_systemd
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc --no-default-features connection::Connection::executor
-          # zvariant with its legacy `gvariant` feature (still shipped throughout 5.x).
-          cargo --locked t -p zvariant --features gvariant
 
   windows_test:
     runs-on: windows-latest
@@ -173,8 +171,6 @@ jobs:
           cargo --locked test
           # tokio feature
           cargo --locked test --no-default-features --features tokio
-          # zvariant with its legacy `gvariant` feature (still shipped throughout 5.x).
-          cargo --locked t -p zvariant --features gvariant
 
   zvariant_fuzz:
     runs-on: ubuntu-latest

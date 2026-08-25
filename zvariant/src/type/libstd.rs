@@ -110,14 +110,6 @@ impl_type_for_deref!(T, <T: ?Sized + Type> Type for RcWeak<T>);
 impl_type_for_deref!(T, <T: ?Sized + Type> Type for Cell<T>);
 impl_type_for_deref!(T, <T: ?Sized + Type> Type for RefCell<T>);
 
-#[cfg(all(feature = "gvariant", not(feature = "option-as-array")))]
-impl<T> Type for Option<T>
-where
-    T: Type,
-{
-    const SIGNATURE: &'static Signature = &Signature::static_maybe(T::SIGNATURE);
-}
-
 #[cfg(feature = "option-as-array")]
 impl<T> Type for Option<T>
 where

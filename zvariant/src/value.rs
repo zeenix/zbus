@@ -21,9 +21,6 @@ use crate::{
     Array, Basic, Dict, DynamicType, ObjectPath, OwnedValue, Signature, Str, Structure,
     StructureBuilder, Type, array_display_fmt, dict_display_fmt, structure_display_fmt, utils::*,
 };
-#[cfg(feature = "gvariant")]
-#[allow(deprecated)]
-use crate::{Maybe, maybe_display_fmt};
 
 #[cfg(unix)]
 use crate::Fd;
@@ -97,14 +94,6 @@ pub enum Value<'a> {
     Array(Array<'a>),
     Dict(Dict<'a, 'a>),
     Structure(Structure<'a>),
-    #[cfg(feature = "gvariant")]
-    #[deprecated(
-        since = "5.15.0",
-        note = "GVariant support is deprecated and will be removed in zvariant 6.0. Use the \
-                `zgvariant` crate instead."
-    )]
-    #[allow(deprecated)]
-    Maybe(Maybe<'a>),
 
     #[cfg(unix)]
     Fd(Fd<'a>),
@@ -133,9 +122,6 @@ impl Hash for Value<'_> {
             Self::Array(inner) => inner.hash(state),
             Self::Dict(inner) => inner.hash(state),
             Self::Structure(inner) => inner.hash(state),
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Self::Maybe(inner) => inner.hash(state),
             #[cfg(unix)]
             Self::Fd(inner) => inner.hash(state),
         }
@@ -179,9 +165,6 @@ macro_rules! serialize_value {
             Value::Array(value) => $serializer.$method($($first_arg,)* value),
             Value::Dict(value) => $serializer.$method($($first_arg,)* value),
             Value::Structure(value) => $serializer.$method($($first_arg,)* value),
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Value::Maybe(value) => $serializer.$method($($first_arg,)* value),
 
             #[cfg(unix)]
             Value::Fd(value) => $serializer.$method($($first_arg,)* value),
@@ -248,9 +231,6 @@ impl<'a> Value<'a> {
             Value::Array(v) => Value::Array(v.try_to_owned()?),
             Value::Dict(v) => Value::Dict(v.try_to_owned()?),
             Value::Structure(v) => Value::Structure(v.try_to_owned()?),
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Value::Maybe(v) => Value::Maybe(v.try_to_owned()?),
             #[cfg(unix)]
             Value::Fd(v) => Value::Fd(v.try_to_owned()?),
         }))
@@ -281,9 +261,6 @@ impl<'a> Value<'a> {
             Value::Array(v) => Value::Array(v.try_into_owned()?),
             Value::Dict(v) => Value::Dict(v.try_into_owned()?),
             Value::Structure(v) => Value::Structure(v.try_into_owned()?),
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Value::Maybe(v) => Value::Maybe(v.try_into_owned()?),
             #[cfg(unix)]
             Value::Fd(v) => Value::Fd(v.try_to_owned()?),
         }))
@@ -310,9 +287,6 @@ impl<'a> Value<'a> {
             Value::Array(value) => value.signature(),
             Value::Dict(value) => value.signature(),
             Value::Structure(value) => value.signature(),
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Value::Maybe(value) => value.signature(),
 
             #[cfg(unix)]
             Value::Fd(_) => Fd::SIGNATURE,
@@ -344,9 +318,6 @@ impl<'a> Value<'a> {
             Value::Array(v) => Value::Array(v.try_clone()?),
             Value::Dict(v) => Value::Dict(v.try_clone()?),
             Value::Structure(v) => Value::Structure(v.try_clone()?),
-            #[cfg(feature = "gvariant")]
-            #[allow(deprecated)]
-            Value::Maybe(v) => Value::Maybe(v.try_clone()?),
             #[cfg(unix)]
             Value::Fd(v) => Value::Fd(v.try_clone()?),
         })
@@ -399,14 +370,6 @@ impl<'a> Value<'a> {
         S: SerializeMap,
     {
         serialize_value!(self serializer.serialize_value)
-    }
-
-    #[cfg(feature = "gvariant")]
-    pub(crate) fn serialize_value_as_some<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serialize_value!(self serializer.serialize_some)
     }
 
     /// Try to get the underlying type `T`.
@@ -606,9 +569,6 @@ pub(crate) fn value_display_fmt(
         Value::Array(array) => array_display_fmt(array, f, type_annotate),
         Value::Dict(dict) => dict_display_fmt(dict, f, type_annotate),
         Value::Structure(structure) => structure_display_fmt(structure, f, type_annotate),
-        #[cfg(feature = "gvariant")]
-        #[allow(deprecated)]
-        Value::Maybe(maybe) => maybe_display_fmt(maybe, f, type_annotate),
         #[cfg(unix)]
         Value::Fd(handle) => {
             if type_annotate {
@@ -937,56 +897,18 @@ where
         Ok(Value::Dict(dict))
     }
 
-    #[cfg(feature = "gvariant")]
-    #[allow(deprecated)]
-    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let child_signature = match &self.signature {
-            Signature::Maybe(child) => child.signature().clone(),
-            _ => {
-                return Err(Error::invalid_type(
-                    Unexpected::Str(&self.signature.to_string()),
-                    &"a maybe signature",
-                ));
-            }
-        };
-        let visitor = ValueSeed::<T> {
-            signature: &child_signature,
-            phantom: PhantomData,
-        };
-
-        deserializer
-            .deserialize_any(visitor)
-            .map(|v| Value::Maybe(Maybe::just_full_signature(v, self.signature)))
-    }
-
-    #[cfg(not(feature = "gvariant"))]
     fn visit_some<D>(self, _deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: Deserializer<'de>,
     {
-        panic!("`Maybe` type is only supported for GVariant format but it's disabled");
+        panic!("`Maybe` types are not valid in the D-Bus format; use the `zgvariant` crate");
     }
 
-    #[cfg(feature = "gvariant")]
-    #[allow(deprecated)]
     fn visit_none<E>(self) -> Result<Self::Value, E>
     where
         E: Error,
     {
-        let value = Maybe::nothing_full_signature(self.signature);
-
-        Ok(Value::Maybe(value))
-    }
-
-    #[cfg(not(feature = "gvariant"))]
-    fn visit_none<E>(self) -> Result<Self::Value, E>
-    where
-        E: Error,
-    {
-        panic!("`Maybe` type is only supported for GVariant format but it's disabled");
+        panic!("`Maybe` types are not valid in the D-Bus format; use the `zgvariant` crate");
     }
 }
 
@@ -1159,16 +1081,11 @@ mod tests {
             "((true,), (true, false), (true, true, false))"
         );
 
-        #[cfg(any(feature = "gvariant", feature = "option-as-array"))]
+        #[cfg(feature = "option-as-array")]
         {
             #[cfg(unix)]
             use std::os::fd::BorrowedFd;
 
-            #[cfg(all(feature = "gvariant", not(feature = "option-as-array")))]
-            let s = "((@mn 0, @mmn 0, @mmmn 0), \
-                (@mn nothing, @mmn just nothing, @mmmn just just nothing), \
-                (@mmn nothing, @mmmn just nothing))";
-            #[cfg(feature = "option-as-array")]
             let s = "(([int16 0], [[int16 0]], [[[int16 0]]]), \
                 (@an [], [@an []], [[@an []]]), \
                 (@aan [], [@aan []]))";
@@ -1192,13 +1109,6 @@ mod tests {
                 "[handle 0, -100]"
             );
 
-            #[cfg(all(feature = "gvariant", not(feature = "option-as-array")))]
-            let s = "(@mb nothing, @mb nothing, \
-                @ma{sv} {\"size\": <(800, 600)>}, \
-                [<1>, <{\"dimension\": <([2.4, 1.], \
-                @mmn 200, <(byte 0x03, \"Hello!\")>)>}>], \
-                7777, objectpath \"/\", 8888)";
-            #[cfg(feature = "option-as-array")]
             let s = "(@ab [], @ab [], [{\"size\": <(800, 600)>}], \
                 [<1>, <{\"dimension\": <([2.4, 1.], [[int16 200]], \
                 <(byte 0x03, \"Hello!\")>)>}>], 7777, objectpath \"/\", 8888)";
