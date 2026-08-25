@@ -13,7 +13,7 @@ use syn::{
     spanned::Spanned,
     token::{Async, Comma},
 };
-use zvariant_utils::{case, def_attrs};
+use zvariant_utils::{case, def_attrs, names};
 
 use crate::utils::*;
 
@@ -320,10 +320,13 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
     };
     let iface_name = {
         match (impl_attrs.name, impl_attrs.interface) {
-            // Ensure the interface name is valid.
-            (Some(name), None) | (None, Some(name)) => zbus_names::InterfaceName::try_from(name)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|i| i.to_string())?,
+            (Some(name), None) | (None, Some(name)) => {
+                // Ensure the interface name is valid.
+                names::validate_interface_name(name.as_bytes())
+                    .map_err(|e| Error::new(input.span(), e))?;
+
+                name
+            }
             (None, None) => format!("org.freedesktop.{ty}"),
             (Some(_), Some(_)) => {
                 return Err(syn::Error::new(

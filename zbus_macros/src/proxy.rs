@@ -5,7 +5,7 @@ use syn::{
     Error, FnArg, Ident, ItemTrait, Meta, Path, ReturnType, Token, TraitItemFn, Visibility,
     fold::Fold, parse_quote, parse_str, punctuated::Punctuated, spanned::Spanned,
 };
-use zvariant_utils::{case, def_attrs};
+use zvariant_utils::{case, def_attrs, names, object_path};
 
 def_attrs! {
     crate zbus;
@@ -171,9 +171,9 @@ pub fn create_proxy(
     let iface_name = iface_name
         .map(|iface| {
             // Ensure the interface name is valid.
-            zbus_names::InterfaceName::try_from(iface)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|i| i.to_string())
+            names::validate_interface_name(iface.as_bytes())
+                .map_err(|e| Error::new(input.span(), e))
+                .map(|()| iface.to_string())
         })
         .transpose()?
         .unwrap_or(format!("org.freedesktop.{ident}"));
@@ -181,17 +181,17 @@ pub fn create_proxy(
     let default_path = default_path
         .map(|path| {
             // Ensure the path is valid.
-            zvariant::ObjectPath::try_from(path)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|p| p.to_string())
+            object_path::validate(path.as_bytes())
+                .map_err(|e| Error::new(input.span(), e))
+                .map(|()| path.to_string())
         })
         .transpose()?;
     let default_service = default_service
         .map(|srv| {
             // Ensure the service is valid.
-            zbus_names::BusName::try_from(srv)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|n| n.to_string())
+            names::validate_bus_name(srv.as_bytes())
+                .map_err(|e| Error::new(input.span(), e))
+                .map(|_| srv.to_string())
         })
         .transpose()?;
     let (default_path, default_service) = if assume_defaults {
@@ -1257,4 +1257,63 @@ fn gen_proxy_signal(
     };
 
     (receive_signal, stream_types)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    /// Invalid literals are rejected with the message the D-Bus name types report.
+    #[test]
+    fn invalid_attribute_values_are_rejected() {
+        let cases = [
+            (
+                quote! { interface = "not a valid interface name" },
+                "Invalid interface name. See https://dbus.freedesktop.org/doc/\
+                 dbus-specification.html#message-protocol-names-interface",
+            ),
+            (
+                quote! { interface = "org.freedesktop.Test", default_path = "not/a/path" },
+                "Invalid object path",
+            ),
+            (
+                quote! { interface = "org.freedesktop.Test", default_service = "no-dots" },
+                "Invalid bus name. See https://dbus.freedesktop.org/doc/\
+                 dbus-specification.html#message-protocol-names-bus",
+            ),
+        ];
+
+        for (attr, expected) in cases {
+            let args = Punctuated::<Meta, Token![,]>::parse_terminated
+                .parse2(attr)
+                .unwrap();
+            let input: ItemTrait = parse_quote! {
+                trait Test {
+                    fn thing(&self) -> zbus::Result<()>;
+                }
+            };
+
+            let error = expand(args, input).unwrap_err();
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn valid_attribute_values_are_accepted() {
+        let args = Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse2(quote! {
+                interface = "org.freedesktop.Test",
+                default_path = "/org/freedesktop/Test",
+                default_service = "org.freedesktop.Test"
+            })
+            .unwrap();
+        let input: ItemTrait = parse_quote! {
+            trait Test {
+                fn thing(&self) -> zbus::Result<()>;
+            }
+        };
+
+        expand(args, input).unwrap();
+    }
 }
