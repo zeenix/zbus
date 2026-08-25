@@ -12,12 +12,15 @@
 )))]
 
 use proc_macro::TokenStream;
-use syn::{
-    DeriveInput, ItemImpl, ItemTrait, Meta, Token, parse_macro_input, punctuated::Punctuated,
-};
+use syn::DeriveInput;
+#[cfg(feature = "comms")]
+use syn::{ItemImpl, ItemTrait, Meta, Token, parse_macro_input, punctuated::Punctuated};
 
+#[cfg(feature = "comms")]
 mod error;
+#[cfg(feature = "comms")]
 mod iface;
+#[cfg(feature = "comms")]
 mod proxy;
 mod utils;
 
@@ -209,6 +212,7 @@ mod utils;
 /// [`zbus::blocking::SignalIterator`]: https://docs.rs/zbus/latest/zbus/blocking/proxy/struct.SignalIterator.html
 /// [`ObjectPath`]: https://docs.rs/zvariant/latest/zvariant/struct.ObjectPath.html
 /// [dbus_emits_changed_signal]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
+#[cfg(feature = "comms")]
 #[proc_macro_attribute]
 pub fn proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated<Meta, Token![,]>::parse_terminated);
@@ -391,6 +395,7 @@ pub fn proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// [`SignalEmitter`]: https://docs.rs/zbus/latest/zbus/object_server/struct.SignalEmitter.html
 /// [`Interface`]: https://docs.rs/zbus/latest/zbus/object_server/trait.Interface.html
 /// [dbus_emits_changed_signal]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
+#[cfg(feature = "comms")]
 #[proc_macro_attribute]
 pub fn interface(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated<Meta, Token![,]>::parse_terminated);
@@ -437,6 +442,7 @@ pub fn interface(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// [`zbus::Error`]: https://docs.rs/zbus/latest/zbus/enum.Error.html
 /// [`zvariant::Type`]: https://docs.rs/zvariant/latest/zvariant/trait.Type.html
 /// [`serde::Serialize`]: https://docs.rs/serde/1.0.132/serde/trait.Serialize.html
+#[cfg(feature = "comms")]
 #[proc_macro_derive(DBusError, attributes(zbus))]
 pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

@@ -12,7 +12,9 @@
     allow(unused_extern_crates),
 )))]
 
-#[cfg(doctest)]
+// The book and README examples all need a connection, so they are only compiled with the D-Bus
+// API enabled.
+#[cfg(all(doctest, feature = "comms"))]
 mod doctests {
     // Repo README.
     doc_comment::doctest!("../../README.md");
@@ -30,7 +32,7 @@ mod doctests {
     doc_comment::doctest!("../../book/src/faq.md");
 }
 
-#[cfg(all(not(feature = "async-io"), not(feature = "tokio")))]
+#[cfg(all(feature = "comms", not(feature = "async-io"), not(feature = "tokio")))]
 mod error_message {
     #[cfg(windows)]
     compile_error!(
@@ -47,68 +49,97 @@ mod error_message {
 ))]
 compile_error!("The \"vsock\" and \"tokio-vsock\" features are only supported on Linux.");
 
-#[cfg(windows)]
-mod win32;
-
-mod dbus_error;
-pub use dbus_error::*;
-
 mod error;
 pub use error::*;
 
 pub mod wire;
-/// The wire-format module under its pre-6.0 name.
-pub use wire as zvariant;
+
 pub mod names;
 
+/// The wire-format module under its pre-6.0 name.
+pub use wire as zvariant;
+
+#[cfg(all(feature = "comms", windows))]
+mod win32;
+
+#[cfg(feature = "comms")]
+mod dbus_error;
+#[cfg(feature = "comms")]
+pub use dbus_error::*;
+
+#[cfg(feature = "comms")]
 pub mod address;
+#[cfg(feature = "comms")]
 pub use address::Address;
 
+#[cfg(feature = "comms")]
 mod guid;
+#[cfg(feature = "comms")]
 pub use guid::*;
 
+#[cfg(feature = "comms")]
 pub mod message;
+#[cfg(feature = "comms")]
 pub use message::Message;
 
+#[cfg(feature = "comms")]
 pub mod connection;
 /// Alias for `connection` module, for convenience.
+#[cfg(feature = "comms")]
 pub use connection as conn;
+#[cfg(feature = "comms")]
 pub use connection::Connection;
+#[cfg(feature = "comms")]
 #[deprecated(
     since = "5.0.0",
     note = "Please use `connection::AuthMechanism` instead"
 )]
 pub use connection::handshake::AuthMechanism;
 
+#[cfg(feature = "comms")]
 mod message_stream;
+#[cfg(feature = "comms")]
 pub use message_stream::*;
+#[cfg(feature = "comms")]
 mod abstractions;
+#[cfg(feature = "comms")]
 pub use abstractions::*;
 
+#[cfg(feature = "comms")]
 pub mod match_rule;
+#[cfg(feature = "comms")]
 pub use match_rule::{MatchRule, OwnedMatchRule};
 
+#[cfg(feature = "comms")]
 pub mod proxy;
+#[cfg(feature = "comms")]
 pub use proxy::Proxy;
 
+#[cfg(feature = "comms")]
 pub mod object_server;
+#[cfg(feature = "comms")]
 pub use object_server::ObjectServer;
 
+#[cfg(feature = "comms")]
 mod utils;
+#[cfg(feature = "comms")]
 pub use utils::*;
 
+#[cfg(feature = "comms")]
 #[macro_use]
 pub mod fdo;
 
 #[cfg(feature = "blocking-api")]
 pub mod blocking;
 
+#[cfg(feature = "comms")]
 pub use zbus_macros::{DBusError, interface, proxy};
 
 // Required for the macros to function within this crate.
 extern crate self as zbus;
 
 // Macro support module, not part of the public API.
+#[cfg(feature = "comms")]
 #[doc(hidden)]
 pub mod export {
     pub use async_trait;

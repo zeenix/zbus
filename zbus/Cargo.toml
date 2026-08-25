@@ -14,29 +14,44 @@ readme = "README.md"
 
 [features]
 default = ["async-io", "blocking-api"]
-# Wire-format optional impls.
+
+# Wire-format optional impls — the former zvariant features, same names.
 arrayvec = ["dep:arrayvec"]
 camino = ["dep:camino"]
 chrono = ["dep:chrono"]
-# The `enumflags2` crate itself is a hard dependency: the message header stores its flags in a
-# `BitFlags` field and needs the `Type` impl this feature gates, so every runtime feature
-# switches it on.
-enumflags2 = []
+enumflags2 = ["dep:enumflags2"]
 heapless = ["dep:heapless"]
 # Enables ser/de of `Option<T>` as an array of 0 or 1 elements.
 option-as-array = []
 serde_bytes = ["dep:serde_bytes"]
 time = ["dep:time"]
 url = ["dep:url"]
-# The `uuid` crate itself is a hard dependency (GUID generation); this feature only adds the
-# wire-format impls for `uuid::Uuid`.
-uuid = []
-# Enables API that is only needed for bus implementations (enables `p2p`).
-bus-impl = ["p2p"]
-# Enables API that is only needed for peer-to-peer (p2p) connections.
-p2p = ["uuid/v4"]
-async-io = [
+uuid = ["dep:uuid"]
+
+# The D-Bus API: connection, message, proxy, object server, fdo and friends.
+comms = [
     "enumflags2",
+    "zbus_macros/comms",
+    "dep:serde_repr",
+    "dep:futures-core",
+    "dep:futures-lite",
+    "dep:async-broadcast",
+    "dep:hex",
+    "dep:ordered-stream",
+    "dep:event-listener",
+    "dep:async-trait",
+    "dep:tracing",
+    "dep:async-recursion",
+    "dep:rustix",
+    "dep:libc",
+    "dep:windows-sys",
+    "dep:uds_windows",
+    # `guid::validate_guid` parses GUIDs with `uuid` outside any `p2p` gate, so the dependency is
+    # needed here. `dep:uuid` rather than `uuid` keeps the `Uuid` wire impls opt-in, as today.
+    "dep:uuid",
+]
+async-io = [
+    "comms",
     "dep:async-io",
     "async-executor",
     "async-fs",
@@ -47,35 +62,39 @@ async-io = [
     "async-process",
     "blocking",
 ]
-tokio = ["enumflags2", "dep:tokio"]
+tokio = ["comms", "dep:tokio"]
 vsock = ["dep:vsock", "async-io"]
 tokio-vsock = ["dep:tokio-vsock", "tokio"]
 # Enable blocking API (default).
-blocking-api = ["zbus_macros/blocking-api"]
+blocking-api = ["comms", "zbus_macros/blocking-api"]
+# Enables API that is only needed for peer-to-peer (p2p) connections.
+p2p = ["comms", "uuid?/v4"]
+# Enables API that is only needed for bus implementations (enables `p2p`).
+bus-impl = ["p2p"]
 # Dummy features to satisfy `cargo semver`. Should be removed at the next major version bump.
 async-fs = []
 
 [dependencies]
-zbus_macros = { path = "../zbus_macros", version = "6.0.0" }
+zbus_macros = { path = "../zbus_macros", version = "6.0.0", default-features = false }
 zcheapstr.workspace = true
 endi.workspace = true
 zvariant_utils = { path = "../zvariant_utils", version = "4.3.0" }
 
 serde.workspace = true
-serde_repr.workspace = true
-enumflags2.workspace = true
-futures-core.workspace = true
-futures-lite.workspace = true
-async-broadcast.workspace = true
-hex.workspace = true
-ordered-stream.workspace = true
-uuid.workspace = true
-event-listener.workspace = true
-async-trait.workspace = true
-tracing.workspace = true
+serde_repr = { workspace = true, optional = true }
+enumflags2 = { workspace = true, optional = true }
+futures-core = { workspace = true, optional = true }
+futures-lite = { workspace = true, optional = true }
+async-broadcast = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+ordered-stream = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+event-listener = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 winnow.workspace = true
 
-# Optional and target-specific dependencies.
+# Wire-format impls and async-runtime backends.
 arrayvec = { workspace = true, optional = true }
 camino = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
@@ -108,21 +127,23 @@ vsock = { workspace = true, optional = true }
 tokio-vsock = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
-uds_windows.workspace = true
+windows-sys = { workspace = true, optional = true }
+uds_windows = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
-rustix.workspace = true
-libc.workspace = true
-async-recursion.workspace = true
+rustix = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
+async-recursion = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies.async-recursion]
 workspace = true
+optional = true
 
 [dev-dependencies]
 zbus_xml.workspace = true
 
 doc-comment.workspace = true
+serde_repr.workspace = true
 futures-util = { workspace = true, features = [
     "io",
     "async-await-macro",
@@ -154,21 +175,22 @@ chrono = { workspace = true, features = [
 # all-features = true
 # because some features (such as vsock) are target-specific
 features = [
-    "arrayvec",
     "async-io",
     "blocking-api",
-    "enumflags2",
-    "uuid",
-    "url",
-    "time",
+    "comms",
+    "arrayvec",
+    "camino",
     "chrono",
+    "enumflags2",
     "heapless",
     "option-as-array",
-    "camino",
+    "serde_bytes",
+    "time",
+    "url",
+    "uuid",
     "bus-impl",
     "p2p",
     "tokio",
-    "serde_bytes",
 ]
 targets = [
     "x86_64-unknown-linux-gnu",
@@ -185,9 +207,38 @@ workspace = true
 [lib]
 bench = false
 
+[[test]]
+name = "basic"
+required-features = ["comms"]
+
+[[test]]
+name = "builder_message_stream"
+required-features = ["comms"]
+
+[[test]]
+name = "connection_closed"
+required-features = ["comms"]
+
+[[test]]
+name = "e2e"
+required-features = ["comms"]
+
+[[test]]
+name = "issues"
+required-features = ["comms"]
+
+[[test]]
+name = "uncached_propert"
+required-features = ["comms"]
+
+[[test]]
+name = "unixexec"
+required-features = ["comms"]
+
 [[bench]]
 name = "benchmarks"
 harness = false
+required-features = ["comms"]
 
 [[bench]]
 name = "concurrent_method_calls"
@@ -206,3 +257,8 @@ harness = false
 name = "screen-brightness"
 path = "examples/screen-brightness.rs"
 required-features = ["blocking-api"]
+
+[[example]]
+name = "watch-systemd-jobs"
+path = "examples/watch-systemd-jobs.rs"
+required-features = ["async-io"]
