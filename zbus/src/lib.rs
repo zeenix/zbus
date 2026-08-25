@@ -56,8 +56,11 @@ pub mod wire;
 
 pub mod names;
 
-/// The wire-format module under its pre-6.0 name.
-pub use wire as zvariant;
+#[deprecated(
+    since = "6.0.0",
+    note = "zvariant was merged into zbus; use `zbus::wire`"
+)]
+pub mod zvariant;
 
 #[cfg(all(feature = "comms", windows))]
 mod win32;

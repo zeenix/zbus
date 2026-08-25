@@ -21,7 +21,7 @@ Here is a simple example using `SerializeDict` and `DeserializeDict`:
 ```rust,noplayground
 use zbus::{
     proxy, interface, fdo::Result,
-    zvariant::{Type, SerializeDict, DeserializeDict},
+    wire::{Type, SerializeDict, DeserializeDict},
 };
 
 #[derive(DeserializeDict, SerializeDict, Type)]
@@ -62,7 +62,7 @@ struct. You can not do that with `DeserializeDict` but you can with `serde::Dese
 
 ```rust,noplayground
 use std::collections::HashMap;
-use zbus::zvariant::{Type, OwnedValue, as_value::{self, optional}};
+use zbus::wire::{Type, OwnedValue, as_value::{self, optional}};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type)]
@@ -91,7 +91,7 @@ Moreover, since D-Bus does not have a concept of nullable types, it's important 
 make use of the `default` container attribute if your struct can implemented the `Default` trait:
 
 ```rust,noplayground
-# use zbus::zvariant::{Type, as_value::{self, optional}};
+# use zbus::wire::{Type, as_value::{self, optional}};
 # use serde::{Deserialize, Serialize};
 #
 #[derive(Default, Deserialize, Serialize, Type)]
@@ -116,7 +116,7 @@ You can mirror that shape by nesting one `*Dict` struct inside another. The oute
 struct as their type:
 
 ```rust,noplayground
-use zbus::zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::wire::{DeserializeDict, SerializeDict, Type};
 
 
 #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default, Clone)]
@@ -265,7 +265,7 @@ variant's field(s). The only caveat here is that all variants must have the same
 of fields. Names of fields don't matter though. You can make use of [`Value`] or [`OwnedValue`] if you want to encode different data in different fields. Here is a simple example:
 
 ```rust,noplayground
-use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
+use zbus::wire::{serialized::Context, to_bytes, Type, LE};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]
@@ -289,7 +289,7 @@ assert_eq!(decoded, e);
 Enum encoding can be adjusted by using the [`serde_repr`] crate and by annotating the representation of the enum with `repr`:
 
 ```rust,noplayground
-use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
+use zbus::wire::{serialized::Context, to_bytes, Type, LE};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 
 #[derive(Deserialize_repr, Serialize_repr, Type, PartialEq, Debug)]
@@ -309,7 +309,7 @@ assert_eq!(e, UnitEnum::Variant2);
 Unit enums can also be (de)serialized as strings:
 
 ```rust,noplayground
-use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
+use zbus::wire::{serialized::Context, to_bytes, Type, LE};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]

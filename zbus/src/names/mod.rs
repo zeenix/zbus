@@ -35,4 +35,18 @@ pub use property_name::*;
 mod error_name;
 pub use error_name::*;
 
+/// Deprecated alias of [`crate::Error`].
+#[deprecated(
+    since = "6.0.0",
+    note = "zbus_names was merged into zbus; use `zbus::Error`"
+)]
+pub type Error = crate::Error;
+
+/// Deprecated alias of [`crate::Result`].
+#[deprecated(
+    since = "6.0.0",
+    note = "zbus_names was merged into zbus; use `zbus::Result`"
+)]
+pub type Result<T> = crate::Result<T>;
+
 mod utils;

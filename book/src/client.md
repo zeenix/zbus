@@ -60,7 +60,7 @@ zbus `Connection` has a `call_method()` method, which you can use directly:
 use std::collections::HashMap;
 use std::error::Error;
 
-use zbus::{zvariant::Value, Connection};
+use zbus::{wire::Value, Connection};
 
 // Although we use `tokio` here, you can use any async runtime of choice.
 #[tokio::main]
@@ -99,7 +99,7 @@ calls:
 use std::collections::HashMap;
 use std::error::Error;
 
-use zbus::{zvariant::Value, proxy, Connection};
+use zbus::{wire::Value, proxy, Connection};
 
 #[proxy(
     default_service = "org.freedesktop.Notifications",
@@ -164,7 +164,7 @@ Let's look at this API in action, with an example where we monitor started syste
 ```rust,no_run
 # // NOTE: When changing this, please also keep `zbus/examples/watch-systemd-jobs.rs` in sync.
 use futures_util::stream::StreamExt;
-use zbus::{zvariant::OwnedObjectPath, proxy, Connection};
+use zbus::{wire::OwnedObjectPath, proxy, Connection};
 
 # fn main() {
 #     async_io::block_on(watch_systemd_jobs()).expect("Error listening to signal");
@@ -208,7 +208,7 @@ Here is a more elaborate example, where we get our location from
 [Geoclue](https://gitlab.freedesktop.org/geoclue/geoclue/-/blob/master/README.md):
 
 ```rust,no_run
-use zbus::{zvariant::ObjectPath, proxy, Connection, Result};
+use zbus::{wire::ObjectPath, proxy, Connection, Result};
 use futures_util::stream::StreamExt;
 
 #[proxy(
@@ -574,7 +574,7 @@ For example, the generated `GetServerInformation` method can be improved to a ni
 
 ```rust,noplayground
 use serde::{Serialize, Deserialize};
-use zbus::{zvariant::Type, proxy};
+use zbus::{wire::Type, proxy};
 
 #[derive(Debug, Type, Serialize, Deserialize)]
 pub struct ServerInformation {
