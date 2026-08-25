@@ -141,5 +141,5 @@ impl From<Infallible> for Error {
     }
 }
 
-/// Alias for a `Result` with the error type `zbus_names::Error`.
+/// Alias for a `Result` with the error type `zbus::names::Error`.
 pub type Result<T> = std::result::Result<T, Error>;

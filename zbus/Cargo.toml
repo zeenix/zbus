@@ -52,7 +52,7 @@ zbus_macros = { path = "../zbus_macros", version = "6.0.0" }
 zvariant = { path = "../zvariant", features = [
     "enumflags2",
 ], version = "5.15.0" }
-zbus_names = { path = "../zbus_names", version = "4.3.4" }
+zvariant_utils = { path = "../zvariant_utils", version = "4.3.0" }
 
 serde.workspace = true
 serde_repr.workspace = true
@@ -172,6 +172,10 @@ harness = false
 name = "concurrent_method_calls"
 harness = false
 required-features = ["p2p"]
+
+[[bench]]
+name = "names"
+harness = false
 
 [[example]]
 name = "screen-brightness"

@@ -1,5 +1,5 @@
 use std::{borrow::Cow, convert::Infallible, error, fmt, io, num::NonZeroUsize, sync::Arc};
-use zbus_names::Error as NamesError;
+use zbus::names::Error as NamesError;
 use zvariant::Error as VariantError;
 
 /// The error type for `zbus_xml`.

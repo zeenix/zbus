@@ -2,7 +2,6 @@
 members = [
     "zbus",
     "zvariant",
-    "zbus_names",
     "zvariant_derive",
     "zvariant_utils",
     "zbus_macros",
@@ -30,7 +29,6 @@ strip = "none"
 zvariant_derive = { path = "./zvariant_derive" }
 zvariant_utils = { path = "./zvariant_utils" }
 zvariant = { path = "./zvariant", default-features = false }
-zbus_names = { path = "./zbus_names" }
 zbus_macros = { path = "./zbus_macros" }
 zbus_xml = { path = "./zbus_xml" }
 zbus = { path = "./zbus" }

@@ -111,5 +111,5 @@ pub mod export {
     pub use serde;
 }
 
-pub use zbus_names as names;
+pub mod names;
 pub use zvariant;

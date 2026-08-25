@@ -1,4 +1,4 @@
-use crate::utils::define_name_type_impls;
+use crate::names::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -9,7 +9,7 @@ use zvariant::{Str, Type};
 /// # Examples
 ///
 /// ```
-/// use zbus_names::ErrorName;
+/// use zbus::names::ErrorName;
 ///
 /// // Valid error names.
 /// let name = ErrorName::try_from("org.gnome.Error_for_you").unwrap();

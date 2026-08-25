@@ -2187,9 +2187,9 @@ dependencies = [
  "windows-sys",
  "winnow 1.0.4",
  "zbus_macros",
- "zbus_names",
  "zbus_xml",
  "zvariant",
+ "zvariant_utils",
 ]
 
 [[package]]
@@ -2208,16 +2208,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zbus_names"
-version = "4.3.4"
-dependencies = [
- "codspeed-criterion-compat",
- "serde",
- "zvariant",
- "zvariant_utils",
-]
-
-[[package]]
 name = "zbus_xml"
 version = "6.0.0"
 dependencies = [
@@ -2225,7 +2215,7 @@ dependencies = [
  "doc-comment",
  "serde",
  "winnow 1.0.4",
- "zbus_names",
+ "zbus",
  "zvariant",
 ]
 

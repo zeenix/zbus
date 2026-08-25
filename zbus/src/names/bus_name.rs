@@ -5,20 +5,20 @@ use core::{
 };
 use std::{borrow::Cow, sync::Arc};
 
-use crate::{
+use crate::names::{
     Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName,
     utils::impl_str_basic,
 };
 use serde::{Deserialize, Serialize, de};
 use zvariant::{NoneValue, OwnedValue, Str, Type, Value};
-use zvariant_utils::names::{self, BusNameKind};
+use zvariant_utils::names::BusNameKind;
 
 /// String that identifies a [bus name].
 ///
 /// # Examples
 ///
 /// ```
-/// use zbus_names::BusName;
+/// use zbus::names::BusName;
 ///
 /// // Valid well-known names.
 /// let name = BusName::try_from("org.gnome.Service-for_you").unwrap();
@@ -212,7 +212,9 @@ impl<'s> TryFrom<Str<'s>> for BusName<'s> {
     type Error = Error;
 
     fn try_from(value: Str<'s>) -> Result<Self> {
-        match names::validate_bus_name(value.as_bytes()).map_err(Error::InvalidName)? {
+        match zvariant_utils::names::validate_bus_name(value.as_bytes())
+            .map_err(Error::InvalidName)?
+        {
             BusNameKind::Unique => Ok(BusName::Unique(UniqueName(value))),
             BusNameKind::WellKnown => Ok(BusName::WellKnown(WellKnownName(value))),
         }

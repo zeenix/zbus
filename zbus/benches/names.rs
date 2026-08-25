@@ -16,39 +16,39 @@ fn name_parse(c: &mut Criterion) {
 
     group.bench_function("well_known", |b| {
         b.iter(|| {
-            zbus_names::WellKnownName::try_from(black_box(WELL_KNOWN_NAME)).unwrap();
+            zbus::names::WellKnownName::try_from(black_box(WELL_KNOWN_NAME)).unwrap();
         })
     });
 
     group.bench_function("unique", |b| {
         b.iter(|| {
-            zbus_names::UniqueName::try_from(black_box(UNIQUE_NAME)).unwrap();
+            zbus::names::UniqueName::try_from(black_box(UNIQUE_NAME)).unwrap();
         })
     });
 
     group.bench_function("bus", |b| {
         b.iter(|| {
             // Use a well-known name since the parser first tries unique name.
-            zbus_names::BusName::try_from(black_box(WELL_KNOWN_NAME)).unwrap();
+            zbus::names::BusName::try_from(black_box(WELL_KNOWN_NAME)).unwrap();
         })
     });
 
     group.bench_function("interface", |b| {
         b.iter(|| {
-            zbus_names::InterfaceName::try_from(black_box(INTERFACE_NAME)).unwrap();
+            zbus::names::InterfaceName::try_from(black_box(INTERFACE_NAME)).unwrap();
         })
     });
 
     group.bench_function("error", |b| {
         b.iter(|| {
             // Error names follow the same rules are interface names.
-            zbus_names::ErrorName::try_from(black_box(INTERFACE_NAME)).unwrap();
+            zbus::names::ErrorName::try_from(black_box(INTERFACE_NAME)).unwrap();
         })
     });
 
     group.bench_function("member", |b| {
         b.iter(|| {
-            zbus_names::MemberName::try_from(black_box(MEMBER_NAME)).unwrap();
+            zbus::names::MemberName::try_from(black_box(MEMBER_NAME)).unwrap();
         })
     });
 

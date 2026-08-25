@@ -18,7 +18,7 @@ use winnow::{
     stream::{Location, Stateful},
     token::{any, take_till, take_until, take_while},
 };
-use zbus_names::{InterfaceName, MemberName, PropertyName};
+use zbus::names::{InterfaceName, MemberName, PropertyName};
 
 use crate::{
     Annotation, Arg, ArgDirection, Interface, Method, Node, Property, PropertyAccess, Signal,

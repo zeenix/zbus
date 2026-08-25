@@ -1,4 +1,4 @@
-use crate::utils::define_name_type_impls;
+use crate::names::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -7,7 +7,7 @@ use zvariant::{Str, Type};
 /// # Examples
 ///
 /// ```
-/// use zbus_names::UniqueName;
+/// use zbus::names::UniqueName;
 ///
 /// // Valid unique names.
 /// let name = UniqueName::try_from(":org.gnome.Service-for_you").unwrap();

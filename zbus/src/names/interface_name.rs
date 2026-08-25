@@ -1,4 +1,4 @@
-use crate::utils::define_name_type_impls;
+use crate::names::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -7,7 +7,7 @@ use zvariant::{Str, Type};
 /// # Examples
 ///
 /// ```
-/// use zbus_names::InterfaceName;
+/// use zbus::names::InterfaceName;
 ///
 /// // Valid interface names.
 /// let name = InterfaceName::try_from("org.gnome.Interface_for_you").unwrap();

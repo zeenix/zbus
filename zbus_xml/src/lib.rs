@@ -28,7 +28,7 @@ use std::{
     ops::Deref,
 };
 
-use zbus_names::{InterfaceName, MemberName, PropertyName};
+use zbus::names::{InterfaceName, MemberName, PropertyName};
 
 /// A warning about document content that was ignored during parsing.
 ///
