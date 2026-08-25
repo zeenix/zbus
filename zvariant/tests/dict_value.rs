@@ -431,12 +431,11 @@ fn nested_dict_value() {
     let update = raw.update.as_ref().unwrap();
     assert_eq!(update.value_signature(), "a{sv}");
     let update_dict = update.downcast_ref::<&Dict<'_, '_>>().unwrap();
-    assert_eq!(
+    assert!(
         update_dict
             .get::<&str, bool>(&"compatible")
             .unwrap()
-            .unwrap(),
-        true
+            .unwrap()
     );
 
     // Re-serializing the `OwnedValue` field must not double-wrap it: the bytes still read back
