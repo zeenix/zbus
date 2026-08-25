@@ -1,6 +1,6 @@
 use crate::{Error, Result, utils::define_name_type_impls};
 use serde::Serialize;
-use zvariant::{OwnedValue, Str, Type, Value};
+use zvariant::{Str, Type};
 
 /// String that identifies a [well-known bus name][wbn].
 ///
@@ -26,13 +26,11 @@ use zvariant::{OwnedValue, Str, Type, Value};
 /// ```
 ///
 /// [wbn]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus
-#[derive(
-    Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue,
-)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct WellKnownName<'name>(pub(crate) Str<'name>);
 
 /// Owned sibling of [`WellKnownName`].
-#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue)]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct OwnedWellKnownName(#[serde(borrow)] WellKnownName<'static>);
 
 define_name_type_impls! {

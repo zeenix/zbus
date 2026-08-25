@@ -245,6 +245,38 @@ macro_rules! define_name_type_impls {
             }
         }
 
+        impl<'s> TryFrom<zvariant::Value<'s>> for $name<'s> {
+            type Error = zvariant::Error;
+
+            fn try_from(value: zvariant::Value<'s>) -> zvariant::Result<Self> {
+                let s = zvariant::Str::try_from(value)?;
+                Self::try_from(s).map_err(|e| zvariant::Error::Message(e.to_string()))
+            }
+        }
+
+        impl<'s> From<$name<'s>> for zvariant::Value<'s> {
+            fn from(name: $name<'s>) -> Self {
+                name.0.into()
+            }
+        }
+
+        impl TryFrom<zvariant::OwnedValue> for $name<'_> {
+            type Error = zvariant::Error;
+
+            fn try_from(value: zvariant::OwnedValue) -> zvariant::Result<Self> {
+                let s = zvariant::Str::try_from(value)?;
+                Self::try_from(s).map_err(|e| zvariant::Error::Message(e.to_string()))
+            }
+        }
+
+        impl TryFrom<$name<'_>> for zvariant::OwnedValue {
+            type Error = zvariant::Error;
+
+            fn try_from(name: $name<'_>) -> zvariant::Result<Self> {
+                Ok(name.0.into())
+            }
+        }
+
         // === Owned type impls ===
 
         // impl_str_basic for owned type
@@ -364,6 +396,36 @@ macro_rules! define_name_type_impls {
 
             fn null_value() -> Self::NoneType {
                 $name::null_value()
+            }
+        }
+
+        impl TryFrom<zvariant::Value<'static>> for $owned_name {
+            type Error = zvariant::Error;
+
+            fn try_from(value: zvariant::Value<'static>) -> zvariant::Result<Self> {
+                <$name<'static>>::try_from(value).map(Self::from)
+            }
+        }
+
+        impl From<$owned_name> for zvariant::Value<'_> {
+            fn from(name: $owned_name) -> Self {
+                name.0.into()
+            }
+        }
+
+        impl TryFrom<zvariant::OwnedValue> for $owned_name {
+            type Error = zvariant::Error;
+
+            fn try_from(value: zvariant::OwnedValue) -> zvariant::Result<Self> {
+                <$name<'static>>::try_from(value).map(Self::from)
+            }
+        }
+
+        impl TryFrom<$owned_name> for zvariant::OwnedValue {
+            type Error = zvariant::Error;
+
+            fn try_from(name: $owned_name) -> zvariant::Result<Self> {
+                name.0.try_into()
             }
         }
     };

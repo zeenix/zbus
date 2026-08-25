@@ -89,6 +89,17 @@ into_value!(Fd<'a>, Fd);
 #[cfg(unix)]
 try_into_value_from_ref!(Fd<'a>, Fd);
 
+#[cfg(feature = "enumflags2")]
+impl<'a, F> From<enumflags2::BitFlags<F>> for Value<'a>
+where
+    F: enumflags2::BitFlag,
+    F::Numeric: Into<Value<'a>>,
+{
+    fn from(v: enumflags2::BitFlags<F>) -> Self {
+        v.bits().into()
+    }
+}
+
 impl<'v, 's: 'v, T> From<T> for Value<'v>
 where
     T: Into<Structure<'s>>,
@@ -173,5 +184,28 @@ where
         }
 
         array.into()
+    }
+}
+
+#[cfg(all(test, feature = "enumflags2"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bitflags_conversion() {
+        #[repr(u32)]
+        #[enumflags2::bitflags]
+        #[derive(Copy, Clone, Debug)]
+        pub enum Flaggy {
+            One = 0x1,
+            Two = 0x2,
+        }
+
+        let flags = Flaggy::One | Flaggy::Two;
+        assert_eq!(Value::from(flags), Value::U32(0x3));
+        assert_eq!(
+            Value::from(enumflags2::BitFlags::<Flaggy>::empty()),
+            Value::U32(0)
+        );
     }
 }

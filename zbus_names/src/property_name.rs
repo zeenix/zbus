@@ -1,6 +1,6 @@
 use crate::{Error, Result, utils::define_name_type_impls};
 use serde::Serialize;
-use zvariant::{OwnedValue, Str, Type, Value};
+use zvariant::{Str, Type};
 
 /// String that identifies a [property][pn] name on the bus.
 ///
@@ -21,13 +21,11 @@ use zvariant::{OwnedValue, Str, Type, Value};
 /// ```
 ///
 /// [pn]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-properties
-#[derive(
-    Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue,
-)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct PropertyName<'name>(Str<'name>);
 
 /// Owned sibling of [`PropertyName`].
-#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, Value, PartialOrd, Ord, OwnedValue)]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Type, PartialOrd, Ord)]
 pub struct OwnedPropertyName(#[serde(borrow)] PropertyName<'static>);
 
 define_name_type_impls! {

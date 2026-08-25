@@ -163,6 +163,59 @@ mod tests {
     use std::panic::catch_unwind;
 
     #[test]
+    fn value_conversion_maps_null_sentinel_to_none() {
+        use crate::{Optional, OwnedValue, Str, Value};
+
+        let opt = Optional::<String>::try_from(Value::from("")).unwrap();
+        assert_eq!(*opt, None);
+        let opt = Optional::<String>::try_from(Value::from("hello")).unwrap();
+        assert_eq!(*opt, Some("hello".to_string()));
+
+        let opt = Optional::<u32>::try_from(Value::from(0u32)).unwrap();
+        assert_eq!(*opt, None);
+        let opt = Optional::<u32>::try_from(Value::from(42u32)).unwrap();
+        assert_eq!(*opt, Some(42));
+
+        let owned = OwnedValue::try_from(Value::from(Str::from(""))).unwrap();
+        let opt = Optional::<String>::try_from(owned).unwrap();
+        assert_eq!(*opt, None);
+    }
+
+    #[cfg(feature = "enumflags2")]
+    #[test]
+    fn value_conversion_maps_empty_bitflags_to_none() {
+        use crate::{Optional, OwnedValue, Value};
+        use enumflags2::BitFlags;
+
+        #[repr(u32)]
+        #[enumflags2::bitflags]
+        #[derive(Copy, Clone, Debug, PartialEq)]
+        pub enum Flaggy {
+            One = 0x1,
+            Two = 0x2,
+        }
+
+        // Empty flags (numeric 0) are the null sentinel and must map to `None`.
+        let opt = Optional::<BitFlags<Flaggy>>::try_from(Value::from(0u32)).unwrap();
+        assert_eq!(Option::<BitFlags<Flaggy>>::from(opt), None);
+        let opt = Optional::<BitFlags<Flaggy>>::try_from(Value::from(0x2u32)).unwrap();
+        assert_eq!(
+            Option::<BitFlags<Flaggy>>::from(opt),
+            Some(Flaggy::Two.into())
+        );
+
+        let owned = OwnedValue::try_from(Value::from(0u32)).unwrap();
+        let opt = Optional::<BitFlags<Flaggy>>::try_from(owned).unwrap();
+        assert_eq!(Option::<BitFlags<Flaggy>>::from(opt), None);
+        let owned = OwnedValue::try_from(Value::from(0x3u32)).unwrap();
+        let opt = Optional::<BitFlags<Flaggy>>::try_from(owned).unwrap();
+        assert_eq!(
+            Option::<BitFlags<Flaggy>>::from(opt),
+            Some(Flaggy::One | Flaggy::Two)
+        );
+    }
+
+    #[test]
     fn bool_in_optional() {
         // Ensure trying to encode/decode `bool` in `Optional` fails.
         use crate::{LE, Optional, to_bytes};
