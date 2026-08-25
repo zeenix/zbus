@@ -6,9 +6,9 @@ use core::{
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{
+    Error, Result,
     names::{
-        Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName,
-        utils::impl_str_basic,
+        OwnedUniqueName, OwnedWellKnownName, UniqueName, WellKnownName, utils::impl_str_basic,
     },
     wire::{NoneValue, OwnedValue, Str, Type, Value},
 };
@@ -279,9 +279,7 @@ impl<'s> TryFrom<Value<'s>> for BusName<'s> {
     type Error = Error;
 
     fn try_from(value: Value<'s>) -> Result<Self> {
-        Str::try_from(value)
-            .map_err(Into::into)
-            .and_then(TryInto::try_into)
+        Str::try_from(value).and_then(TryInto::try_into)
     }
 }
 
@@ -331,9 +329,7 @@ impl TryFrom<OwnedValue> for BusName<'_> {
     type Error = Error;
 
     fn try_from(value: OwnedValue) -> Result<Self> {
-        Str::try_from(value)
-            .map_err(Into::into)
-            .and_then(TryInto::try_into)
+        Str::try_from(value).and_then(TryInto::try_into)
     }
 }
 
@@ -345,7 +341,6 @@ impl TryFrom<BusName<'static>> for OwnedValue {
             BusName::Unique(name) => name.try_into(),
             BusName::WellKnown(name) => name.try_into(),
         }
-        .map_err(Into::into)
     }
 }
 

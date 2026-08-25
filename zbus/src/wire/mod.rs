@@ -235,8 +235,11 @@ pub use crate::wire::optional::*;
 mod value;
 pub use value::*;
 
-mod error;
-pub use error::*;
+// The shared derive codegen in zvariant_utils emits `<path>::Error` and `<path>::Result` where
+// `<path>` is whatever module holds the wire types, and a glob import of this module must bring
+// the error types along with them. The spelling users should write is `zbus::Error`.
+#[doc(hidden)]
+pub use crate::{Error, MaxDepthExceeded, Result};
 
 #[macro_use]
 mod r#type;

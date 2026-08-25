@@ -32,9 +32,6 @@ pub use member_name::*;
 mod property_name;
 pub use property_name::*;
 
-mod error;
-pub use error::*;
-
 mod error_name;
 pub use error_name::*;
 

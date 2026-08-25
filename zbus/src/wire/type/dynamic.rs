@@ -24,8 +24,7 @@ pub trait DynamicDeserialize<'de>: DynamicType {
     type Deserializer: DeserializeSeed<'de, Value = Self> + DynamicType;
 
     /// Get a deserializer compatible with this parsed signature.
-    fn deserializer_for_signature(signature: &Signature)
-    -> crate::wire::Result<Self::Deserializer>;
+    fn deserializer_for_signature(signature: &Signature) -> crate::Result<Self::Deserializer>;
 }
 
 impl<T> DynamicType for T
@@ -43,9 +42,7 @@ where
 {
     type Deserializer = PhantomData<T>;
 
-    fn deserializer_for_signature(
-        signature: &Signature,
-    ) -> crate::wire::Result<Self::Deserializer> {
+    fn deserializer_for_signature(signature: &Signature) -> crate::Result<Self::Deserializer> {
         let expected = <T as Type>::SIGNATURE;
 
         if expected != signature {
@@ -57,7 +54,7 @@ where
                     // deserialized as a single-field struct. No need to be super strict here.
                 }
                 _ => {
-                    return Err(crate::wire::Error::SignatureMismatch(
+                    return Err(crate::Error::SignatureMismatch(
                         signature.clone(),
                         format!("`{expected}`"),
                     ));

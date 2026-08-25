@@ -1,5 +1,4 @@
 use std::{borrow::Cow, convert::Infallible, error, fmt, io, num::NonZeroUsize, sync::Arc};
-use zbus::{names::Error as NamesError, wire::Error as VariantError};
 
 /// The error type for `zbus_xml`.
 ///
@@ -7,10 +6,8 @@ use zbus::{names::Error as NamesError, wire::Error as VariantError};
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Error {
-    /// A zvariant error, e.g. an invalid signature.
-    Variant(VariantError),
-    /// A D-Bus name error.
-    Name(NamesError),
+    /// A zbus error, e.g. an invalid signature or an invalid D-Bus name.
+    Zbus(zbus::Error),
     /// An XML parsing error.
     Xml(XmlError),
     /// An I/O error.
@@ -36,8 +33,7 @@ pub enum Error {
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Variant(s), Self::Variant(o)) => s == o,
-            (Self::Name(s), Self::Name(o)) => s == o,
+            (Self::Zbus(s), Self::Zbus(o)) => s == o,
             (Self::Xml(s), Self::Xml(o)) => s == o,
             (_, _) => false,
         }
@@ -47,8 +43,7 @@ impl PartialEq for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Error::Variant(e) => Some(e),
-            Error::Name(e) => Some(e),
+            Error::Zbus(e) => Some(e),
             Error::Xml(e) => Some(e),
             Error::Io(e) => Some(e),
             #[allow(deprecated)]
@@ -62,8 +57,7 @@ impl error::Error for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Variant(e) => write!(f, "{e}"),
-            Error::Name(e) => write!(f, "{e}"),
+            Error::Zbus(e) => write!(f, "{e}"),
             Error::Xml(e) => write!(f, "XML error: {e}"),
             Error::Io(e) => write!(f, "I/O error: {e}"),
             #[allow(deprecated)]
@@ -74,15 +68,9 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<VariantError> for Error {
-    fn from(val: VariantError) -> Self {
-        Error::Variant(val)
-    }
-}
-
-impl From<NamesError> for Error {
-    fn from(val: NamesError) -> Self {
-        Error::Name(val)
+impl From<zbus::Error> for Error {
+    fn from(val: zbus::Error) -> Self {
+        Error::Zbus(val)
     }
 }
 

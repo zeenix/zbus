@@ -209,7 +209,7 @@ impl<'a> Value<'a> {
     ///
     /// This method can currently only fail on Unix platforms for [`Value::Fd`] variant. This
     /// happens when the current process exceeds the maximum number of open file descriptors.
-    pub fn try_to_owned(&self) -> crate::wire::Result<OwnedValue> {
+    pub fn try_to_owned(&self) -> crate::Result<OwnedValue> {
         Ok(OwnedValue(match self {
             Value::U8(v) => Value::U8(*v),
             Value::Bool(v) => Value::Bool(*v),
@@ -243,7 +243,7 @@ impl<'a> Value<'a> {
     /// of open file descriptors.
     ///
     /// Results in an extra allocation if the value contains borrowed data.
-    pub fn try_into_owned(self) -> crate::wire::Result<OwnedValue> {
+    pub fn try_into_owned(self) -> crate::Result<OwnedValue> {
         Ok(OwnedValue(match self {
             Value::U8(v) => Value::U8(v),
             Value::Bool(v) => Value::Bool(v),
@@ -300,7 +300,7 @@ impl<'a> Value<'a> {
     /// This method can currently only fail on Unix platforms for [`Value::Fd`] variant containing
     /// an [`Fd::Owned`] variant. This happens when the current process exceeds the maximum number
     /// of open file descriptors.
-    pub fn try_clone(&self) -> crate::wire::Result<Self> {
+    pub fn try_clone(&self) -> crate::Result<Self> {
         Ok(match self {
             Value::U8(v) => Value::U8(*v),
             Value::Bool(v) => Value::Bool(*v),
@@ -382,7 +382,7 @@ impl<'a> Value<'a> {
     /// # Examples
     ///
     /// ```
-    /// use zbus::wire::{Error, Result, Value};
+    /// use zbus::{Error, Result, wire::Value};
     ///
     /// fn value_vec_to_type_vec<'a, T>(values: Vec<Value<'a>>) -> Result<Vec<T>>
     /// where
@@ -413,10 +413,10 @@ impl<'a> Value<'a> {
     /// [`Value::Value`]: enum.Value.html#variant.Value
     /// [`TryFrom<Value>`]: https://doc.rust-lang.org/std/convert/trait.TryFrom.html
     /// [`From<Value>`]: https://doc.rust-lang.org/std/convert/trait.From.html
-    pub fn downcast<T>(self) -> Result<T, crate::wire::Error>
+    pub fn downcast<T>(self) -> Result<T, crate::Error>
     where
         T: TryFrom<Value<'a>>,
-        <T as TryFrom<Value<'a>>>::Error: Into<crate::wire::Error>,
+        <T as TryFrom<Value<'a>>>::Error: Into<crate::Error>,
     {
         if let Value::Value(v) = self {
             T::try_from(*v)
@@ -434,7 +434,7 @@ impl<'a> Value<'a> {
     /// # Examples
     ///
     /// ```
-    /// use zbus::wire::{Error, Result, Value};
+    /// use zbus::{Error, Result, wire::Value};
     ///
     /// fn value_vec_to_type_vec<'a, T>(values: &'a Vec<Value<'a>>) -> Result<Vec<&'a T>>
     /// where
@@ -463,10 +463,10 @@ impl<'a> Value<'a> {
     /// ```
     ///
     /// [`downcast`]: enum.Value.html#method.downcast
-    pub fn downcast_ref<T>(&'a self) -> Result<T, crate::wire::Error>
+    pub fn downcast_ref<T>(&'a self) -> Result<T, crate::Error>
     where
         T: TryFrom<&'a Value<'a>>,
-        <T as TryFrom<&'a Value<'a>>>::Error: Into<crate::wire::Error>,
+        <T as TryFrom<&'a Value<'a>>>::Error: Into<crate::Error>,
     {
         if let Value::Value(v) = self {
             <T>::try_from(v)
@@ -931,9 +931,9 @@ impl Type for Value<'_> {
 }
 
 impl<'a> TryFrom<&Value<'a>> for Value<'a> {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
-    fn try_from(value: &Value<'a>) -> crate::wire::Result<Value<'a>> {
+    fn try_from(value: &Value<'a>) -> crate::Result<Value<'a>> {
         value.try_clone()
     }
 }

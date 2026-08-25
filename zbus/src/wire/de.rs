@@ -5,9 +5,12 @@ use std::{marker::PhantomData, str};
 #[cfg(unix)]
 use std::os::fd::{AsFd, AsRawFd};
 
-use crate::wire::{
-    Basic, Error, Result, Signature, container_depths::ContainerDepths,
-    dbus::Deserializer as DBusDeserializer, serialized::Context, utils::*,
+use crate::{
+    Error, Result,
+    wire::{
+        Basic, Signature, container_depths::ContainerDepths,
+        dbus::Deserializer as DBusDeserializer, serialized::Context, utils::*,
+    },
 };
 
 /// Our deserialization implementation.

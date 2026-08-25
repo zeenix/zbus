@@ -373,10 +373,7 @@ mod tests {
         }
 
         let body: Result<u32, Error> = m.body().deserialize();
-        assert!(matches!(
-            body.unwrap_err(),
-            Error::Variant(crate::wire::Error::SignatureMismatch { .. })
-        ));
+        assert!(matches!(body.unwrap_err(), Error::SignatureMismatch(..)));
 
         assert_eq!(m.to_string(), "Method call do from :1.72");
         let r = Message::method_return(&m.header())

@@ -5,9 +5,12 @@ use serde::{
 };
 use std::fmt::{Display, Write};
 
-use crate::wire::{
-    DynamicDeserialize, DynamicType, Error, Result, Signature, Type, Value,
-    value::{SignatureSeed, value_display_fmt},
+use crate::{
+    Error, Result,
+    wire::{
+        DynamicDeserialize, DynamicType, Signature, Type, Value,
+        value::{SignatureSeed, value_display_fmt},
+    },
 };
 
 /// A helper type to wrap arrays in a [`Value`].
@@ -73,7 +76,7 @@ impl<'a> Array<'a> {
     pub fn get<V>(&'a self, idx: usize) -> Result<Option<V>>
     where
         V: TryFrom<&'a Value<'a>>,
-        <V as TryFrom<&'a Value<'a>>>::Error: Into<crate::wire::Error>,
+        <V as TryFrom<&'a Value<'a>>>::Error: Into<crate::Error>,
     {
         self.elements
             .get(idx)
@@ -126,12 +129,12 @@ impl<'a> Array<'a> {
     }
 
     /// Tries to clone the `Array`.
-    pub fn try_clone(&self) -> crate::wire::Result<Self> {
+    pub fn try_clone(&self) -> crate::Result<Self> {
         let elements = self
             .elements
             .iter()
             .map(|v| v.try_clone())
-            .collect::<crate::wire::Result<Vec<_>>>()?;
+            .collect::<crate::Result<Vec<_>>>()?;
 
         Ok(Self {
             elements,
@@ -225,11 +228,9 @@ impl DynamicType for ArraySeed {
 impl<'a> DynamicDeserialize<'a> for Array<'a> {
     type Deserializer = ArraySeed;
 
-    fn deserializer_for_signature(
-        signature: &Signature,
-    ) -> crate::wire::Result<Self::Deserializer> {
+    fn deserializer_for_signature(signature: &Signature) -> crate::Result<Self::Deserializer> {
         if !matches!(signature, Signature::Array(_)) {
-            return Err(crate::wire::Error::SignatureMismatch(
+            return Err(crate::Error::SignatureMismatch(
                 signature.clone(),
                 "an array signature".to_owned(),
             ));
@@ -294,7 +295,7 @@ where
 impl<'a, T> TryFrom<Array<'a>> for Vec<T>
 where
     T: TryFrom<Value<'a>>,
-    T::Error: Into<crate::wire::Error>,
+    T::Error: Into<crate::Error>,
 {
     type Error = Error;
 

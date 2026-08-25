@@ -183,18 +183,16 @@ impl<'a> Builder<'a> {
 
         self.build_generic(signature, body_size, move |cursor| {
             // SAFETY: build_generic puts FDs and the body in the same Message.
-            unsafe { crate::wire::to_writer(cursor, ctxt, body) }
-                .map(|s| {
-                    #[cfg(unix)]
-                    {
-                        s.into_fds()
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        let _ = s;
-                    }
-                })
-                .map_err(Into::into)
+            unsafe { crate::wire::to_writer(cursor, ctxt, body) }.map(|s| {
+                #[cfg(unix)]
+                {
+                    s.into_fds()
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = s;
+                }
+            })
         })
     }
 

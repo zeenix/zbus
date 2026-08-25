@@ -1,4 +1,4 @@
-use crate::wire::{Error, MaxDepthExceeded, Result};
+use crate::{Error, MaxDepthExceeded, Result};
 
 // The limits come from the D-Bus specification.
 const MAX_STRUCT_DEPTH: u8 = 32;

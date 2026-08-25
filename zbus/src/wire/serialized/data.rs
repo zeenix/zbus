@@ -8,10 +8,13 @@ use std::{
 
 use serde::{Deserialize, de::DeserializeSeed};
 
-use crate::wire::{
-    DynamicDeserialize, DynamicType, Error, Result, Signature, Type,
-    de::Deserializer,
-    serialized::{Context, Format},
+use crate::{
+    Error, Result,
+    wire::{
+        DynamicDeserialize, DynamicType, Signature, Type,
+        de::Deserializer,
+        serialized::{Context, Format},
+    },
 };
 
 /// Represents serialized bytes in a specific format.
@@ -260,7 +263,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
             // doesn't exist at all. Fall back to a wildcard instead.
             #[allow(unreachable_patterns)]
             _ => {
-                return Err(Error::Message(
+                return Err(Error::Failure(
                     "GVariant support has moved to the `zgvariant` crate".to_owned(),
                 ));
             }
@@ -325,7 +328,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
             // See the comment on the equivalent arm in `deserialize_for_signature` above.
             #[allow(unreachable_patterns)]
             _ => {
-                return Err(Error::Message(
+                return Err(Error::Failure(
                     "GVariant support has moved to the `zgvariant` crate".to_owned(),
                 ));
             }

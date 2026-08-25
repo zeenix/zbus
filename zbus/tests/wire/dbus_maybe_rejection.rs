@@ -21,7 +21,7 @@ fn dbus_deserialize_rejects_maybe_layout_signatures() {
         let bytes = [0u8, 0, 0, 0];
         let ctxt = Context::new_dbus(LE, 0);
         let data = Data::new(&bytes[..], ctxt);
-        let res: zbus::wire::Result<(Vec<i32>, usize)> = data.deserialize_for_signature(&sig);
+        let res: zbus::Result<(Vec<i32>, usize)> = data.deserialize_for_signature(&sig);
         assert_maybe_rejected(res, &format!("deserialize layout {s:?}"));
     }
 }
@@ -60,7 +60,7 @@ fn dbus_rejects_signature_value_carrying_maybe() {
     // A `g` value on the wire: length byte, "mi", trailing nul.
     let bytes = [2u8, b'm', b'i', 0];
     let data = Data::new(&bytes[..], ctxt);
-    let res: zbus::wire::Result<(Signature, usize)> = data.deserialize_for_signature(&g);
+    let res: zbus::Result<(Signature, usize)> = data.deserialize_for_signature(&g);
     assert_maybe_rejected(res, "deserialize `g` value");
 }
 
@@ -78,7 +78,7 @@ fn dbus_deserialize_rejects_variant_carrying_maybe() {
     let ctxt = Context::new_dbus(LE, 0);
     let bytes = [3u8, b'a', b'm', b'i', 0, 0, 0, 0, 0, 0, 0, 0];
     let data = Data::new(&bytes[..], ctxt);
-    let res: zbus::wire::Result<(Value<'_>, usize)> = data.deserialize_for_signature(&v);
+    let res: zbus::Result<(Value<'_>, usize)> = data.deserialize_for_signature(&v);
     assert_maybe_rejected(res, "deserialize variant carrying maybe");
 }
 
@@ -90,7 +90,7 @@ fn maybe_supported() -> bool {
 
 // The D-Bus boundary's own maybe-rejection carries this wording, distinct from the direct-`Maybe`
 // deserialize fallback, so asserting it confirms the intended branch fired (not merely any error).
-fn assert_maybe_rejected<T>(res: zbus::wire::Result<T>, ctx: &str) {
+fn assert_maybe_rejected<T>(res: zbus::Result<T>, ctx: &str) {
     let err = res
         .err()
         .unwrap_or_else(|| panic!("{ctx}: expected an error, got Ok"));

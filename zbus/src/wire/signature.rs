@@ -2,12 +2,6 @@ use crate::wire::{Basic, Type};
 
 pub use zvariant_utils::signature::*;
 
-impl From<Error> for crate::wire::Error {
-    fn from(e: Error) -> Self {
-        crate::wire::Error::SignatureParse(e)
-    }
-}
-
 impl Type for Signature {
     const SIGNATURE: &'static Signature = &Signature::Signature;
 }

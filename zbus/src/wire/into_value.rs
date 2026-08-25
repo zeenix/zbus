@@ -63,9 +63,9 @@ into_value_from_both!(ObjectPath<'a>, ObjectPath);
 macro_rules! try_into_value_from_ref {
     ($from:ty, $kind:ident) => {
         impl<'a> TryFrom<&'a $from> for Value<'a> {
-            type Error = crate::wire::Error;
+            type Error = crate::Error;
 
-            fn try_from(v: &'a $from) -> crate::wire::Result<Self> {
+            fn try_from(v: &'a $from) -> crate::Result<Self> {
                 v.try_clone().map(Value::$kind)
             }
         }

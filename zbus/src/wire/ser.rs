@@ -4,12 +4,15 @@ use std::io::{Seek, Write};
 #[cfg(unix)]
 use std::os::fd::OwnedFd;
 
-use crate::wire::{
-    Basic, DynamicType, Error, Result, Signature,
-    container_depths::ContainerDepths,
-    dbus::Serializer as DBusSerializer,
-    serialized::{Context, Data, Format, Size, Written},
-    utils::*,
+use crate::{
+    Error, Result,
+    wire::{
+        Basic, DynamicType, Signature,
+        container_depths::ContainerDepths,
+        dbus::Serializer as DBusSerializer,
+        serialized::{Context, Data, Format, Size, Written},
+        utils::*,
+    },
 };
 
 struct NullWriteSeek;
@@ -73,7 +76,7 @@ where
         // all. Fall back to a wildcard instead.
         #[allow(unreachable_patterns)]
         _ => {
-            return Err(Error::Message(
+            return Err(Error::Failure(
                 "GVariant support has moved to the `zgvariant` crate".to_owned(),
             ));
         }
@@ -184,7 +187,7 @@ where
         // See the comment on the equivalent arm in `serialized_size` above.
         #[allow(unreachable_patterns)]
         _ => {
-            return Err(Error::Message(
+            return Err(Error::Failure(
                 "GVariant support has moved to the `zgvariant` crate".to_owned(),
             ));
         }

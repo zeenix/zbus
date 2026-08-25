@@ -3,7 +3,7 @@ use crate::wire::{
     serialized::{self, Data},
 };
 
-use crate::{Error, Message, Result};
+use crate::{Message, Result};
 
 /// The body of a message.
 ///
@@ -28,7 +28,6 @@ impl Body {
 
         self.data
             .deserialize_for_dynamic_signature(body_sig)
-            .map_err(Error::from)
             .map(|b| b.0)
     }
 
@@ -37,7 +36,7 @@ impl Body {
     where
         B: serde::de::Deserialize<'d> + Type,
     {
-        self.data.deserialize().map_err(Error::from).map(|b| b.0)
+        self.data.deserialize().map(|b| b.0)
     }
 
     /// The signature of the body.

@@ -6,7 +6,10 @@ use std::{
 
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
-use crate::wire::{Basic, DynamicType, Error, Signature, Type, Value, value_display_fmt};
+use crate::{
+    Error,
+    wire::{Basic, DynamicType, Signature, Type, Value, value_display_fmt},
+};
 
 /// A helper type to wrap dictionaries in a [`Value`].
 ///
@@ -85,9 +88,9 @@ impl<'k, 'v> Dict<'k, 'v> {
     where
         'd: 'k + 'v,
         &'k K: TryInto<Value<'k>>,
-        <&'k K as TryInto<Value<'k>>>::Error: Into<crate::wire::Error>,
+        <&'k K as TryInto<Value<'k>>>::Error: Into<crate::Error>,
         V: TryFrom<&'v Value<'v>>,
-        <V as TryFrom<&'v Value<'v>>>::Error: Into<crate::wire::Error>,
+        <V as TryFrom<&'v Value<'v>>>::Error: Into<crate::Error>,
     {
         let key: Value<'_> = key.try_into().map_err(Into::into)?;
 
@@ -99,7 +102,7 @@ impl<'k, 'v> Dict<'k, 'v> {
         &self.signature
     }
 
-    pub(crate) fn try_to_owned(&self) -> crate::wire::Result<Dict<'static, 'static>> {
+    pub(crate) fn try_to_owned(&self) -> crate::Result<Dict<'static, 'static>> {
         Ok(Dict {
             signature: self.signature.clone(),
             map: self
@@ -111,11 +114,11 @@ impl<'k, 'v> Dict<'k, 'v> {
                         v.try_to_owned().map(Into::into)?,
                     ))
                 })
-                .collect::<crate::wire::Result<_>>()?,
+                .collect::<crate::Result<_>>()?,
         })
     }
 
-    pub(crate) fn try_into_owned(self) -> crate::wire::Result<Dict<'static, 'static>> {
+    pub(crate) fn try_into_owned(self) -> crate::Result<Dict<'static, 'static>> {
         Ok(Dict {
             signature: self.signature,
             map: self
@@ -127,7 +130,7 @@ impl<'k, 'v> Dict<'k, 'v> {
                         v.try_into_owned().map(Into::into)?,
                     ))
                 })
-                .collect::<crate::wire::Result<_>>()?,
+                .collect::<crate::Result<_>>()?,
         })
     }
 
@@ -137,7 +140,7 @@ impl<'k, 'v> Dict<'k, 'v> {
             .map
             .iter()
             .map(|(k, v)| Ok((k.try_clone()?, v.try_clone()?)))
-            .collect::<Result<_, crate::wire::Error>>()?;
+            .collect::<Result<_, crate::Error>>()?;
 
         Ok(Self {
             map: entries,
@@ -236,8 +239,8 @@ macro_rules! from_dict {
         where
             K: Basic + TryFrom<Value<'k>> $(+ $kbound1 $(+ $kbound2)*)*,
             V: TryFrom<Value<'v>>,
-            K::Error: Into<crate::wire::Error>,
-            V::Error: Into<crate::wire::Error>,
+            K::Error: Into<crate::Error>,
+            V::Error: Into<crate::Error>,
             $($typaram: BuildHasher + Default,)*
         {
             type Error = Error;

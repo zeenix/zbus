@@ -1,6 +1,6 @@
 use std::slice::SliceIndex;
 
-use crate::wire::{Error, Result};
+use crate::{Error, Result};
 
 /// The prefix of ARRAY type signature, as a character. Provided for manual signature creation.
 pub const ARRAY_SIGNATURE_CHAR: char = 'a';

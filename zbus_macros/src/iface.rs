@@ -547,7 +547,21 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             ::std::result::Result::Ok(val) => #zbus::wire::Value::from(val),
                             ::std::result::Result::Err(e) => {
                                 return ::std::result::Result::Err(
-                                    ::std::convert::Into::into(#zbus::Error::Variant(::std::convert::Into::into(e)))
+                                    ::std::convert::Into::into(
+                                        ::std::convert::Into::<#zbus::Error>::into(e),
+                                    )
+                                );
+                            }
+                        }
+                    };
+                    let value_cloned = quote! {
+                        match #zbus::wire::Value::try_clone(value) {
+                            ::std::result::Result::Ok(val) => val,
+                            ::std::result::Result::Err(e) => {
+                                return ::std::result::Result::Err(
+                                    ::std::convert::Into::into(
+                                        ::std::convert::Into::<#zbus::Error>::into(e),
+                                    )
                                 );
                             }
                         }
@@ -583,14 +597,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                     .args
                                     .first()
                                     .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
-                                    .map(|_| quote!(match #zbus::wire::Value::try_clone(value) {
-                                        ::std::result::Result::Ok(val) => val,
-                                        ::std::result::Result::Err(e) => {
-                                            return ::std::result::Result::Err(
-                                                ::std::convert::Into::into(#zbus::Error::Variant(::std::convert::Into::into(e)))
-                                            );
-                                        }
-                                    }))
+                                    .map(|_| value_cloned.clone())
                                     .unwrap_or_else(|| value_to_owned.clone()),
                                 _ => value_to_owned.clone(),
                             })
@@ -638,7 +645,9 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             }
                             ::std::result::Result::Err(e) => {
                                 ::std::result::Result::Err(
-                                    ::std::convert::Into::into(#zbus::Error::Variant(::std::convert::Into::into(e))),
+                                    ::std::convert::Into::into(
+                                        ::std::convert::Into::<#zbus::Error>::into(e),
+                                    ),
                                 )
                             }
                         }

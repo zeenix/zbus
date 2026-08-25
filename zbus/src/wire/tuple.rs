@@ -114,14 +114,14 @@ macro_rules! tuple_impls {
 
                 fn deserializer_for_signature(
                     signature: &Signature,
-                ) -> crate::wire::Result<Self::Deserializer> {
+                ) -> crate::Result<Self::Deserializer> {
                     let mut fields_iter = match &signature {
                         crate::wire::Signature::Structure(fields) => fields.iter(),
-                        _ => return Err(crate::wire::Error::IncorrectType),
+                        _ => return Err(crate::Error::IncorrectType),
                     };
 
                     let seeds = ($({
-                        let elt_sig = fields_iter.next().ok_or(crate::wire::Error::IncorrectType)?;
+                        let elt_sig = fields_iter.next().ok_or(crate::Error::IncorrectType)?;
                         $name::deserializer_for_signature(elt_sig)?
                     },)+);
 

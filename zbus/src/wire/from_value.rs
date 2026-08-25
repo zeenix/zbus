@@ -1,6 +1,9 @@
-use crate::wire::{
-    Array, Dict, Error, NoneValue, ObjectPath, Optional, OwnedObjectPath, Signature, Str,
-    Structure, Value,
+use crate::{
+    Error,
+    wire::{
+        Array, Dict, NoneValue, ObjectPath, Optional, OwnedObjectPath, Signature, Str, Structure,
+        Value,
+    },
 };
 
 #[cfg(unix)]
@@ -129,7 +132,7 @@ impl TryFrom<&Value<'_>> for String {
 impl<'a, T> TryFrom<Value<'a>> for Vec<T>
 where
     T: TryFrom<Value<'a>>,
-    T::Error: Into<crate::wire::Error>,
+    T::Error: Into<crate::Error>,
 {
     type Error = Error;
 
@@ -162,7 +165,7 @@ where
 
     fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
         Self::from_bits(F::Numeric::try_from(value)?)
-            .map_err(|_| Error::Message("Failed to convert to bitflags".into()))
+            .map_err(|_| Error::Failure("Failed to convert to bitflags".into()))
     }
 }
 
@@ -189,16 +192,16 @@ where
     K: crate::wire::Basic + TryFrom<Value<'a>> + std::hash::Hash + std::cmp::Eq,
     V: TryFrom<Value<'a>>,
     H: BuildHasher + Default,
-    K::Error: Into<crate::wire::Error>,
-    V::Error: Into<crate::wire::Error>,
+    K::Error: Into<crate::Error>,
+    V::Error: Into<crate::Error>,
 {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
     fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
         if let Value::Dict(v) = value {
             Self::try_from(v)
         } else {
-            Err(crate::wire::Error::IncorrectType)
+            Err(crate::Error::IncorrectType)
         }
     }
 }
@@ -207,9 +210,9 @@ impl<'a, T> TryFrom<Value<'a>> for Optional<T>
 where
     T: TryFrom<Value<'a>> + NoneValue,
     <T as NoneValue>::NoneType: Into<Value<'a>>,
-    T::Error: Into<crate::wire::Error>,
+    T::Error: Into<crate::Error>,
 {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
     fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
         // Check for the null sentinel before converting, since `T`'s conversion may

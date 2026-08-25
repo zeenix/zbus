@@ -248,7 +248,7 @@ fn interface<'i>(
     attrs: Attrs<'i>,
     self_closing: bool,
 ) -> PResult<Interface<'static>> {
-    let name = attrs.name(|n| InterfaceName::try_from(n).map_err(Error::Name))?;
+    let name = attrs.name(|n| InterfaceName::try_from(n).map_err(Error::Zbus))?;
     let mut methods = Vec::new();
     let mut properties = Vec::new();
     let mut signals = Vec::new();
@@ -307,7 +307,7 @@ fn method<'i>(
     attrs: Attrs<'i>,
     self_closing: bool,
 ) -> PResult<Method<'static>> {
-    let name = attrs.name(|n| MemberName::try_from(n).map_err(Error::Name))?;
+    let name = attrs.name(|n| MemberName::try_from(n).map_err(Error::Zbus))?;
     let mut args = Vec::new();
     let mut annotations = Vec::new();
     let mut docstring = None;
@@ -343,7 +343,7 @@ fn signal<'i>(
     attrs: Attrs<'i>,
     self_closing: bool,
 ) -> PResult<Signal<'static>> {
-    let name = attrs.name(|n| MemberName::try_from(n).map_err(Error::Name))?;
+    let name = attrs.name(|n| MemberName::try_from(n).map_err(Error::Zbus))?;
     let mut args = Vec::new();
     let mut annotations = Vec::new();
     let mut docstring = None;
@@ -379,7 +379,7 @@ fn property<'i>(
     attrs: Attrs<'i>,
     self_closing: bool,
 ) -> PResult<Property<'static>> {
-    let name = attrs.name(|n| PropertyName::try_from(n).map_err(Error::Name))?;
+    let name = attrs.name(|n| PropertyName::try_from(n).map_err(Error::Zbus))?;
     let ty = attrs.signature()?;
     let access = match attrs.required("access")? {
         "read" => PropertyAccess::Read,
@@ -1060,7 +1060,7 @@ impl<'i> Attrs<'i> {
     fn signature(&self) -> PResult<Signature> {
         zbus::wire::Signature::try_from(self.required("type")?.as_bytes())
             .map(Signature)
-            .map_err(|e| ParseError::domain(zbus::wire::Error::from(e).into()))
+            .map_err(|e| ParseError::domain(zbus::Error::from(e).into()))
     }
 
     /// The value of the Telepathy `tp:type` attribute, if present.

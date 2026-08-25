@@ -5,11 +5,14 @@ use std::{marker::PhantomData, str};
 #[cfg(unix)]
 use std::os::fd::AsFd;
 
-use crate::wire::{
-    Basic, Error, ObjectPath, Result, Signature,
-    de::{DeserializerCommon, ValueParseStage},
-    serialized::{Context, Format},
-    utils::*,
+use crate::{
+    Error, Result,
+    wire::{
+        Basic, ObjectPath, Signature,
+        de::{DeserializerCommon, ValueParseStage},
+        serialized::{Context, Format},
+        utils::*,
+    },
 };
 
 /// Our D-Bus deserialization implementation.

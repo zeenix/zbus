@@ -1,4 +1,7 @@
-use zbus::wire::{Error, LE, MaxDepthExceeded, Value, serialized::Context, to_bytes};
+use zbus::{
+    Error, MaxDepthExceeded,
+    wire::{LE, Value, serialized::Context, to_bytes},
+};
 
 #[test]
 fn recursion_limits() {

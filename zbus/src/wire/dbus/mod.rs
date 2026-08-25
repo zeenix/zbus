@@ -3,7 +3,7 @@ pub(crate) use de::*;
 mod ser;
 pub use ser::*;
 
-use crate::wire::{Error, Result, Signature};
+use crate::{Error, Result, wire::Signature};
 
 /// Reject a signature that carries a GVariant maybe type before it reaches the D-Bus codec.
 ///
@@ -33,7 +33,7 @@ pub(crate) fn reject_maybe_in_signature_str(bytes: &[u8]) -> Result<()> {
 }
 
 fn maybe_not_in_dbus() -> Error {
-    Error::Message(
+    Error::Failure(
         "GVariant `Maybe` types are not valid in the D-Bus format; use the `zgvariant` crate \
          for GVariant serialization"
             .to_owned(),

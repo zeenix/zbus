@@ -66,9 +66,9 @@ impl<'a> StructureBuilder<'a> {
     /// Build the `Structure`.
     ///
     /// [`Structure`]: struct.Structure.html
-    pub fn build(self) -> crate::wire::Result<Structure<'a>> {
+    pub fn build(self) -> crate::Result<Structure<'a>> {
         if self.0.is_empty() {
-            return Err(crate::wire::Error::EmptyStructure);
+            return Err(crate::Error::EmptyStructure);
         }
 
         let fields_signatures: Box<[Signature]> =
@@ -114,11 +114,11 @@ impl StructureSeed<'static> {
 }
 
 impl TryFrom<Signature> for StructureSeed<'static> {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
-    fn try_from(signature: Signature) -> Result<Self, crate::wire::Error> {
+    fn try_from(signature: Signature) -> Result<Self, crate::Error> {
         if !matches!(signature, Signature::Structure(_)) {
-            return Err(crate::wire::Error::IncorrectType);
+            return Err(crate::Error::IncorrectType);
         }
 
         Ok(StructureSeed {
@@ -190,35 +190,35 @@ impl<'a> Structure<'a> {
         &self.signature
     }
 
-    pub(crate) fn try_to_owned(&self) -> crate::wire::Result<Structure<'static>> {
+    pub(crate) fn try_to_owned(&self) -> crate::Result<Structure<'static>> {
         Ok(Structure {
             fields: self
                 .fields
                 .iter()
                 .map(|v| v.try_to_owned().map(Into::into))
-                .collect::<crate::wire::Result<_>>()?,
+                .collect::<crate::Result<_>>()?,
             signature: self.signature.to_owned(),
         })
     }
 
-    pub(crate) fn try_into_owned(self) -> crate::wire::Result<Structure<'static>> {
+    pub(crate) fn try_into_owned(self) -> crate::Result<Structure<'static>> {
         Ok(Structure {
             fields: self
                 .fields
                 .into_iter()
                 .map(|v| v.try_into_owned().map(Into::into))
-                .collect::<crate::wire::Result<_>>()?,
+                .collect::<crate::Result<_>>()?,
             signature: self.signature,
         })
     }
 
     /// Attempt to clone `self`.
-    pub fn try_clone(&self) -> Result<Self, crate::wire::Error> {
+    pub fn try_clone(&self) -> Result<Self, crate::Error> {
         let fields = self
             .fields
             .iter()
             .map(|v| v.try_clone())
-            .collect::<crate::wire::Result<Vec<_>>>()?;
+            .collect::<crate::Result<Vec<_>>>()?;
 
         Ok(Self {
             fields,
@@ -277,9 +277,7 @@ impl DynamicType for StructureSeed<'_> {
 impl<'a> DynamicDeserialize<'a> for Structure<'a> {
     type Deserializer = StructureSeed<'static>;
 
-    fn deserializer_for_signature(
-        signature: &Signature,
-    ) -> crate::wire::Result<Self::Deserializer> {
+    fn deserializer_for_signature(signature: &Signature) -> crate::Result<Self::Deserializer> {
         let signature = match signature {
             Signature::Structure(_) => signature.clone(),
             s => Signature::structure([s.clone()]),
@@ -325,10 +323,10 @@ macro_rules! tuple_impls {
             impl<'a, E, $($name),+> TryFrom<Structure<'a>> for ($($name),+,)
             where
                 $($name: TryFrom<Value<'a>, Error = E>,)+
-                crate::wire::Error: From<E>,
+                crate::Error: From<E>,
 
             {
-                type Error = crate::wire::Error;
+                type Error = crate::Error;
 
                 fn try_from(mut s: Structure<'a>) -> core::result::Result<Self, Self::Error> {
                     Ok((
@@ -342,10 +340,10 @@ macro_rules! tuple_impls {
             impl<'a, E, $($name),+> TryFrom<&Value<'a>> for ($($name),+,)
             where
                 $($name: TryFrom<Value<'a>, Error = E>,)+
-                crate::wire::Error: From<E>,
+                crate::Error: From<E>,
 
             {
-                type Error = crate::wire::Error;
+                type Error = crate::Error;
 
                 fn try_from(v: &Value<'a>) -> core::result::Result<Self, Self::Error> {
                     Self::try_from(Structure::try_from(v)?)
@@ -355,10 +353,10 @@ macro_rules! tuple_impls {
             impl<'a, E, $($name),+> TryFrom<Value<'a>> for ($($name),+,)
             where
                 $($name: TryFrom<Value<'a>, Error = E>,)+
-                crate::wire::Error: From<E>,
+                crate::Error: From<E>,
 
             {
-                type Error = crate::wire::Error;
+                type Error = crate::Error;
 
                 fn try_from(v: Value<'a>) -> core::result::Result<Self, Self::Error> {
                     Self::try_from(Structure::try_from(v)?)
@@ -368,10 +366,10 @@ macro_rules! tuple_impls {
             impl<E, $($name),+> TryFrom<OwnedValue> for ($($name),+,)
             where
                 $($name: TryFrom<Value<'static>, Error = E>,)+
-                crate::wire::Error: From<E>,
+                crate::Error: From<E>,
 
             {
-                type Error = crate::wire::Error;
+                type Error = crate::Error;
 
                 fn try_from(v: OwnedValue) -> core::result::Result<Self, Self::Error> {
                     Self::try_from(Value::from(v))
@@ -423,9 +421,7 @@ impl DynamicType for OwnedStructureSeed {
 impl DynamicDeserialize<'_> for OwnedStructure {
     type Deserializer = OwnedStructureSeed;
 
-    fn deserializer_for_signature(
-        signature: &Signature,
-    ) -> crate::wire::Result<Self::Deserializer> {
+    fn deserializer_for_signature(signature: &Signature) -> crate::Result<Self::Deserializer> {
         Structure::deserializer_for_signature(signature)
             .map(|StructureSeed { signature, .. }| OwnedStructureSeed(signature))
     }

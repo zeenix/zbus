@@ -31,7 +31,7 @@ pub enum Fd<'f> {
 
 impl Fd<'_> {
     /// Try to create an owned version of `self`.
-    pub fn try_to_owned(&self) -> crate::wire::Result<Fd<'static>> {
+    pub fn try_to_owned(&self) -> crate::Result<Fd<'static>> {
         self.as_fd()
             .try_clone_to_owned()
             .map(Fd::Owned)
@@ -39,7 +39,7 @@ impl Fd<'_> {
     }
 
     /// Try to clone `self`.
-    pub fn try_clone(&self) -> crate::wire::Result<Self> {
+    pub fn try_clone(&self) -> crate::Result<Self> {
         Ok(match self {
             Self::Borrowed(fd) => Self::Borrowed(*fd),
             Self::Owned(fd) => Self::Owned(fd.try_clone()?),
@@ -66,9 +66,9 @@ impl From<OwnedFd> for Fd<'_> {
 }
 
 impl TryFrom<Fd<'_>> for fd::OwnedFd {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
-    fn try_from(fd: Fd<'_>) -> crate::wire::Result<Self> {
+    fn try_from(fd: Fd<'_>) -> crate::Result<Self> {
         match fd {
             Fd::Borrowed(fd) => fd.try_clone_to_owned().map_err(Into::into),
             Fd::Owned(fd) => Ok(fd),

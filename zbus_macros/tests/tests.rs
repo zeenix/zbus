@@ -527,3 +527,50 @@ fn interface_property_setter_with_crate_attr() {
         "org.freedesktop.CrateAttrProperties"
     );
 }
+
+// The generated setter reports the value-conversion failure through `Into`, so an error type
+// that only implements `Into<zbus::Error>` — without the `From` impl the blanket conversion
+// would need — is enough.
+#[test]
+fn interface_property_setter_with_into_only_error() {
+    use zbus::{
+        object_server::Interface,
+        wire::{Type, Value},
+    };
+
+    struct ConversionError;
+
+    // `Into` rather than `From` is the point of this test.
+    #[allow(clippy::from_over_into)]
+    impl Into<zbus::Error> for ConversionError {
+        fn into(self) -> zbus::Error {
+            zbus::Error::Failure("not a Fahrenheit reading".to_string())
+        }
+    }
+
+    #[derive(Type)]
+    struct Fahrenheit(u32);
+
+    impl TryFrom<Value<'_>> for Fahrenheit {
+        type Error = ConversionError;
+
+        fn try_from(_value: Value<'_>) -> Result<Self, Self::Error> {
+            Err(ConversionError)
+        }
+    }
+
+    struct Thermostat;
+
+    #[interface(name = "org.freedesktop.Thermostat")]
+    impl Thermostat {
+        #[zbus(property)]
+        fn set_target(&self, value: Fahrenheit) -> fdo::Result<()> {
+            match value.0 {
+                32..=212 => Ok(()),
+                _ => Err(fdo::Error::InvalidArgs("out of range".to_string())),
+            }
+        }
+    }
+
+    assert_eq!(Thermostat::name(), "org.freedesktop.Thermostat");
+}

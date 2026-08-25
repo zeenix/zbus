@@ -39,7 +39,7 @@ fn invalid_arg_type() {
     let input = include_str!("data/invalid_arg_type.xml");
     assert!(matches!(
         Node::try_from(input),
-        Err(zbus_xml::Error::Variant(_))
+        Err(zbus_xml::Error::Zbus(zbus::Error::SignatureParse(_)))
     ));
 }
 
@@ -327,7 +327,10 @@ fn real_world_data() -> Result<(), Box<dyn Error>> {
         // containing them (e.g. from systemd-logind) don't parse on other platforms.
         if cfg!(not(unix)) && xml.contains(r#"type="h""#) {
             assert!(
-                matches!(Node::try_from(*xml), Err(zbus_xml::Error::Variant(_))),
+                matches!(
+                    Node::try_from(*xml),
+                    Err(zbus_xml::Error::Zbus(zbus::Error::SignatureParse(_)))
+                ),
                 "{name}: expected fd signatures to be rejected on non-Unix"
             );
             continue;
@@ -619,7 +622,7 @@ fn malformed_documents() {
     let input = "<node><interface name=\"not a valid name\"/></node>";
     assert!(matches!(
         Node::try_from(input),
-        Err(zbus_xml::Error::Name(_))
+        Err(zbus_xml::Error::Zbus(zbus::Error::InvalidName(_)))
     ));
 }
 
@@ -742,15 +745,16 @@ fn invalid_enum_attributes() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn invalid_member_names() {
-    // An invalid method or signal name is an `Error::Name` (like the interface-name case in
-    // `malformed_documents`), exercising the same validated-name path for both members.
+    // An invalid method or signal name surfaces as `zbus::Error::InvalidName` (like the
+    // interface-name case in `malformed_documents`), exercising the same validated-name path
+    // for both members.
     for input in [
         "<node><interface name=\"org.test.I\"><method name=\"not valid\"/></interface></node>",
         "<node><interface name=\"org.test.I\"><signal name=\"not valid\"/></interface></node>",
     ] {
         assert!(matches!(
             Node::try_from(input),
-            Err(zbus_xml::Error::Name(_))
+            Err(zbus_xml::Error::Zbus(zbus::Error::InvalidName(_)))
         ));
     }
 }

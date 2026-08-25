@@ -22,7 +22,7 @@ pub struct OwnedValue(pub(crate) Value<'static>);
 
 impl OwnedValue {
     /// Attempt to clone the value.
-    pub fn try_clone(&self) -> Result<Self, crate::wire::Error> {
+    pub fn try_clone(&self) -> Result<Self, crate::Error> {
         self.0.try_clone().map(Self)
     }
 
@@ -38,7 +38,7 @@ impl OwnedValue {
 macro_rules! ov_try_from {
     ($to:ty) => {
         impl TryFrom<OwnedValue> for $to {
-            type Error = crate::wire::Error;
+            type Error = crate::Error;
 
             fn try_from(v: OwnedValue) -> Result<Self, Self::Error> {
                 <$to>::try_from(v.0)
@@ -50,7 +50,7 @@ macro_rules! ov_try_from {
 macro_rules! ov_try_from_ref {
     ($to:ty) => {
         impl<'a> TryFrom<&'a OwnedValue> for $to {
-            type Error = crate::wire::Error;
+            type Error = crate::Error;
 
             fn try_from(v: &'a OwnedValue) -> Result<Self, Self::Error> {
                 <$to>::try_from(&v.0)
@@ -101,15 +101,15 @@ ov_try_from_ref!(&'a Fd<'a>);
 impl<'a, T> TryFrom<OwnedValue> for Vec<T>
 where
     T: TryFrom<Value<'a>>,
-    T::Error: Into<crate::wire::Error>,
+    T::Error: Into<crate::Error>,
 {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
     fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
         if let Value::Array(v) = value.0 {
             Self::try_from(v)
         } else {
-            Err(crate::wire::Error::IncorrectType)
+            Err(crate::Error::IncorrectType)
         }
     }
 }
@@ -118,9 +118,9 @@ where
 impl<'a, F> TryFrom<OwnedValue> for enumflags2::BitFlags<F>
 where
     F: enumflags2::BitFlag,
-    F::Numeric: TryFrom<Value<'a>, Error = crate::wire::Error>,
+    F::Numeric: TryFrom<Value<'a>, Error = crate::Error>,
 {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
     fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
         Self::try_from(value.0)
@@ -160,16 +160,16 @@ where
     K: crate::wire::Basic + TryFrom<Value<'k>> + std::hash::Hash + std::cmp::Eq,
     V: TryFrom<Value<'v>>,
     H: BuildHasher + Default,
-    K::Error: Into<crate::wire::Error>,
-    V::Error: Into<crate::wire::Error>,
+    K::Error: Into<crate::Error>,
+    V::Error: Into<crate::Error>,
 {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
     fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
         if let Value::Dict(v) = value.0 {
             Self::try_from(v)
         } else {
-            Err(crate::wire::Error::IncorrectType)
+            Err(crate::Error::IncorrectType)
         }
     }
 }
@@ -189,9 +189,9 @@ impl<'a, T> TryFrom<OwnedValue> for Optional<T>
 where
     T: TryFrom<Value<'a>> + NoneValue,
     <T as NoneValue>::NoneType: Into<Value<'a>>,
-    T::Error: Into<crate::wire::Error>,
+    T::Error: Into<crate::Error>,
 {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
     fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
         Self::try_from(value.0)
@@ -210,17 +210,17 @@ where
 // tuple conversions in `structure` module for avoiding code-duplication.
 
 impl<'a> TryFrom<Value<'a>> for OwnedValue {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
-    fn try_from(v: Value<'a>) -> crate::wire::Result<Self> {
+    fn try_from(v: Value<'a>) -> crate::Result<Self> {
         v.try_into_owned()
     }
 }
 
 impl<'a> TryFrom<&Value<'a>> for OwnedValue {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
-    fn try_from(v: &Value<'a>) -> crate::wire::Result<Self> {
+    fn try_from(v: &Value<'a>) -> crate::Result<Self> {
         v.try_to_owned()
     }
 }
@@ -256,9 +256,9 @@ impl From<Signature> for OwnedValue {
 macro_rules! try_to_value {
     ($from:ty) => {
         impl<'a> TryFrom<$from> for OwnedValue {
-            type Error = crate::wire::Error;
+            type Error = crate::Error;
 
-            fn try_from(v: $from) -> crate::wire::Result<Self> {
+            fn try_from(v: $from) -> crate::Result<Self> {
                 OwnedValue::try_from(<Value<'a>>::from(v))
             }
         }
@@ -278,9 +278,9 @@ impl From<OwnedValue> for Value<'_> {
 }
 
 impl<'o> TryFrom<&'o OwnedValue> for Value<'o> {
-    type Error = crate::wire::Error;
+    type Error = crate::Error;
 
-    fn try_from(v: &'o OwnedValue) -> crate::wire::Result<Value<'o>> {
+    fn try_from(v: &'o OwnedValue) -> crate::Result<Value<'o>> {
         v.inner().try_clone()
     }
 }

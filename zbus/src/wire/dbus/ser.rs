@@ -7,11 +7,14 @@ use std::{
     str::{self, FromStr},
 };
 
-use crate::wire::{
-    Basic, Error, ObjectPath, Result, Signature, WriteBytes,
-    container_depths::ContainerDepths,
-    serialized::{Context, Format},
-    utils::*,
+use crate::{
+    Error, Result,
+    wire::{
+        Basic, ObjectPath, Signature, WriteBytes,
+        container_depths::ContainerDepths,
+        serialized::{Context, Format},
+        utils::*,
+    },
 };
 
 /// Our D-Bus serialization implementation.
