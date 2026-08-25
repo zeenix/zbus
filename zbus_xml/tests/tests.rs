@@ -1,7 +1,7 @@
 use std::error::Error;
 
+use zbus::zvariant::Signature;
 use zbus_xml::{Arg, ArgDirection, Interface, Node, PropertyAccess};
-use zvariant::Signature;
 
 #[test]
 fn serde() -> Result<(), Box<dyn Error>> {

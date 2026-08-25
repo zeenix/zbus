@@ -1,11 +1,13 @@
-use crate::names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
+use crate::{
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    zvariant::{ObjectPath, Signature, Type, Value},
+};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, SeqAccess, Visitor},
     ser::{SerializeSeq, SerializeStruct},
 };
 use std::{borrow::Cow, num::NonZeroU32};
-use zvariant::{ObjectPath, Signature, Type, Value};
 
 use crate::message::{FieldCode, Header, Message};
 

@@ -1146,7 +1146,7 @@ fn to_rust_type(ty: &Signature, input: bool, as_ref: bool) -> String {
                 }
             }
             Signature::ObjectPath => "zbus::zvariant::OwnedObjectPath".into(),
-            // `zvariant::Signature` has been lifetime-less (with no `Owned` counterpart)
+            // `Signature` has been lifetime-less (with no `Owned` counterpart)
             // since zvariant 5.
             Signature::Signature if input && as_ref => "&zbus::zvariant::Signature".into(),
             Signature::Signature => "zbus::zvariant::Signature".into(),

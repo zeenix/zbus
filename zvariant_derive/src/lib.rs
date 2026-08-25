@@ -23,7 +23,7 @@ mod utils;
 /// For structs it works just like serde's [`Serialize`] and [`Deserialize`] macros:
 ///
 /// ```
-/// use zvariant::{serialized::Context, to_bytes, Type, LE};
+/// use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
 /// use serde::{Deserialize, Serialize};
 ///
 /// #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]
@@ -50,7 +50,7 @@ mod utils;
 /// `repr` attribute (like in the example below), you'll also need [serde_repr] crate.
 ///
 /// ```
-/// use zvariant::{serialized::Context, to_bytes, Type, LE};
+/// use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
 /// use serde::{Deserialize, Serialize};
 /// use serde_repr::{Deserialize_repr, Serialize_repr};
 ///
@@ -107,7 +107,7 @@ mod utils;
 /// an alias for `a{sv}`. Here is an example:
 ///
 /// ```
-/// use zvariant::{
+/// use zbus::zvariant::{
 ///     serialized::Context, as_value, to_bytes, Type, LE,
 /// };
 /// use serde::{Deserialize, Serialize};
@@ -139,7 +139,7 @@ mod utils;
 /// Another common use for custom signatures is (de)serialization of unit enums as strings:
 ///
 /// ```
-/// use zvariant::{serialized::Context, to_bytes, Type, LE};
+/// use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
 /// use serde::{Deserialize, Serialize};
 ///
 /// #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]
@@ -164,10 +164,10 @@ mod utils;
 /// you can specify the crate path using the `crate` attribute:
 ///
 /// ```
-/// use zvariant::Type;
+/// use zbus::zvariant::Type;
 ///
 /// #[derive(Type)]
-/// #[zvariant(crate = "zvariant")]
+/// #[zvariant(crate = "zbus::zvariant")]
 /// struct MyStruct {
 ///     field: String,
 /// }
@@ -201,7 +201,8 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 /// There are two approaches to serializing structs as dictionaries:
 ///
 /// 1. Using this macro (simpler, but less control).
-/// 2. Using the `Serialize` derive with `zvariant::as_value` (more verbose, but more control).
+/// 2. Using the `Serialize` derive with `zbus::zvariant::as_value` (more verbose, but more
+///    control).
 ///
 /// See the example below and the relevant [FAQ entry] in our book for more details on the
 /// alternative approach.
@@ -211,7 +212,7 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 /// ## Approach #1
 ///
 /// ```
-/// use zvariant::{SerializeDict, Type};
+/// use zbus::zvariant::{SerializeDict, Type};
 ///
 /// #[derive(Debug, Default, SerializeDict, Type)]
 /// #[zvariant(signature = "a{sv}", rename_all = "PascalCase")]
@@ -225,7 +226,7 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```
 /// use serde::Serialize;
-/// use zvariant::{Type, as_value};
+/// use zbus::zvariant::{Type, as_value};
 ///
 /// #[derive(Debug, Default, Serialize, Type)]
 /// #[zvariant(signature = "a{sv}")]
@@ -245,7 +246,7 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 /// `SerializeDict`/`DeserializeDict` struct inside another:
 ///
 /// ```
-/// use zvariant::{DeserializeDict, SerializeDict, Type};
+/// use zbus::zvariant::{DeserializeDict, SerializeDict, Type};
 ///
 /// #[derive(SerializeDict, DeserializeDict, Type, Default)]
 /// #[zvariant(signature = "a{sv}", rename_all = "PascalCase")]
@@ -268,10 +269,10 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 /// you can specify the crate path using the `crate` attribute:
 ///
 /// ```
-/// use zvariant::{SerializeDict, Type};
+/// use zbus::zvariant::{SerializeDict, Type};
 ///
 /// #[derive(SerializeDict, Type)]
-/// #[zvariant(signature = "a{sv}", crate = "zvariant")]
+/// #[zvariant(signature = "a{sv}", crate = "zbus::zvariant")]
 /// struct MyStruct {
 ///     field: String,
 /// }
@@ -304,7 +305,8 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// There are two approaches to deserializing dictionaries as structs:
 ///
 /// 1. Using this macro (simpler, but less control).
-/// 2. Using the `Deserialize` derive with `zvariant::as_value` (more verbose, but more control).
+/// 2. Using the `Deserialize` derive with `zbus::zvariant::as_value` (more verbose, but more
+///    control).
 ///
 /// See the example below and the relevant [FAQ entry] in our book for more details on the
 /// alternative approach.
@@ -314,7 +316,7 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// ## Approach #1
 ///
 /// ```
-/// use zvariant::{DeserializeDict, Type};
+/// use zbus::zvariant::{DeserializeDict, Type};
 ///
 /// #[derive(Debug, Default, DeserializeDict, Type)]
 /// #[zvariant(signature = "a{sv}", rename_all = "PascalCase")]
@@ -328,7 +330,7 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```
 /// use serde::Deserialize;
-/// use zvariant::{Type, as_value};
+/// use zbus::zvariant::{Type, as_value};
 ///
 /// #[derive(Debug, Default, Deserialize, Type)]
 /// #[zvariant(signature = "a{sv}")]
@@ -347,10 +349,10 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// you can specify the crate path using the `crate` attribute:
 ///
 /// ```
-/// use zvariant::{DeserializeDict, Type};
+/// use zbus::zvariant::{DeserializeDict, Type};
 ///
 /// #[derive(DeserializeDict, Type)]
-/// #[zvariant(signature = "a{sv}", crate = "zvariant")]
+/// #[zvariant(signature = "a{sv}", crate = "zbus::zvariant")]
 /// struct MyStruct {
 ///     field: String,
 /// }
@@ -375,7 +377,7 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// Simple owned strutures:
 ///
 /// ```
-/// use zvariant::{OwnedObjectPath, OwnedValue, Value};
+/// use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 ///
 /// #[derive(Clone, Value, OwnedValue)]
 /// struct OwnedStruct {
@@ -398,8 +400,8 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// Now for the more exciting case of unowned structures:
 ///
 /// ```
-/// use zvariant::{ObjectPath, Str};
-/// # use zvariant::{OwnedValue, Value};
+/// use zbus::zvariant::{ObjectPath, Str};
+/// # use zbus::zvariant::{OwnedValue, Value};
 /// #
 /// #[derive(Clone, Value, OwnedValue)]
 /// struct UnownedStruct<'a> {
@@ -424,7 +426,7 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// Generic structures also supported:
 ///
 /// ```
-/// # use zvariant::{OwnedObjectPath, OwnedValue, Value};
+/// # use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 /// #
 /// #[derive(Clone, Value, OwnedValue)]
 /// struct GenericStruct<S, O> {
@@ -447,7 +449,7 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// Enums also supported but currently only with unit variants:
 ///
 /// ```
-/// # use zvariant::{OwnedValue, Value};
+/// # use zbus::zvariant::{OwnedValue, Value};
 /// #
 /// #[derive(Debug, PartialEq, Value, OwnedValue)]
 /// // Default representation is `u32`.
@@ -469,7 +471,7 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// String-encoded enums are also supported:
 ///
 /// ```
-/// # use zvariant::{OwnedValue, Value};
+/// # use zbus::zvariant::{OwnedValue, Value};
 /// #
 /// #[derive(Debug, PartialEq, Value, OwnedValue)]
 /// #[zvariant(signature = "s")]
@@ -512,7 +514,7 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// Here is an example using both `rename` and `rename_all`:
 ///
 /// ```
-/// # use zvariant::{OwnedValue, Value, Dict};
+/// # use zbus::zvariant::{OwnedValue, Value, Dict};
 /// # use std::collections::HashMap;
 /// #
 /// #[derive(Clone, Value, OwnedValue)]
@@ -546,10 +548,10 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 /// you can specify the crate path using the `crate` attribute:
 ///
 /// ```
-/// use zvariant::Value;
+/// use zbus::zvariant::Value;
 ///
 /// #[derive(Clone, Value)]
-/// #[zvariant(crate = "zvariant")]
+/// #[zvariant(crate = "zbus::zvariant")]
 /// struct MyStruct {
 ///     field: String,
 /// }
@@ -599,7 +601,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// ## Basic usage
 ///
 /// ```
-/// use zvariant::signature;
+/// use zbus::zvariant::signature;
 ///
 /// // Create signatures for basic types
 /// let sig = signature!("s");  // String signature
@@ -612,7 +614,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// ## Container types
 ///
 /// ```
-/// use zvariant::signature;
+/// use zbus::zvariant::signature;
 ///
 /// // Array of strings
 /// let sig = signature!("as");
@@ -633,7 +635,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// for defining signatures at compile time:
 ///
 /// ```
-/// use zvariant::{signature, Signature};
+/// use zbus::zvariant::{signature, Signature};
 ///
 /// const MY_SIGNATURE: Signature = signature!("a{sv}");
 ///
@@ -647,7 +649,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// For convenience, `dict` is an alias for `a{sv}` (string-to-variant dictionary):
 ///
 /// ```
-/// use zvariant::signature;
+/// use zbus::zvariant::signature;
 ///
 /// let sig = signature!("dict");
 /// assert_eq!(sig.to_string(), "a{sv}");
@@ -658,7 +660,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// Invalid signatures will be caught at compile time:
 ///
 /// ```compile_fail
-/// use zvariant::signature;
+/// use zbus::zvariant::signature;
 ///
 /// // This will fail to compile because 'z' is not a valid D-Bus type
 /// let sig = signature!("z");

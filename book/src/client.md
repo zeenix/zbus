@@ -552,7 +552,7 @@ trait Notifications {
         arg_3: &str,
         arg_4: &str,
         arg_5: &[&str],
-        arg_6: std::collections::HashMap<&str, zvariant::Value<'_>>,
+        arg_6: std::collections::HashMap<&str, zbus::zvariant::Value<'_>>,
         arg_7: i32,
     ) -> zbus::Result<u32>;
 

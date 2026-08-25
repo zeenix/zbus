@@ -2,7 +2,7 @@ use ntest::timeout;
 use test_log::test;
 use tracing::trace;
 
-use zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use zbus::{
     conn::{self, Connection},
@@ -22,7 +22,7 @@ fn issue104() {
 }
 
 async fn issue104_async() {
-    use zvariant::{ObjectPath, Value};
+    use zbus::zvariant::{ObjectPath, Value};
 
     struct Secret;
     #[zbus::interface(name = "org.freedesktop.Secret.Service")]
@@ -58,7 +58,7 @@ async fn issue104_async() {
             fn open_session(
                 &self,
                 algorithm: &str,
-                input: &zvariant::Value<'_>,
+                input: &zbus::zvariant::Value<'_>,
             ) -> zbus::Result<(OwnedValue, OwnedObjectPath)>;
         }
 

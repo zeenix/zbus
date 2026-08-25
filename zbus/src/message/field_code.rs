@@ -1,6 +1,6 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use zvariant::Type;
+use crate::zvariant::Type;
 
 /// The message field code.
 ///

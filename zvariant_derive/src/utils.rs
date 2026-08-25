@@ -6,14 +6,14 @@ use quote::{format_ident, quote};
 ///
 /// FIXME: proc-macro-crate is a hack; drop it in 6.0 (issue #1365).
 pub fn zvariant_path() -> TokenStream {
-    if let Ok(FoundCrate::Name(name)) = crate_name("zvariant") {
-        let ident = format_ident!("{}", name);
-        quote! { ::#ident }
-    } else if let Ok(FoundCrate::Name(name)) = crate_name("zbus") {
-        let ident = format_ident!("{}", name);
-        quote! { ::#ident::zvariant }
-    } else {
-        quote! { ::zvariant }
+    match crate_name("zbus") {
+        Ok(FoundCrate::Name(name)) => {
+            let ident = format_ident!("{}", name);
+            quote! { ::#ident::zvariant }
+        }
+        // `FoundCrate::Itself` is what compiling inside zbus itself reports; `::zbus` resolves
+        // there through `extern crate self as zbus`.
+        _ => quote! { ::zbus::zvariant },
     }
 }
 

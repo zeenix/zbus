@@ -1,5 +1,5 @@
+use crate::zvariant::Error as VariantError;
 use std::{convert::Infallible, error, fmt};
-use zvariant::Error as VariantError;
 
 /// The error type for `zbus_names`.
 ///

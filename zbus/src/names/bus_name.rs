@@ -5,12 +5,14 @@ use core::{
 };
 use std::{borrow::Cow, sync::Arc};
 
-use crate::names::{
-    Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName,
-    utils::impl_str_basic,
+use crate::{
+    names::{
+        Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName,
+        utils::impl_str_basic,
+    },
+    zvariant::{NoneValue, OwnedValue, Str, Type, Value},
 };
 use serde::{Deserialize, Serialize, de};
-use zvariant::{NoneValue, OwnedValue, Str, Type, Value};
 use zvariant_utils::names::BusNameKind;
 
 /// String that identifies a [bus name].
@@ -193,7 +195,7 @@ impl<'de: 'name, 'name> Deserialize<'de> for BusName<'name> {
 }
 
 impl Type for BusName<'_> {
-    const SIGNATURE: &'static zvariant::Signature = &zvariant::Signature::Str;
+    const SIGNATURE: &'static crate::zvariant::Signature = &crate::zvariant::Signature::Str;
 }
 
 impl<'name> From<UniqueName<'name>> for BusName<'name> {

@@ -4,7 +4,7 @@ use zbus::Message;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
-use zvariant::{Type, Value};
+use zbus::zvariant::{Type, Value};
 
 fn msg_ser(c: &mut Criterion) {
     let mut g = c.benchmark_group("message-ser");

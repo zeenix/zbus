@@ -3,8 +3,10 @@
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use tracing::{Instrument, debug, instrument, trace, trace_span};
 
-use crate::names::InterfaceName;
-use zvariant::{ObjectPath, Value};
+use crate::{
+    names::InterfaceName,
+    zvariant::{ObjectPath, Value},
+};
 
 use crate::{
     Connection, Error, Result,

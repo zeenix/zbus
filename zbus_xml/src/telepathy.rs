@@ -60,7 +60,7 @@ impl TypeDef {
     }
 
     /// The D-Bus signature of the defined type.
-    pub fn signature(&self) -> zvariant::Signature {
+    pub fn signature(&self) -> zbus::zvariant::Signature {
         match self {
             TypeDef::SimpleType(t) => t.ty().inner().clone(),
             TypeDef::Enum(e) => e.ty().inner().clone(),
@@ -176,8 +176,8 @@ impl Struct {
     }
 
     /// The D-Bus signature of the structure.
-    pub fn signature(&self) -> zvariant::Signature {
-        zvariant::Signature::structure(
+    pub fn signature(&self) -> zbus::zvariant::Signature {
+        zbus::zvariant::Signature::structure(
             self.members
                 .iter()
                 .map(|m| m.ty().inner().clone())
@@ -248,8 +248,8 @@ impl Mapping {
     }
 
     /// The D-Bus signature of the dictionary.
-    pub fn signature(&self) -> zvariant::Signature {
-        zvariant::Signature::dict(
+    pub fn signature(&self) -> zbus::zvariant::Signature {
+        zbus::zvariant::Signature::dict(
             self.key.ty().inner().clone(),
             self.value.ty().inner().clone(),
         )
@@ -258,7 +258,7 @@ impl Mapping {
 
 /// Whether `ty` is a basic (i. e. non-container) D-Bus type, as required for dictionary keys.
 pub(crate) fn is_basic(ty: &Signature) -> bool {
-    use zvariant::Signature as S;
+    use zbus::zvariant::Signature as S;
 
     match ty.inner() {
         S::U8

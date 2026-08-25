@@ -1,6 +1,8 @@
-use crate::names::utils::define_name_type_impls;
+use crate::{
+    names::utils::define_name_type_impls,
+    zvariant::{Str, Type},
+};
 use serde::Serialize;
-use zvariant::{Str, Type};
 
 /// String that identifies a [well-known bus name][wbn].
 ///

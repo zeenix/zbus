@@ -5,8 +5,10 @@ use std::{
     fmt::Write,
 };
 
-use crate::names::InterfaceName;
-use zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
+use crate::{
+    names::InterfaceName,
+    zvariant::{ObjectPath, OwnedObjectPath, OwnedValue},
+};
 
 use crate::{
     Connection, ObjectServer,

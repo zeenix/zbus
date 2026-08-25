@@ -1,5 +1,7 @@
-use crate::names::{BusName, InterfaceName};
-use zvariant::ObjectPath;
+use crate::{
+    names::{BusName, InterfaceName},
+    zvariant::ObjectPath,
+};
 
 /// Trait for the default associated values of a proxy.
 ///

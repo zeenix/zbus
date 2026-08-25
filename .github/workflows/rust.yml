@@ -99,8 +99,8 @@ jobs:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Test zvariant with zvariant_utils/gvariant enabled elsewhere in the graph
-        run: cargo --locked test -p zvariant --features zvariant_utils/gvariant
+      - name: Test the wire format with zvariant_utils/gvariant enabled elsewhere in the graph
+        run: cargo --locked test -p zbus --features zvariant_utils/gvariant --test wire
       - name: Build and Test
         run: |
           dbus-run-session --config-file /tmp/dbus-session-abstract.conf -- cargo --locked test --release --verbose -- basic_connection
@@ -183,13 +183,14 @@ jobs:
         with:
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      - name: Fuzz zvariant
+      - name: Fuzz the wire format
         run: |
           # `cargo fuzz` does not propagate `--locked` to its inner cargo invocation, so check
           # the nested lockfile explicitly.
-          cargo metadata --manifest-path zvariant/fuzz/Cargo.toml --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path zbus/fuzz/Cargo.toml --locked --format-version 1 \
+            > /dev/null
           cargo install cargo-fuzz
-          cargo --locked fuzz run --fuzz-dir zvariant/fuzz dbus -- -max_total_time=30 -max_len=100M
+          cargo --locked fuzz run --fuzz-dir zbus/fuzz dbus -- -max_total_time=30 -max_len=100M
 
   doc_build:
     runs-on: ubuntu-latest
@@ -201,8 +202,6 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
-      - name: Check zvariant documentation build
-        run: cargo --locked doc --all-features -p zvariant
       - name: Check zbus documentation build
         run: cargo --locked doc --all-features -p zbus
       - name: Check zbus_xml documentation build

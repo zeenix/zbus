@@ -1,6 +1,6 @@
 use test_log::test;
 
-use zvariant::OwnedObjectPath;
+use zbus::zvariant::OwnedObjectPath;
 
 // This one we just want to see if it builds, no need to run it. For details see:
 //
@@ -18,6 +18,6 @@ fn issue_121() {
 
         /// Engines property
         #[zbus(property)]
-        fn engines(&self) -> zbus::Result<Vec<zvariant::OwnedValue>>;
+        fn engines(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedValue>>;
     }
 }

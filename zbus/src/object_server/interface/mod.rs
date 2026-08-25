@@ -12,9 +12,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::names::{InterfaceName, MemberName};
+use crate::{
+    names::{InterfaceName, MemberName},
+    zvariant::{OwnedValue, Value},
+};
 use async_trait::async_trait;
-use zvariant::{OwnedValue, Value};
 
 use crate::{
     Connection, ObjectServer,

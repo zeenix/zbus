@@ -6,8 +6,8 @@ use std::{
     ops::Deref,
 };
 
+use crate::zvariant::Structure;
 use serde::{Deserialize, Serialize, de};
-use zvariant::Structure;
 
 use crate::{
     Error, Result,

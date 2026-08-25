@@ -1,8 +1,8 @@
 macro_rules! impl_str_basic {
     ($type:ty) => {
-        impl zvariant::Basic for $type {
-            const SIGNATURE_CHAR: char = <zvariant::Str<'_>>::SIGNATURE_CHAR;
-            const SIGNATURE_STR: &'static str = <zvariant::Str<'_>>::SIGNATURE_STR;
+        impl crate::zvariant::Basic for $type {
+            const SIGNATURE_CHAR: char = <crate::zvariant::Str<'_>>::SIGNATURE_CHAR;
+            const SIGNATURE_STR: &'static str = <crate::zvariant::Str<'_>>::SIGNATURE_STR;
         }
     };
 }
@@ -22,9 +22,9 @@ macro_rules! define_name_type_impls {
         validate: $validate_fn:ident $(,)?
     ) => {
         // === impl_str_basic for borrowed type ===
-        impl zvariant::Basic for $name<'_> {
-            const SIGNATURE_CHAR: char = <zvariant::Str<'_>>::SIGNATURE_CHAR;
-            const SIGNATURE_STR: &'static str = <zvariant::Str<'_>>::SIGNATURE_STR;
+        impl crate::zvariant::Basic for $name<'_> {
+            const SIGNATURE_CHAR: char = <crate::zvariant::Str<'_>>::SIGNATURE_CHAR;
+            const SIGNATURE_STR: &'static str = <crate::zvariant::Str<'_>>::SIGNATURE_STR;
         }
 
         impl<'name> $name<'name> {
@@ -43,19 +43,19 @@ macro_rules! define_name_type_impls {
             /// Since the passed string is not checked for correctness, prefer using the
             /// `TryFrom<&str>` implementation.
             pub fn from_str_unchecked(name: &'name str) -> Self {
-                Self(zvariant::Str::from(name))
+                Self(crate::zvariant::Str::from(name))
             }
 
             /// Same as `try_from`, except it takes a `&'static str`.
             pub fn from_static_str(name: &'static str) -> crate::names::Result<Self> {
                 zvariant_utils::names::$validate_fn(name.as_bytes())
                     .map_err(crate::names::Error::InvalidName)?;
-                Ok(Self(zvariant::Str::from_static(name)))
+                Ok(Self(crate::zvariant::Str::from_static(name)))
             }
 
             /// Same as `from_str_unchecked`, except it takes a `&'static str`.
             pub const fn from_static_str_unchecked(name: &'static str) -> Self {
-                Self(zvariant::Str::from_static(name))
+                Self(crate::zvariant::Str::from_static(name))
             }
 
             /// Same as `from_str_unchecked`, except it takes an owned `String`.
@@ -63,7 +63,7 @@ macro_rules! define_name_type_impls {
             /// Since the passed string is not checked for correctness, prefer using the
             /// `TryFrom<String>` implementation.
             pub fn from_string_unchecked(name: String) -> Self {
-                Self(zvariant::Str::from(name))
+                Self(crate::zvariant::Str::from(name))
             }
 
             /// Creates an owned clone of `self`.
@@ -142,13 +142,13 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl<'name> From<$name<'name>> for zvariant::Str<'name> {
+        impl<'name> From<$name<'name>> for crate::zvariant::Str<'name> {
             fn from(value: $name<'name>) -> Self {
                 value.0
             }
         }
 
-        impl<'name> zvariant::NoneValue for $name<'name> {
+        impl<'name> crate::zvariant::NoneValue for $name<'name> {
             type NoneType = &'name str;
 
             fn null_value() -> Self::NoneType {
@@ -161,7 +161,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::names::Error;
 
             fn try_from(value: &'s str) -> crate::names::Result<Self> {
-                let value = zvariant::Str::from(value);
+                let value = crate::zvariant::Str::from(value);
                 zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::names::Error::InvalidName)?;
                 Ok(Self(value))
@@ -180,7 +180,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::names::Error;
 
             fn try_from(value: String) -> crate::names::Result<Self> {
-                let value = zvariant::Str::from(value);
+                let value = crate::zvariant::Str::from(value);
                 zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::names::Error::InvalidName)?;
                 Ok(Self(value))
@@ -199,7 +199,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::names::Error;
 
             fn try_from(value: std::sync::Arc<str>) -> crate::names::Result<Self> {
-                let value = zvariant::Str::from(value);
+                let value = crate::zvariant::Str::from(value);
                 zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::names::Error::InvalidName)?;
                 Ok(Self(value))
@@ -218,7 +218,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::names::Error;
 
             fn try_from(value: std::borrow::Cow<'s, str>) -> crate::names::Result<Self> {
-                let value = zvariant::Str::from(value);
+                let value = crate::zvariant::Str::from(value);
                 zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::names::Error::InvalidName)?;
                 Ok(Self(value))
@@ -233,52 +233,52 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl<'s> TryFrom<zvariant::Str<'s>> for $name<'s> {
+        impl<'s> TryFrom<crate::zvariant::Str<'s>> for $name<'s> {
             type Error = crate::names::Error;
 
-            fn try_from(value: zvariant::Str<'s>) -> crate::names::Result<Self> {
+            fn try_from(value: crate::zvariant::Str<'s>) -> crate::names::Result<Self> {
                 zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::names::Error::InvalidName)?;
                 Ok(Self(value))
             }
         }
 
-        impl<'s> TryFrom<zvariant::Str<'s>> for $owned_name {
+        impl<'s> TryFrom<crate::zvariant::Str<'s>> for $owned_name {
             type Error = crate::names::Error;
 
-            fn try_from(value: zvariant::Str<'s>) -> crate::names::Result<Self> {
+            fn try_from(value: crate::zvariant::Str<'s>) -> crate::names::Result<Self> {
                 Ok(Self::from(<$name<'s>>::try_from(value)?))
             }
         }
 
-        impl<'s> TryFrom<zvariant::Value<'s>> for $name<'s> {
-            type Error = zvariant::Error;
+        impl<'s> TryFrom<crate::zvariant::Value<'s>> for $name<'s> {
+            type Error = crate::zvariant::Error;
 
-            fn try_from(value: zvariant::Value<'s>) -> zvariant::Result<Self> {
-                let s = zvariant::Str::try_from(value)?;
-                Self::try_from(s).map_err(|e| zvariant::Error::Message(e.to_string()))
+            fn try_from(value: crate::zvariant::Value<'s>) -> crate::zvariant::Result<Self> {
+                let s = crate::zvariant::Str::try_from(value)?;
+                Self::try_from(s).map_err(|e| crate::zvariant::Error::Message(e.to_string()))
             }
         }
 
-        impl<'s> From<$name<'s>> for zvariant::Value<'s> {
+        impl<'s> From<$name<'s>> for crate::zvariant::Value<'s> {
             fn from(name: $name<'s>) -> Self {
                 name.0.into()
             }
         }
 
-        impl TryFrom<zvariant::OwnedValue> for $name<'_> {
-            type Error = zvariant::Error;
+        impl TryFrom<crate::zvariant::OwnedValue> for $name<'_> {
+            type Error = crate::zvariant::Error;
 
-            fn try_from(value: zvariant::OwnedValue) -> zvariant::Result<Self> {
-                let s = zvariant::Str::try_from(value)?;
-                Self::try_from(s).map_err(|e| zvariant::Error::Message(e.to_string()))
+            fn try_from(value: crate::zvariant::OwnedValue) -> crate::zvariant::Result<Self> {
+                let s = crate::zvariant::Str::try_from(value)?;
+                Self::try_from(s).map_err(|e| crate::zvariant::Error::Message(e.to_string()))
             }
         }
 
-        impl TryFrom<$name<'_>> for zvariant::OwnedValue {
-            type Error = zvariant::Error;
+        impl TryFrom<$name<'_>> for crate::zvariant::OwnedValue {
+            type Error = crate::zvariant::Error;
 
-            fn try_from(name: $name<'_>) -> zvariant::Result<Self> {
+            fn try_from(name: $name<'_>) -> crate::zvariant::Result<Self> {
                 Ok(name.0.into())
             }
         }
@@ -286,9 +286,9 @@ macro_rules! define_name_type_impls {
         // === Owned type impls ===
 
         // impl_str_basic for owned type
-        impl zvariant::Basic for $owned_name {
-            const SIGNATURE_CHAR: char = <zvariant::Str<'_>>::SIGNATURE_CHAR;
-            const SIGNATURE_STR: &'static str = <zvariant::Str<'_>>::SIGNATURE_STR;
+        impl crate::zvariant::Basic for $owned_name {
+            const SIGNATURE_CHAR: char = <crate::zvariant::Str<'_>>::SIGNATURE_CHAR;
+            const SIGNATURE_STR: &'static str = <crate::zvariant::Str<'_>>::SIGNATURE_STR;
         }
 
         impl $owned_name {
@@ -366,7 +366,7 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl From<$owned_name> for zvariant::Str<'_> {
+        impl From<$owned_name> for crate::zvariant::Str<'_> {
             fn from(value: $owned_name) -> Self {
                 value.into_inner().0
             }
@@ -397,40 +397,40 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl zvariant::NoneValue for $owned_name {
-            type NoneType = <$name<'static> as zvariant::NoneValue>::NoneType;
+        impl crate::zvariant::NoneValue for $owned_name {
+            type NoneType = <$name<'static> as crate::zvariant::NoneValue>::NoneType;
 
             fn null_value() -> Self::NoneType {
                 $name::null_value()
             }
         }
 
-        impl TryFrom<zvariant::Value<'static>> for $owned_name {
-            type Error = zvariant::Error;
+        impl TryFrom<crate::zvariant::Value<'static>> for $owned_name {
+            type Error = crate::zvariant::Error;
 
-            fn try_from(value: zvariant::Value<'static>) -> zvariant::Result<Self> {
+            fn try_from(value: crate::zvariant::Value<'static>) -> crate::zvariant::Result<Self> {
                 <$name<'static>>::try_from(value).map(Self::from)
             }
         }
 
-        impl From<$owned_name> for zvariant::Value<'_> {
+        impl From<$owned_name> for crate::zvariant::Value<'_> {
             fn from(name: $owned_name) -> Self {
                 name.0.into()
             }
         }
 
-        impl TryFrom<zvariant::OwnedValue> for $owned_name {
-            type Error = zvariant::Error;
+        impl TryFrom<crate::zvariant::OwnedValue> for $owned_name {
+            type Error = crate::zvariant::Error;
 
-            fn try_from(value: zvariant::OwnedValue) -> zvariant::Result<Self> {
+            fn try_from(value: crate::zvariant::OwnedValue) -> crate::zvariant::Result<Self> {
                 <$name<'static>>::try_from(value).map(Self::from)
             }
         }
 
-        impl TryFrom<$owned_name> for zvariant::OwnedValue {
-            type Error = zvariant::Error;
+        impl TryFrom<$owned_name> for crate::zvariant::OwnedValue {
+            type Error = crate::zvariant::Error;
 
-            fn try_from(name: $owned_name) -> zvariant::Result<Self> {
+            fn try_from(name: $owned_name) -> crate::zvariant::Result<Self> {
                 name.0.try_into()
             }
         }

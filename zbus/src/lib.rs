@@ -1,4 +1,5 @@
 #![deny(rust_2018_idioms)]
+#![cfg_attr(test, recursion_limit = "256")]
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/z-galaxy/zbus/9f7a90d2b594ddc48b7a5f39fda5e00cd56a7dfb/logo.png"
 )]
@@ -55,6 +56,11 @@ pub use dbus_error::*;
 mod error;
 pub use error::*;
 
+pub mod wire;
+/// The wire-format module under its pre-6.0 name.
+pub use wire as zvariant;
+pub mod names;
+
 pub mod address;
 pub use address::Address;
 
@@ -110,6 +116,3 @@ pub mod export {
     pub use ordered_stream;
     pub use serde;
 }
-
-pub mod names;
-pub use zvariant;

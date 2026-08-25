@@ -1,6 +1,8 @@
-use crate::names::{Error as NamesError, InterfaceName, OwnedErrorName};
+use crate::{
+    names::{Error as NamesError, InterfaceName, OwnedErrorName},
+    zvariant::{Error as VariantError, ObjectPath},
+};
 use std::{convert::Infallible, error, fmt, io, sync::Arc};
-use zvariant::{Error as VariantError, ObjectPath};
 
 use crate::{
     Address, fdo,
@@ -235,9 +237,9 @@ impl From<VariantError> for Error {
     }
 }
 
-impl From<zvariant::signature::Error> for Error {
-    fn from(e: zvariant::signature::Error) -> Self {
-        zvariant::Error::from(e).into()
+impl From<crate::zvariant::signature::Error> for Error {
+    fn from(e: crate::zvariant::signature::Error) -> Self {
+        crate::zvariant::Error::from(e).into()
     }
 }
 

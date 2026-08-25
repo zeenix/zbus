@@ -7,10 +7,12 @@ use enumflags2::{BitFlags, bitflags};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
-use zvariant::{
-    Endian, ObjectPath, Signature, Type as VariantType,
-    serialized::{self, Context},
+use crate::{
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    zvariant::{
+        Endian, ObjectPath, Signature, Type as VariantType,
+        serialized::{self, Context},
+    },
 };
 
 use crate::{Error, message::Fields};
@@ -318,10 +320,12 @@ static SERIAL_NUM: AtomicU32 = AtomicU32::new(0);
 mod tests {
     use crate::message::{Fields, Header, PrimaryHeader, Type};
 
-    use crate::names::{InterfaceName, MemberName};
+    use crate::{
+        names::{InterfaceName, MemberName},
+        zvariant::{ObjectPath, Signature, signature},
+    };
     use std::{borrow::Cow, error::Error};
     use test_log::test;
-    use zvariant::{ObjectPath, Signature, signature};
 
     #[test]
     fn header() -> Result<(), Box<dyn Error>> {

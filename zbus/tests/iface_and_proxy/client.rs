@@ -7,8 +7,8 @@ use zbus::{
     fdo::{ObjectManagerProxy, PropertiesProxy},
     message,
     proxy::CacheProperties,
+    zvariant::Value,
 };
-use zvariant::Value;
 
 use super::{
     helpers::{check_hash_map, check_ipv4_address, check_ipv4_address_hashmap},

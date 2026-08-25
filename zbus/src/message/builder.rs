@@ -1,15 +1,17 @@
+#[cfg(unix)]
+use crate::zvariant::OwnedFd;
 use std::{
     borrow::Cow,
     io::{Cursor, Write},
     num::NonZeroU32,
     sync::Arc,
 };
-#[cfg(unix)]
-use zvariant::OwnedFd;
 
-use crate::names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
+use crate::{
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    zvariant::{Endian, Signature, serialized},
+};
 use enumflags2::BitFlags;
-use zvariant::{Endian, Signature, serialized};
 
 use crate::{
     Error, Result,
@@ -175,13 +177,13 @@ impl<'a> Builder<'a> {
 
         // Note: this iterates the body twice, but we prefer efficient handling of large messages
         // to efficient handling of ones that are complex to serialize.
-        let body_size = zvariant::serialized_size(ctxt, body)?;
+        let body_size = crate::zvariant::serialized_size(ctxt, body)?;
 
         let signature = body.signature();
 
         self.build_generic(signature, body_size, move |cursor| {
             // SAFETY: build_generic puts FDs and the body in the same Message.
-            unsafe { zvariant::to_writer(cursor, ctxt, body) }
+            unsafe { crate::zvariant::to_writer(cursor, ctxt, body) }
                 .map(|s| {
                     #[cfg(unix)]
                     {
@@ -260,7 +262,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let hdr_len = *zvariant::serialized_size(ctxt, &header)?;
+        let hdr_len = *crate::zvariant::serialized_size(ctxt, &header)?;
         // We need to align the body to 8-byte boundary.
         let body_padding = padding_for_8_bytes(hdr_len);
         let body_offset = hdr_len + body_padding;
@@ -272,7 +274,7 @@ impl<'a> Builder<'a> {
         let mut cursor = Cursor::new(&mut bytes);
 
         // SAFETY: There are no FDs involved.
-        unsafe { zvariant::to_writer(&mut cursor, ctxt, &header) }?;
+        unsafe { crate::zvariant::to_writer(&mut cursor, ctxt, &header) }?;
         cursor.write_all(&[0u8; 8][..body_padding])?;
         #[cfg(unix)]
         let fds: Vec<_> = write_body(&mut cursor)?.into_iter().collect();

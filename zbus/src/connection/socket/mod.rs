@@ -30,13 +30,13 @@ use crate::{
         header::{MAX_MESSAGE_SIZE, MIN_MESSAGE_SIZE},
     },
     padding_for_8_bytes,
+    zvariant::{
+        Endian,
+        serialized::{self, Context},
+    },
 };
 #[cfg(unix)]
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
-use zvariant::{
-    Endian,
-    serialized::{self, Context},
-};
 
 #[cfg(unix)]
 type RecvmsgResult = io::Result<(usize, Vec<OwnedFd>)>;

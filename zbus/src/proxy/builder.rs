@@ -1,7 +1,9 @@
 use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 
-use crate::names::{BusName, InterfaceName};
-use zvariant::{ObjectPath, Str};
+use crate::{
+    names::{BusName, InterfaceName},
+    zvariant::{ObjectPath, Str},
+};
 
 use crate::{Connection, Error, Proxy, Result, proxy::ProxyInner};
 

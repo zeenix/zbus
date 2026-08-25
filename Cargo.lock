@@ -2152,6 +2152,7 @@ dependencies = [
 name = "zbus"
 version = "6.0.0"
 dependencies = [
+ "arrayvec",
  "async-broadcast",
  "async-executor",
  "async-io",
@@ -2161,34 +2162,43 @@ dependencies = [
  "async-task",
  "async-trait",
  "blocking",
+ "camino",
+ "chrono",
  "codspeed-criterion-compat",
  "doc-comment",
+ "endi",
  "enumflags2",
  "event-listener",
  "futures-core",
  "futures-lite",
  "futures-util",
+ "heapless",
  "hex",
  "libc",
  "ntest",
  "ordered-stream",
  "rustix",
  "serde",
+ "serde_bytes",
+ "serde_json",
  "serde_repr",
  "tempfile",
  "test-log",
+ "time",
  "tokio",
  "tokio-vsock",
  "tracing",
  "tracing-subscriber",
  "uds_windows",
+ "url",
  "uuid",
  "vsock",
  "windows-sys",
  "winnow 1.0.4",
  "zbus_macros",
  "zbus_xml",
- "zvariant",
+ "zcheapstr",
+ "zvariant_derive",
  "zvariant_utils",
 ]
 
@@ -2216,7 +2226,6 @@ dependencies = [
  "serde",
  "winnow 1.0.4",
  "zbus",
- "zvariant",
 ]
 
 [[package]]
@@ -2322,29 +2331,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 
 [[package]]
-name = "zvariant"
-version = "5.15.0"
-dependencies = [
- "arrayvec",
- "camino",
- "chrono",
- "codspeed-criterion-compat",
- "endi",
- "enumflags2",
- "heapless",
- "serde",
- "serde_bytes",
- "serde_json",
- "serde_repr",
- "time",
- "url",
- "uuid",
- "zcheapstr",
- "zvariant_derive",
- "zvariant_utils",
-]
-
-[[package]]
 name = "zvariant_derive"
 version = "5.15.0"
 dependencies = [
@@ -2355,7 +2341,7 @@ dependencies = [
  "serde",
  "serde_repr",
  "syn 3.0.4",
- "zvariant",
+ "zbus",
  "zvariant_utils",
 ]
 
@@ -2368,5 +2354,4 @@ dependencies = [
  "serde",
  "syn 3.0.4",
  "winnow 1.0.4",
- "zvariant",
 ]

@@ -47,7 +47,7 @@ impl<'s> SignalEmitter<'s> {
         I::Error: Into<Error>,
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::zvariant::DynamicType,
     {
         self.conn
             .emit_signal(

@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin};
 
+use crate::zvariant::DynamicType;
 use zbus::message::Flags;
-use zvariant::DynamicType;
 
 use crate::{Connection, Result, fdo, message::Message};
 use tracing::trace;

@@ -6,8 +6,10 @@ use test_log::test;
 use tracing::{debug, instrument};
 use zbus::block_on;
 
-use zbus::names::UniqueName;
-use zvariant::{OwnedValue, Type};
+use zbus::{
+    names::UniqueName,
+    zvariant::{OwnedValue, Type},
+};
 
 use zbus::{
     Connection, Result,
@@ -97,7 +99,7 @@ fn fdpass_systemd() {
 #[cfg(all(unix, not(target_os = "macos")))]
 async fn fdpass_systemd_async() {
     use std::{fs::File, os::unix::io::AsRawFd};
-    use zvariant::OwnedFd;
+    use zbus::zvariant::OwnedFd;
 
     let connection = Connection::system().await.unwrap();
 

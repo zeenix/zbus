@@ -3,10 +3,12 @@
 //! The D-Bus specification defines the message bus messages and some standard interfaces that may
 //! be useful across various D-Bus applications. This module provides their proxy.
 
-use crate::names::{BusName, OwnedUniqueName};
+use crate::{
+    names::{BusName, OwnedUniqueName},
+    zvariant::{OwnedValue, Type, as_value::optional},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zvariant::{OwnedValue, Type, as_value::optional};
 
 use super::Result;
 use crate::proxy;

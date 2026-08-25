@@ -1,8 +1,10 @@
 //! D-Bus Message.
 use std::{borrow::Cow, fmt, sync::Arc};
 
-use crate::names::{ErrorName, InterfaceName, MemberName};
-use zvariant::{Endian, serialized};
+use crate::{
+    names::{ErrorName, InterfaceName, MemberName},
+    zvariant::{Endian, serialized},
+};
 
 use crate::{Error, Result, utils::padding_for_8_bytes, zvariant::ObjectPath};
 
@@ -49,8 +51,8 @@ impl Sequence {
 /// using the low-level API.
 ///
 /// **Note**: The message owns the received FDs and will close them when dropped. You can
-/// deserialize the body (that you get using [`Message::body`]) to [`zvariant::OwnedFd`] if you want
-/// to keep the FDs around after the containing message is dropped.
+/// deserialize the body (that you get using [`Message::body`]) to [`crate::zvariant::OwnedFd`] if
+/// you want to keep the FDs around after the containing message is dropped.
 #[derive(Clone)]
 pub struct Message {
     pub(super) inner: Arc<Inner>,
@@ -198,11 +200,11 @@ impl Message {
     ///     .build(&send_body)?;
     /// let header = message.header();
     /// let body = message.body();
-    /// let body: zbus::zvariant::Structure = body.deserialize()?;
+    /// let body: zbus::zvariant::Structure<'_> = body.deserialize()?;
     /// let fields = body.fields();
-    /// assert!(matches!(fields[0], zvariant::Value::I32(7)));
-    /// assert!(matches!(fields[1], zvariant::Value::Structure(_)));
-    /// assert!(matches!(fields[2], zvariant::Value::Array(_)));
+    /// assert!(matches!(fields[0], zbus::zvariant::Value::I32(7)));
+    /// assert!(matches!(fields[1], zbus::zvariant::Value::Structure(_)));
+    /// assert!(matches!(fields[2], zbus::zvariant::Value::Array(_)));
     ///
     /// let reply_body = Message::method_return(&header)?.build(&body)?.body();
     /// let reply_value : (i32, (i32, &str), Vec<String>) = reply_body.deserialize()?;
@@ -268,7 +270,7 @@ impl fmt::Debug for Message {
             msg.field("member", &member);
         }
         match self.body().signature() {
-            zvariant::Signature::Unit => (),
+            crate::zvariant::Signature::Unit => (),
             s => {
                 msg.field("body", &s);
             }
@@ -332,11 +334,11 @@ impl fmt::Display for Message {
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
+    use crate::zvariant::Fd;
+    use crate::zvariant::Signature;
+    #[cfg(unix)]
     use std::os::fd::{AsFd, AsRawFd};
     use test_log::test;
-    #[cfg(unix)]
-    use zvariant::Fd;
-    use zvariant::Signature;
 
     use super::Message;
     use crate::Error;
@@ -373,7 +375,7 @@ mod tests {
         let body: Result<u32, Error> = m.body().deserialize();
         assert!(matches!(
             body.unwrap_err(),
-            Error::Variant(zvariant::Error::SignatureMismatch { .. })
+            Error::Variant(crate::zvariant::Error::SignatureMismatch { .. })
         ));
 
         assert_eq!(m.to_string(), "Method call do from :1.72");

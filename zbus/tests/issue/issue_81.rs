@@ -1,12 +1,14 @@
 use test_log::test;
 
-use zvariant::OwnedObjectPath;
+use zbus::zvariant::OwnedObjectPath;
 
 #[test]
 #[ignore]
 fn issue_81() {
-    use zbus::proxy;
-    use zvariant::{OwnedValue, Type};
+    use zbus::{
+        proxy,
+        zvariant::{OwnedValue, Type},
+    };
 
     #[derive(
         Debug, PartialEq, Eq, Clone, Type, OwnedValue, serde::Serialize, serde::Deserialize,

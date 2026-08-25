@@ -37,7 +37,7 @@ mod test {
         /// comment for a_test()
         fn a_test(&self, val: &str) -> zbus::Result<u32>;
 
-        /// The generated proxies implement both `zvariant::Type` and `serde::ser::Serialize`
+        /// The generated proxies implement both `zbus::zvariant::Type` and `serde::ser::Serialize`
         /// which is useful to pass in a proxy as a param. It serializes it as an `ObjectPath`.
         fn some_method<T>(&self, object_path: &T) -> zbus::Result<()>;
 
