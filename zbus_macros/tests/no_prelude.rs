@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use ::serde::{Deserialize, Serialize};
-use ::zvariant_derive::Type;
+use ::zbus::wire::Type;
 
 use ::zbus::wire::as_value::{self, optional};
 

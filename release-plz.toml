@@ -156,12 +156,3 @@ version_group = "zbus"
 [[package]]
 name = "zbus_macros"
 version_group = "zbus"
-
-# zvariant and zvariant_derive major/minor versions are kept in sync.
-[[package]]
-name = "zvariant"
-version_group = "zvariant"
-
-[[package]]
-name = "zvariant_derive"
-version_group = "zvariant"

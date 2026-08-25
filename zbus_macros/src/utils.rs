@@ -25,6 +25,23 @@ pub fn zbus_path(crate_path: Option<&syn::Path>) -> TokenStream {
     }
 }
 
+/// Shared-codegen configuration for the wire derives.
+///
+/// `#[zvariant(...)]` stays accepted next to `#[zbus(...)]`: code written against zvariant 5
+/// keeps compiling unchanged.
+pub fn derive_config() -> zvariant_utils::derive::Config {
+    zvariant_utils::derive::Config {
+        attr_lists: &["zbus", "zvariant"],
+        default_path: wire_path(),
+    }
+}
+
+/// Path of the wire-format module for generated code.
+pub fn wire_path() -> TokenStream {
+    let zbus = zbus_path(None);
+    quote! { #zbus::wire }
+}
+
 pub fn typed_arg(arg: &FnArg) -> Option<&PatType> {
     match arg {
         FnArg::Typed(t) => Some(t),

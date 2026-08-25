@@ -57,7 +57,6 @@ async-fs = []
 
 [dependencies]
 zbus_macros = { path = "../zbus_macros", version = "6.0.0" }
-zvariant_derive = { path = "../zvariant_derive", version = "5.15.0" }
 zcheapstr.workspace = true
 endi.workspace = true
 zvariant_utils = { path = "../zvariant_utils", version = "4.3.0" }

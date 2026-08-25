@@ -543,8 +543,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     // * For all other arg types, we convert the passed value to `OwnedValue` first
                     //   and then pass it as `Value` (so `TryFrom<OwnedValue>` is required).
                     let value_to_owned = quote! {
-                        match #zbus::zvariant::Value::try_to_owned(value) {
-                            ::std::result::Result::Ok(val) => #zbus::zvariant::Value::from(val),
+                        match #zbus::wire::Value::try_to_owned(value) {
+                            ::std::result::Result::Ok(val) => #zbus::wire::Value::from(val),
                             ::std::result::Result::Err(e) => {
                                 return ::std::result::Result::Err(
                                     ::std::convert::Into::into(#zbus::Error::Variant(::std::convert::Into::into(e)))
@@ -583,7 +583,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                     .args
                                     .first()
                                     .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
-                                    .map(|_| quote!(match #zbus::zvariant::Value::try_clone(value) {
+                                    .map(|_| quote!(match #zbus::wire::Value::try_clone(value) {
                                         ::std::result::Result::Ok(val) => val,
                                         ::std::result::Result::Err(e) => {
                                             return ::std::result::Result::Err(
@@ -675,8 +675,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     p.ty = Some(get_return_type(output)?.clone());
 
                     let value_convert = quote!(
-                        <#zbus::zvariant::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                            <#zbus::zvariant::Value as ::std::convert::From<_>>::from(
+                        <#zbus::wire::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
+                            <#zbus::wire::Value as ::std::convert::From<_>>::from(
                                 value,
                             ),
                         )
@@ -706,8 +706,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             if let Ok(prop) = self.#ident(#args_names)#method_await {
                             props.insert(
                                 ::std::string::ToString::to_string(#member_name),
-                                <#zbus::zvariant::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                                    <#zbus::zvariant::Value as ::std::convert::From<_>>::from(
+                                <#zbus::wire::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
+                                    <#zbus::wire::Value as ::std::convert::From<_>>::from(
                                         prop,
                                     ),
                                 )
@@ -719,8 +719,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             #args_from_msg
                             props.insert(
                                 ::std::string::ToString::to_string(#member_name),
-                                <#zbus::zvariant::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                                    <#zbus::zvariant::Value as ::std::convert::From<_>>::from(
+                                <#zbus::wire::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
+                                    <#zbus::wire::Value as ::std::convert::From<_>>::from(
                                         self.#ident(#args_names)#method_await,
                                     ),
                                 )
@@ -755,7 +755,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                 let __zbus__object_server = __zbus__connection.object_server();
                                 #args_from_msg
                                 let mut changed = ::std::collections::HashMap::new();
-                                let value = <#zbus::zvariant::Value as ::std::convert::From<_>>::from(#prop_value_handled);
+                                let value = <#zbus::wire::Value as ::std::convert::From<_>>::from(#prop_value_handled);
                                 changed.insert(#member_name, value);
                                 #zbus::fdo::Properties::properties_changed(
                                     __zbus__signal_emitter,
@@ -915,7 +915,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 __zbus__connection: &#zbus::Connection,
                 __zbus__header: Option<&#zbus::message::Header<'_>>,
                 __zbus__signal_emitter: &#zbus::object_server::SignalEmitter<'_>,
-            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::zvariant::OwnedValue>> {
+            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::wire::OwnedValue>> {
                 match __zbus__property_name {
                     #get_dispatch
                     _ => ::std::option::Option::None,
@@ -931,11 +931,11 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 __zbus__signal_emitter: &#zbus::object_server::SignalEmitter<'_>,
             ) -> #zbus::fdo::Result<::std::collections::HashMap<
                 ::std::string::String,
-                #zbus::zvariant::OwnedValue,
+                #zbus::wire::OwnedValue,
             >> {
                 let mut props: ::std::collections::HashMap<
                     ::std::string::String,
-                    #zbus::zvariant::OwnedValue,
+                    #zbus::wire::OwnedValue,
                 > = ::std::collections::HashMap::new();
                 #get_all
                 Ok(props)
@@ -945,7 +945,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
             fn set<'call>(
                 &'call self,
                 __zbus__property_name: &'call str,
-                value: &'call #zbus::zvariant::Value<'_>,
+                value: &'call #zbus::wire::Value<'_>,
                 __zbus__object_server: &'call #zbus::ObjectServer,
                 __zbus__connection: &'call #zbus::Connection,
                 __zbus__header: Option<&'call #zbus::message::Header<'_>>,
@@ -961,7 +961,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
             async fn set_mut(
                 &mut self,
                 __zbus__property_name: &str,
-                value: &#zbus::zvariant::Value<'_>,
+                value: &#zbus::wire::Value<'_>,
                 __zbus__object_server: &#zbus::ObjectServer,
                 __zbus__connection: &#zbus::Connection,
                 __zbus__header: Option<&#zbus::message::Header<'_>>,
@@ -1010,7 +1010,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     indent = level
                 ).unwrap();
                 {
-                    use #zbus::zvariant::Type;
+                    use #zbus::wire::Type;
 
                     let level = level + 2;
                     #introspect
@@ -1737,11 +1737,11 @@ mod tests {
             "generated code names ::zbus instead of the requested crate: {expanded}"
         );
         assert!(
-            expanded.contains(":: mybus :: zvariant :: Value :: try_to_owned"),
+            expanded.contains(":: mybus :: wire :: Value :: try_to_owned"),
             "generated code lost the owned-value conversion: {expanded}"
         );
         assert!(
-            expanded.contains(":: mybus :: zvariant :: Value :: try_clone"),
+            expanded.contains(":: mybus :: wire :: Value :: try_clone"),
             "generated code lost the borrowed-value conversion: {expanded}"
         );
     }

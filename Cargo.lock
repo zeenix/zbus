@@ -2198,7 +2198,6 @@ dependencies = [
  "zbus_macros",
  "zbus_xml",
  "zcheapstr",
- "zvariant_derive",
  "zvariant_utils",
 ]
 
@@ -2212,6 +2211,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+ "serde_repr",
  "syn 3.0.4",
  "zbus",
  "zvariant_utils",
@@ -2329,21 +2329,6 @@ name = "zmij"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
-
-[[package]]
-name = "zvariant_derive"
-version = "5.15.0"
-dependencies = [
- "enumflags2",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "serde",
- "serde_repr",
- "syn 3.0.4",
- "zbus",
- "zvariant_utils",
-]
 
 [[package]]
 name = "zvariant_utils"

@@ -638,7 +638,6 @@ dependencies = [
  "winnow",
  "zbus_macros",
  "zcheapstr",
- "zvariant_derive",
  "zvariant_utils",
 ]
 
@@ -669,17 +668,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1afec51604565183aeb5c54c20aeab286120d4e4460f7f76e3e8bb8c0d99473"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "zvariant_derive"
-version = "5.15.0"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 3.0.4",
- "zvariant_utils",
 ]
 
 [[package]]

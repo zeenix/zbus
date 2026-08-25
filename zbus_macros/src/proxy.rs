@@ -311,7 +311,7 @@ pub fn create_proxy(
                 where
                     D: ::std::convert::TryInto<#zbus::names::BusName<'p>>,
                     D::Error: ::std::convert::Into<#zbus::Error>,
-                    P: ::std::convert::TryInto<#zbus::zvariant::ObjectPath<'p>>,
+                    P: ::std::convert::TryInto<#zbus::wire::ObjectPath<'p>>,
                     P::Error: ::std::convert::Into<#zbus::Error>,
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
@@ -343,7 +343,7 @@ pub fn create_proxy(
                 /// Creates a new proxy with the given path, and the default destination.
                 pub #usage fn new<P>(conn: &#connection, path: P) -> #zbus::Result<#proxy_name<'p>>
                 where
-                    P: ::std::convert::TryInto<#zbus::zvariant::ObjectPath<'p>>,
+                    P: ::std::convert::TryInto<#zbus::wire::ObjectPath<'p>>,
                     P::Error: ::std::convert::Into<#zbus::Error>,
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
@@ -363,7 +363,7 @@ pub fn create_proxy(
         }
     };
     let default_path = match default_path {
-        Some(p) => quote! { &Some(#zbus::zvariant::ObjectPath::from_static_str_unchecked(#p)) },
+        Some(p) => quote! { &Some(#zbus::wire::ObjectPath::from_static_str_unchecked(#p)) },
         None => quote! { &None },
     };
     let default_service = match default_service {
@@ -390,7 +390,7 @@ pub fn create_proxy(
             const INTERFACE: &'static Option<#zbus::names::InterfaceName<'static>> =
                 &Some(#zbus::names::InterfaceName::from_static_str_unchecked(#iface_name));
             const DESTINATION: &'static Option<#zbus::names::BusName<'static>> = #default_service;
-            const PATH: &'static Option<#zbus::zvariant::ObjectPath<'static>> = #default_path;
+            const PATH: &'static Option<#zbus::wire::ObjectPath<'static>> = #default_path;
         }
 
         #(#other_attrs)*
@@ -462,9 +462,9 @@ pub fn create_proxy(
             }
         }
 
-        impl<'p> #zbus::zvariant::Type for #proxy_name<'p> {
-            const SIGNATURE: &'static #zbus::zvariant::Signature =
-                &#zbus::zvariant::Signature::ObjectPath;
+        impl<'p> #zbus::wire::Type for #proxy_name<'p> {
+            const SIGNATURE: &'static #zbus::wire::Signature =
+                &#zbus::wire::Signature::ObjectPath;
         }
 
         impl<'p> #zbus::export::serde::ser::Serialize for #proxy_name<'p> {
@@ -597,7 +597,7 @@ fn gen_proxy_method_call(
             parse_quote!(#zbus::export::serde::de::DeserializeOwned)
         };
         where_clause.predicates.push(parse_quote!(
-            #param: #serde_bound + #zbus::zvariant::Type
+            #param: #serde_bound + #zbus::wire::Type
         ));
     }
     let (_, ty_generics, where_clause) = generics.split_for_impl();
@@ -623,13 +623,13 @@ fn gen_proxy_method_call(
         let method_call = quote! {
             self.0.call(
                 #dbus_member_name,
-                &#zbus::zvariant::DynamicTuple((#(#args,)*)),
+                &#zbus::wire::DynamicTuple((#(#args,)*)),
             )
             #wait?
         };
         let body = if proxy_vec {
             quote! {
-                let object_paths: Vec<#zbus::zvariant::OwnedObjectPath> = #method_call;
+                let object_paths: Vec<#zbus::wire::OwnedObjectPath> = #method_call;
 
                 let mut proxies = Vec::with_capacity(object_paths.len());
                 for object_path in object_paths {
@@ -641,7 +641,7 @@ fn gen_proxy_method_call(
             }
         } else {
             quote! {
-                let object_path: #zbus::zvariant::OwnedObjectPath = #method_call;
+                let object_path: #zbus::wire::OwnedObjectPath = #method_call;
                 #proxy_build
             }
         };
@@ -657,11 +657,11 @@ fn gen_proxy_method_call(
             // the '()' from the signature that we add and not the actual intended ones.
             let arg = &args[0];
             quote! {
-                &#zbus::zvariant::DynamicTuple((#arg,))
+                &#zbus::wire::DynamicTuple((#arg,))
             }
         } else {
             quote! {
-                &#zbus::zvariant::DynamicTuple((#(#args),*))
+                &#zbus::wire::DynamicTuple((#(#args),*))
             }
         };
 
@@ -797,7 +797,7 @@ fn gen_proxy_property(
             };
             let body = if proxy_vec {
                 quote_spanned! {body_span =>
-                    let object_paths: Vec<#zbus::zvariant::OwnedObjectPath> =
+                    let object_paths: Vec<#zbus::wire::OwnedObjectPath> =
                         #property_get;
 
                     let mut proxies = Vec::with_capacity(object_paths.len());
@@ -810,7 +810,7 @@ fn gen_proxy_property(
                 }
             } else {
                 quote_spanned! {body_span =>
-                    let object_path: #zbus::zvariant::OwnedObjectPath =
+                    let object_path: #zbus::wire::OwnedObjectPath =
                         #property_get;
                     #proxy_build
                 }
@@ -981,7 +981,7 @@ fn gen_proxy_signal(
     {
         where_clause
                 .predicates
-                .push(parse_quote!(#param: #zbus::export::serde::de::Deserialize<'s> + #zbus::zvariant::Type + ::std::fmt::Debug));
+                .push(parse_quote!(#param: #zbus::export::serde::de::Deserialize<'s> + #zbus::wire::Type + ::std::fmt::Debug));
     }
     generics.params.push(parse_quote!('s));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();

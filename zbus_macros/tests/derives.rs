@@ -128,7 +128,7 @@ fn issues_1252() {
 #[test]
 fn derive_with_crate_attr() {
     // Test that the `crate` attribute works for custom crate paths.
-    // This is useful when zvariant is re-exported or renamed in Cargo.toml.
+    // This is useful when the wire module is re-exported or renamed in Cargo.toml.
     #[derive(Type)]
     #[zvariant(crate = "zbus::wire")]
     struct TestCrateAttr {
