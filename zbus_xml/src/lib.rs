@@ -631,7 +631,7 @@ impl<'a> TryFrom<&'a str> for Node<'a> {
     }
 }
 
-/// A thin wrapper around `zbus::wire::Signature`.
+/// A thin wrapper around [`zbus::wire::Signature`].
 ///
 /// This is to allow `Signature` to be deserialized from an owned string, which is what XML
 /// deserializers typically produce.
@@ -639,12 +639,12 @@ impl<'a> TryFrom<&'a str> for Node<'a> {
 pub struct Signature(zbus::wire::Signature);
 
 impl Signature {
-    /// Return the inner `zbus::wire::Signature`.
+    /// The inner [`zbus::wire::Signature`].
     pub fn inner(&self) -> &zbus::wire::Signature {
         &self.0
     }
 
-    /// Convert this `Signature` into the inner `zbus::wire::Signature`.
+    /// Convert this `Signature` into the inner [`zbus::wire::Signature`].
     pub fn into_inner(self) -> zbus::wire::Signature {
         self.0
     }

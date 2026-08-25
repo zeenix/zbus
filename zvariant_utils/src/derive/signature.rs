@@ -44,7 +44,7 @@ impl Parse for SignatureInput {
 /// Converts a parsed `Signature` to compile-time token representation with a custom crate path.
 ///
 /// This function generates the Rust tokens that will construct the signature
-/// at compile time, using the provided crate path for zvariant.
+/// at compile time, using the provided crate path for the wire types.
 pub fn signature_to_tokens_with_crate(signature: &Signature, zv: &TokenStream) -> TokenStream {
     match signature {
         Signature::Unit => quote! { #zv::Signature::Unit },

@@ -3,7 +3,15 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/z-galaxy/zbus/9f7a90d2b594ddc48b7a5f39fda5e00cd56a7dfb/logo.png"
 )]
-#![doc = include_str!("../README.md")]
+// The README's examples need a D-Bus connection, so it can only be the crate documentation
+// when the D-Bus API is compiled in.
+#![cfg_attr(feature = "comms", doc = include_str!("../README.md"))]
+#![cfg_attr(
+    not(feature = "comms"),
+    doc = "# zbus\n\nThis build has the D-Bus API (the `comms` feature) disabled: only the \
+           D-Bus [wire format](crate::wire) and the [bus name types](crate::names) are \
+           compiled in.\n"
+)]
 #![doc(test(attr(
     warn(unused),
     deny(warnings),

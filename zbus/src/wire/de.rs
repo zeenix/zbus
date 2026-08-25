@@ -208,12 +208,12 @@ where
         Signature::Array(_) => de.deserialize_seq(visitor),
         Signature::Dict { .. } => de.deserialize_map(visitor),
         Signature::Structure { .. } => de.deserialize_seq(visitor),
-        // `Signature` can carry a `Maybe` variant even though `zvariant` has no GVariant
-        // support: another crate in the dependency graph (e.g. `zgvariant`) can enable
+        // `Signature` can carry a `Maybe` variant even though zbus has no GVariant support:
+        // another crate in the dependency graph (e.g. `zgvariant`) can enable
         // `zvariant_utils/gvariant`, and Cargo feature unification then adds the variant to
-        // this build. `zvariant` can't detect that with a `#[cfg]`, so the variant can't be
-        // named explicitly here without breaking the common case where it doesn't exist at
-        // all. Fall back to a wildcard instead.
+        // this build. zbus can't detect that with a `#[cfg]`, so the variant can't be named
+        // explicitly here without breaking the common case where it doesn't exist at all.
+        // Fall back to a wildcard instead.
         #[allow(unreachable_patterns)]
         _ => Err(Error::SignatureMismatch(
             signature.clone(),

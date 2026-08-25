@@ -15,7 +15,7 @@ use crate::wire::{Basic, Type};
 /// Instead, the message body contains a `u32` **index** into an out-of-band array of file
 /// descriptors that is transferred alongside the message via `SCM_RIGHTS` on Unix sockets.
 ///
-/// The [`Deserialize`] implementation on this type is designed for zvariant's D-Bus
+/// The [`Deserialize`] implementation on this type is designed for this module's D-Bus
 /// deserializer, which resolves that index through the message's FD list before calling the
 /// serde visitor. **Using this type with other deserializers (JSON, CBOR, etc.) is not
 /// supported** — you would receive a `BorrowedFd` pointing to whatever FD number happened to

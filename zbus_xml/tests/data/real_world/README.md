@@ -29,4 +29,4 @@ flavors produced by sd-bus, libdbus and GDBus.
 | `dconf_writer.xml` | `dconf-service` (0.40.0, GDBus 2.80.0) | `/ca/desrt/dconf/Writer/user` |
 
 Note: `systemd1_manager.xml` and `login1.xml` contain `h` (file descriptor) signatures, which
-zvariant only supports on Unix — parsing these documents fails on other platforms.
+zbus only supports on Unix — parsing these documents fails on other platforms.

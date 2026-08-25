@@ -1,18 +1,32 @@
-//! # zbus_names
+//! Types for the various [D-Bus bus names][dbn].
 //!
-//! This crate provides collection of types for various [D-Bus bus names][dbn].
+//! D-Bus has several kinds of names — unique connection names, well-known service names,
+//! interface names, error names, member names and property names — and each kind has its own
+//! syntax rules. This module provides a type per kind: a name is validated once, when it is
+//! created, and is then known to be valid everywhere it travels.
 //!
-//! This is used by [`zbus`] (and in future by [`zbus_macros`] as well) crate. Other D-Bus crates
-//! are also encouraged to use this API in the spirit of cooperation. :)
+//! Each type has an owned counterpart ([`OwnedBusName`], [`OwnedInterfaceName`] and so on) for
+//! when the borrowed form is inconvenient, and all of them implement [`Type`] and convert to
+//! and from [`Value`], so they can be sent over the bus directly.
 //!
-//! For convenience, `zbus` re-exports this crate as `names`, so you do not need to depend directly
-//! on this crate if you already depend on `zbus`.
+//! Validation failures are reported as [`crate::Error::InvalidName`], and conversions between
+//! two name kinds that cannot succeed as [`crate::Error::InvalidNameConversion`].
 //!
-//! **Status:** Stable.
+//! # Example
+//!
+//! ```
+//! use zbus::names::InterfaceName;
+//!
+//! let name = InterfaceName::try_from("org.freedesktop.DBus").unwrap();
+//! assert_eq!(name, "org.freedesktop.DBus");
+//!
+//! // An interface name needs at least two elements separated by a dot.
+//! InterfaceName::try_from("no-dots").unwrap_err();
+//! ```
 //!
 //! [dbn]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names
-//! [`zbus`]: https://crates.io/crates/zbus
-//! [`zbus_macros`]: https://crates.io/crates/zbus_macros
+//! [`Type`]: trait@crate::wire::Type
+//! [`Value`]: enum@crate::wire::Value
 
 mod bus_name;
 pub use bus_name::*;

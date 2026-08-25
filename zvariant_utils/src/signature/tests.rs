@@ -164,8 +164,9 @@ fn recursion_limits() {
     assert!(Signature::from_str(&deep_arrays).is_err());
     assert!(validate(deep_arrays.as_bytes()).is_err());
 
-    // The exact per-container limits mirror zvariant's (de)serialization limits (see
-    // `zvariant::container_depths`): 32 deep is accepted, 33 rejected — for structs and arrays.
+    // The exact per-container limits mirror zbus's (de)serialization limits (see
+    // `zbus::wire::container_depths`): 32 deep is accepted, 33 rejected — for structs and
+    // arrays.
     assert!(validate(format!("{}i{}", "(".repeat(32), ")".repeat(32)).as_bytes()).is_ok());
     assert!(validate(format!("{}i{}", "(".repeat(33), ")".repeat(33)).as_bytes()).is_err());
     assert!(validate(format!("{}i", "a".repeat(32)).as_bytes()).is_ok());

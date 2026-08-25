@@ -21,8 +21,8 @@ use crate::wire::Signature;
 ///
 /// Implementation is provided for all the [basic types](crate::wire::Basic) and blanket
 /// implementations for common container types, such as, arrays, slices, tuples, [`Vec`] and
-/// [`std::collections::HashMap`]. For easy implementation for custom types, use `Type` derive macro
-/// from [zvariant_derive] crate.
+/// [`std::collections::HashMap`]. For easy implementation for custom types, use `Type` derive
+/// macro re-exported by this module.
 ///
 /// If your type's signature cannot be determined statically, you should implement the
 /// [`DynamicType`] trait instead, which is otherwise automatically implemented if you implement
@@ -31,7 +31,6 @@ use crate::wire::Signature;
 /// [D-Bus type system]: https://dbus.freedesktop.org/doc/dbus-specification.html#type-system
 /// [serialization]: crate::wire#functions
 /// [deserialization]: crate::wire::serialized::Data::deserialize
-/// [zvariant_derive]: https://docs.rs/zvariant_derive/latest/zvariant_derive/
 pub trait Type {
     /// The signature for the implementing type, in parsed format.
     ///

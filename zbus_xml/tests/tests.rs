@@ -323,7 +323,7 @@ const REAL_WORLD_DATA: &[(&str, &str)] = &[
 #[test]
 fn real_world_data() -> Result<(), Box<dyn Error>> {
     for (name, xml) in REAL_WORLD_DATA {
-        // `h` (file descriptor) signatures are only supported by zvariant on Unix, so documents
+        // `h` (file descriptor) signatures are only supported by zbus on Unix, so documents
         // containing them (e.g. from systemd-logind) don't parse on other platforms.
         if cfg!(not(unix)) && xml.contains(r#"type="h""#) {
             assert!(
@@ -457,7 +457,7 @@ fn real_world_dbus_daemon() -> Result<(), Box<dyn Error>> {
 #[test]
 fn real_world_systemd() -> Result<(), Box<dyn Error>> {
     // The manager document contains `h` (file descriptor) signatures (e.g.
-    // `DumpByFileDescriptor`), which zvariant only supports on Unix.
+    // `DumpByFileDescriptor`), which zbus only supports on Unix.
     if cfg!(unix) {
         let node = Node::try_from(include_str!("data/real_world/systemd1_manager.xml"))?;
         let manager = interface(&node, "org.freedesktop.systemd1.Manager");

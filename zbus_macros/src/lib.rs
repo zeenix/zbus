@@ -210,7 +210,7 @@ mod utils;
 /// [`zbus::blocking::Proxy`]: https://docs.rs/zbus/latest/zbus/blocking/proxy/struct.Proxy.html
 /// [`zbus::SignalStream`]: https://docs.rs/zbus/latest/zbus/proxy/struct.SignalStream.html
 /// [`zbus::blocking::SignalIterator`]: https://docs.rs/zbus/latest/zbus/blocking/proxy/struct.SignalIterator.html
-/// [`ObjectPath`]: https://docs.rs/zvariant/latest/zvariant/struct.ObjectPath.html
+/// [`ObjectPath`]: https://docs.rs/zbus/latest/zbus/wire/struct.ObjectPath.html
 /// [dbus_emits_changed_signal]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
 #[cfg(feature = "comms")]
 #[proc_macro_attribute]
@@ -440,7 +440,6 @@ pub fn interface(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// [`zbus::DBusError`]: https://docs.rs/zbus/latest/zbus/trait.DBusError.html
 /// [`zbus::Error`]: https://docs.rs/zbus/latest/zbus/enum.Error.html
-/// [`zvariant::Type`]: https://docs.rs/zvariant/latest/zvariant/trait.Type.html
 /// [`serde::Serialize`]: https://docs.rs/serde/1.0.132/serde/trait.Serialize.html
 #[cfg(feature = "comms")]
 #[proc_macro_derive(DBusError, attributes(zbus))]
@@ -595,20 +594,20 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 ///
 /// # Custom crate path
 ///
-/// If you've renamed `zvariant` in your `Cargo.toml` or are using it through a re-export,
-/// you can specify the crate path using the `crate` attribute:
+/// If you've renamed `zbus` in your `Cargo.toml` or are using it through a re-export, point
+/// the derive at the module holding the wire types with the `crate` attribute:
 ///
 /// ```
 /// use zbus::wire::Type;
 ///
 /// #[derive(Type)]
-/// #[zvariant(crate = "zbus::wire")]
+/// #[zbus(crate = "zbus::wire")]
 /// struct MyStruct {
 ///     field: String,
 /// }
 /// ```
 ///
-/// [`Type`]: https://docs.rs/zvariant/latest/zvariant/trait.Type.html
+/// [`Type`]: https://docs.rs/zbus/latest/zbus/wire/trait.Type.html
 /// [`Serialize`]: https://docs.serde.rs/serde/trait.Serialize.html
 /// [`Deserialize`]: https://docs.serde.rs/serde/de/trait.Deserialize.html
 /// [serde_repr]: https://crates.io/crates/serde_repr
@@ -699,14 +698,14 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 ///
 /// # Custom crate path
 ///
-/// If you've renamed `zvariant` in your `Cargo.toml` or are using it through a re-export,
-/// you can specify the crate path using the `crate` attribute:
+/// If you've renamed `zbus` in your `Cargo.toml` or are using it through a re-export, point
+/// the derive at the module holding the wire types with the `crate` attribute:
 ///
 /// ```
 /// use zbus::wire::{SerializeDict, Type};
 ///
 /// #[derive(SerializeDict, Type)]
-/// #[zvariant(signature = "a{sv}", crate = "zbus::wire")]
+/// #[zbus(signature = "a{sv}", crate = "zbus::wire")]
 /// struct MyStruct {
 ///     field: String,
 /// }
@@ -778,14 +777,14 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 ///
 /// # Custom crate path
 ///
-/// If you've renamed `zvariant` in your `Cargo.toml` or are using it through a re-export,
-/// you can specify the crate path using the `crate` attribute:
+/// If you've renamed `zbus` in your `Cargo.toml` or are using it through a re-export, point
+/// the derive at the module holding the wire types with the `crate` attribute:
 ///
 /// ```
 /// use zbus::wire::{DeserializeDict, Type};
 ///
 /// #[derive(DeserializeDict, Type)]
-/// #[zvariant(signature = "a{sv}", crate = "zbus::wire")]
+/// #[zbus(signature = "a{sv}", crate = "zbus::wire")]
 /// struct MyStruct {
 ///     field: String,
 /// }
@@ -977,20 +976,20 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 ///
 /// # Custom crate path
 ///
-/// If you've renamed `zvariant` in your `Cargo.toml` or are using it through a re-export,
-/// you can specify the crate path using the `crate` attribute:
+/// If you've renamed `zbus` in your `Cargo.toml` or are using it through a re-export, point
+/// the derive at the module holding the wire types with the `crate` attribute:
 ///
 /// ```
 /// use zbus::wire::Value;
 ///
 /// #[derive(Clone, Value)]
-/// #[zvariant(crate = "zbus::wire")]
+/// #[zbus(crate = "zbus::wire")]
 /// struct MyStruct {
 ///     field: String,
 /// }
 /// ```
 ///
-/// [`Value`]: https://docs.rs/zvariant/latest/zvariant/enum.Value.html
+/// [`Value`]: https://docs.rs/zbus/latest/zbus/wire/enum.Value.html
 /// [`Type`]: crate::Type#custom-signatures
 #[proc_macro_derive(Value, attributes(zbus, zvariant))]
 pub fn value_macro_derive(input: TokenStream) -> TokenStream {
@@ -1010,7 +1009,7 @@ pub fn value_macro_derive(input: TokenStream) -> TokenStream {
 ///
 /// See [`Value`] documentation for examples.
 ///
-/// [`OwnedValue`]: https://docs.rs/zvariant/latest/zvariant/struct.OwnedValue.html
+/// [`OwnedValue`]: https://docs.rs/zbus/latest/zbus/wire/struct.OwnedValue.html
 #[proc_macro_derive(OwnedValue, attributes(zbus, zvariant))]
 pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
@@ -1099,7 +1098,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// let sig = signature!("z");
 /// ```
 ///
-/// [`Signature`]: https://docs.rs/zvariant/latest/zvariant/enum.Signature.html
+/// [`Signature`]: https://docs.rs/zbus/latest/zbus/wire/enum.Signature.html
 #[proc_macro]
 pub fn signature(input: TokenStream) -> TokenStream {
     zvariant_utils::derive::expand_signature_macro(input.into(), &utils::wire_path())

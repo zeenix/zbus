@@ -245,8 +245,8 @@ pub fn iter_meta_lists(
 /// # Supporting the `crate` attribute
 ///
 /// The macro supports a special `crate_path` field that maps to the `crate` attribute name.
-/// This allows users to specify custom crate paths (e.g., when they've renamed zbus/zvariant
-/// in their Cargo.toml). Example:
+/// This allows users to specify custom crate paths (e.g., when they've renamed `zbus` or
+/// `zgvariant` in their Cargo.toml). Example:
 ///
 /// ```
 /// # use zvariant_utils::def_attrs;
