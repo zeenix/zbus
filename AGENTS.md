@@ -68,7 +68,7 @@ cargo fuzz run --fuzz-dir zvariant/fuzz dbus
 
 ### Core Crates
 - **zbus**: Main D-Bus API (connection, proxy, object server)
-- **zvariant**: D-Bus serialization (GVariant support deprecated — see the zgvariant crate)
+- **zvariant**: D-Bus serialization (GVariant lives in the separate zgvariant crate)
 - **zbus_names**: Type-safe D-Bus name handling
 - **zbus_macros**: Procedural macros for `#[interface]` and `#[proxy]`
 - **zbus_xml**: D-Bus introspection XML handling

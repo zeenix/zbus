@@ -4,9 +4,8 @@
 
 This crate provides API for encoding/decoding of data to/from [D-Bus wire format][dwf]. This binary
 wire format is simple and very efficient and hence useful outside of D-Bus context as well. A
-modified form of this format, [GVariant] is very commonly used for efficient storage of arbitrary
-data. GVariant support is deprecated and will be removed in 6.0 — use the [zgvariant] crate
-instead.
+modified form of this format, [GVariant], is very commonly used for efficient storage of arbitrary
+data; it is implemented by the [zgvariant] crate.
 
 Since version 2.0, the API is [serde]-based and hence you'll find it very intuitive if you're
 already familiar with serde. If you're not familiar with serde, you may want to first read its
@@ -164,13 +163,9 @@ accomplish. However, community contribution can change that. 😊
 
 | Feature | Description |
 | ---     | ----------- |
-| gvariant | **Deprecated:** GVariant support (moved to [zgvariant]; removed in 6.0) |
 | arrayvec | Implement `Type` for [`arrayvec::ArrayVec`] and [`arrayvec::ArrayString`] |
 | enumflags2 | Implement `Type` for [`enumflags2::BitFlags`]`<F>` |
 | option-as-array | Enable `Option<T>` (de)serialization using array encoding |
-
-`gvariant` features conflicts with `option-as-array` and hence should not be enabled together
-(the `gvariant` feature is deprecated).
 
 [dwf]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling
 [GVariant]: https://developer.gnome.org/documentation/specifications/gvariant-specification-1.0.html
