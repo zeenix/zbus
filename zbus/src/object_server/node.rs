@@ -6,14 +6,11 @@ use std::{
 };
 
 use crate::{
-    names::InterfaceName,
-    wire::{ObjectPath, OwnedObjectPath, OwnedValue},
-};
-
-use crate::{
     Connection, ObjectServer,
     fdo::{self, Introspectable, ManagedObjects, ObjectManager, Peer, Properties},
+    names::InterfaceName,
     object_server::SignalEmitter,
+    wire::{ObjectPath, OwnedObjectPath, OwnedValue},
 };
 
 use super::{ArcInterface, Interface};

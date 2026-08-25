@@ -16,14 +16,11 @@ use std::{
 use tracing::{Instrument, debug, info_span, instrument, trace, warn};
 
 use crate::{
-    names::{BusName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, OwnedValue, Str, Value},
-};
-
-use crate::{
     AsyncDrop, Connection, Error, Executor, MatchRule, MessageStream, OwnedMatchRule, Result, Task,
     fdo::{self, IntrospectableProxy, NameOwnerChanged, PropertiesChangedStream, PropertiesProxy},
     message::{Flags, Message, Sequence, Type},
+    names::{BusName, InterfaceName, MemberName, UniqueName},
+    wire::{ObjectPath, OwnedValue, Str, Value},
 };
 
 mod builder;

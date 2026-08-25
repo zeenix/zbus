@@ -1,7 +1,3 @@
-use crate::{
-    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, Signature, Type, Value},
-};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, SeqAccess, Visitor},
@@ -9,7 +5,11 @@ use serde::{
 };
 use std::{borrow::Cow, num::NonZeroU32};
 
-use crate::message::{FieldCode, Header, Message};
+use crate::{
+    message::{FieldCode, Header, Message},
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    wire::{ObjectPath, Signature, Type, Value},
+};
 
 /// A collection of [`Field`] instances.
 ///

@@ -208,10 +208,10 @@ mod fd;
 pub use fd::*;
 
 mod object_path;
-pub use crate::wire::object_path::*;
+pub use object_path::*;
 
 mod file_path;
-pub use crate::wire::file_path::*;
+pub use file_path::*;
 
 mod ser;
 pub use ser::*;
@@ -224,13 +224,13 @@ pub mod signature;
 pub use signature::Signature;
 
 mod str;
-pub use crate::wire::str::*;
+pub use str::*;
 
 mod structure;
-pub use crate::wire::structure::*;
+pub use structure::*;
 
 mod optional;
-pub use crate::wire::optional::*;
+pub use optional::*;
 
 mod value;
 pub use value::*;

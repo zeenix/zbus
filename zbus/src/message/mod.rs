@@ -2,11 +2,11 @@
 use std::{borrow::Cow, fmt, sync::Arc};
 
 use crate::{
+    Error, Result,
     names::{ErrorName, InterfaceName, MemberName},
-    wire::{Endian, serialized},
+    utils::padding_for_8_bytes,
+    wire::{Endian, ObjectPath, serialized},
 };
-
-use crate::{Error, Result, utils::padding_for_8_bytes, wire::ObjectPath};
 
 mod builder;
 pub use builder::Builder;

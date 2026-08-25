@@ -17,14 +17,12 @@ use std::os::unix::net::UnixStream as AsyncIoUnixStream;
 #[cfg(all(windows, feature = "async-io"))]
 use uds_windows::UnixStream as AsyncIoUnixStream;
 
-use crate::wire::ObjectPath;
-
 #[cfg(feature = "p2p")]
 use crate::Guid;
 use crate::{
     Error, Result, address::Address, blocking::Connection, conn::AuthMechanism,
     connection::socket::BoxedSplit, names::WellKnownName, object_server::Interface,
-    utils::block_on,
+    utils::block_on, wire::ObjectPath,
 };
 
 /// A builder for [`zbus::blocking::Connection`].

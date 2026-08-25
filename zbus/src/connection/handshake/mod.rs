@@ -5,7 +5,6 @@ mod common;
 #[cfg(feature = "p2p")]
 mod server;
 
-use crate::names::OwnedUniqueName;
 use async_trait::async_trait;
 #[cfg(unix)]
 use rustix::process::geteuid;
@@ -13,7 +12,7 @@ use std::fmt::Debug;
 
 #[cfg(windows)]
 use crate::win32;
-use crate::{Error, OwnedGuid, Result};
+use crate::{Error, OwnedGuid, Result, names::OwnedUniqueName};
 
 use super::socket::{BoxedSplit, ReadHalf, WriteHalf};
 

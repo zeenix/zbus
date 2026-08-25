@@ -6,14 +6,13 @@ use std::{
     ops::Deref,
 };
 
-use crate::wire::Structure;
 use serde::{Deserialize, Serialize, de};
 
 use crate::{
     Error, Result,
     message::Type,
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, Str, Type as VariantType},
+    wire::{ObjectPath, Str, Structure, Type as VariantType},
 };
 
 mod builder;

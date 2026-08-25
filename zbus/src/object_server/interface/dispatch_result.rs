@@ -1,9 +1,8 @@
 use std::{future::Future, pin::Pin};
 
-use crate::wire::DynamicType;
 use zbus::message::Flags;
 
-use crate::{Connection, Result, fdo, message::Message};
+use crate::{Connection, Result, fdo, message::Message, wire::DynamicType};
 use tracing::trace;
 
 /// A helper type returned by [`Interface`](`crate::object_server::Interface`) callbacks.

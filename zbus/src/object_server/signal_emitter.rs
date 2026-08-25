@@ -1,6 +1,8 @@
-use crate::names::{BusName, InterfaceName, MemberName};
-
-use crate::{Connection, Error, Result, wire::ObjectPath};
+use crate::{
+    Connection, Error, Result,
+    names::{BusName, InterfaceName, MemberName},
+    wire::ObjectPath,
+};
 
 /// A signal emitter.
 ///

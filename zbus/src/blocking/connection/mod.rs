@@ -1,9 +1,5 @@
 //! Blocking connection API.
 
-use crate::{
-    names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
-    wire::ObjectPath,
-};
 use enumflags2::BitFlags;
 use event_listener::EventListener;
 use std::{io, ops::Deref, sync::Arc};
@@ -13,7 +9,9 @@ use crate::{
     blocking::ObjectServer,
     fdo::{ConnectionCredentials, RequestNameFlags, RequestNameReply},
     message::Message,
+    names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     utils::block_on,
+    wire::ObjectPath,
 };
 
 mod builder;

@@ -7,17 +7,14 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
-    wire::{Endian, Signature, serialized},
-};
 use enumflags2::BitFlags;
 
 use crate::{
     Error, Result,
     message::{EndianSig, Fields, Flags, Header, Message, PrimaryHeader, Sequence, Type},
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
     utils::padding_for_8_bytes,
-    wire::{DynamicType, ObjectPath, serialized::Context},
+    wire::{DynamicType, Endian, ObjectPath, Signature, serialized, serialized::Context},
 };
 
 use crate::message::header::MAX_MESSAGE_SIZE;

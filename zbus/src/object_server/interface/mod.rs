@@ -12,10 +12,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    names::{InterfaceName, MemberName},
-    wire::{OwnedValue, Value},
-};
 use async_trait::async_trait;
 
 use crate::{
@@ -23,7 +19,9 @@ use crate::{
     async_lock::RwLock,
     fdo,
     message::{self, Header, Message},
+    names::{InterfaceName, MemberName},
     object_server::SignalEmitter,
+    wire::{OwnedValue, Value},
 };
 
 /// This trait is used to dispatch messages to an interface instance.

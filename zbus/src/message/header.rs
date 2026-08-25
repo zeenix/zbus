@@ -8,14 +8,14 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
+    Error,
+    message::Fields,
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
     wire::{
         Endian, ObjectPath, Signature, Type as VariantType,
         serialized::{self, Context},
     },
 };
-
-use crate::{Error, message::Fields};
 
 pub(crate) const PRIMARY_HEADER_SIZE: usize = 12;
 pub(crate) const MIN_MESSAGE_SIZE: usize = PRIMARY_HEADER_SIZE + 4;

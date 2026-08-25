@@ -3,15 +3,15 @@
 //! The D-Bus specification defines the message bus messages and some standard interfaces that may
 //! be useful across various D-Bus applications. This module provides their proxy.
 
-use crate::{
-    names::{BusName, OwnedUniqueName},
-    wire::{OwnedValue, Type, as_value::optional},
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::Result;
-use crate::proxy;
+use crate::{
+    names::{BusName, OwnedUniqueName},
+    proxy,
+    wire::{OwnedValue, Type, as_value::optional},
+};
 
 /// Proxy for the [`org.freedesktop.DBus.Debug.Stats`][link] interface.
 ///

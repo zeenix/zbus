@@ -31,8 +31,6 @@ use std::os::unix::net::UnixStream as AsyncIoUnixStream;
 #[cfg(all(windows, feature = "async-io"))]
 use uds_windows::UnixStream as AsyncIoUnixStream;
 
-use crate::wire::ObjectPath;
-
 #[cfg(feature = "bus-impl")]
 use crate::MessageStream;
 use crate::{
@@ -42,6 +40,7 @@ use crate::{
     message::Message,
     names::{InterfaceName, WellKnownName},
     object_server::{ArcInterface, Interface},
+    wire::ObjectPath,
 };
 
 use super::{

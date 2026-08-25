@@ -1,9 +1,5 @@
 //! The client-side proxy API.
 
-use crate::{
-    names::{BusName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, OwnedValue, Value},
-};
 use enumflags2::BitFlags;
 use futures_lite::StreamExt;
 use std::{fmt, ops::Deref};
@@ -12,8 +8,10 @@ use crate::{
     Error, Result,
     blocking::Connection,
     message::Message,
+    names::{BusName, InterfaceName, MemberName, UniqueName},
     proxy::{Defaults, MethodFlags},
     utils::block_on,
+    wire::{ObjectPath, OwnedValue, Value},
 };
 
 use crate::fdo;

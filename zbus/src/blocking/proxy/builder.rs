@@ -1,9 +1,11 @@
 use crate::{
+    Error, Result,
+    blocking::Connection,
     names::{BusName, InterfaceName},
+    proxy::CacheProperties,
+    utils::block_on,
     wire::ObjectPath,
 };
-
-use crate::{Error, Result, blocking::Connection, proxy::CacheProperties, utils::block_on};
 
 pub use crate::proxy::Defaults;
 

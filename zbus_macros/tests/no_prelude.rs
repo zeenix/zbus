@@ -2,9 +2,10 @@
 #![allow(dead_code)]
 
 use ::serde::{Deserialize, Serialize};
-use ::zbus::wire::Type;
-
-use ::zbus::wire::as_value::{self, optional};
+use ::zbus::wire::{
+    Type,
+    as_value::{self, optional},
+};
 
 #[derive(Type)]
 struct FooF(f64);

@@ -3,17 +3,19 @@
 //! The D-Bus specification defines the message bus messages and some standard interfaces that may
 //! be useful across various D-Bus applications. This module provides their proxy.
 
-use crate::{
-    names::{InterfaceName, OwnedInterfaceName},
-    wire::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
-};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
 };
 
 use super::{Error, Result};
-use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
+use crate::{
+    Connection, ObjectServer, interface,
+    message::Header,
+    names::{InterfaceName, OwnedInterfaceName},
+    object_server::SignalEmitter,
+    wire::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
+};
 
 /// The type returned by the [`ObjectManagerProxy::get_managed_objects`] method.
 pub type ManagedObjects =
