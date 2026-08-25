@@ -6,11 +6,12 @@ use core::{
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{
-    Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName, unique_name,
-    utils::impl_str_basic, well_known_name,
+    Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName,
+    utils::impl_str_basic,
 };
 use serde::{Deserialize, Serialize, de};
 use zvariant::{NoneValue, OwnedValue, Str, Type, Value};
+use zvariant_utils::names::{self, BusNameKind};
 
 /// String that identifies a [bus name].
 ///
@@ -211,12 +212,9 @@ impl<'s> TryFrom<Str<'s>> for BusName<'s> {
     type Error = Error;
 
     fn try_from(value: Str<'s>) -> Result<Self> {
-        if unique_name::validate_bytes(value.as_bytes()).is_ok() {
-            Ok(BusName::Unique(UniqueName(value)))
-        } else if well_known_name::validate_bytes(value.as_bytes()).is_ok() {
-            Ok(BusName::WellKnown(WellKnownName(value)))
-        } else {
-            Err(Error::InvalidName(INVALID_BUS_NAME_ERROR))
+        match names::validate_bus_name(value.as_bytes()).map_err(Error::InvalidName)? {
+            BusNameKind::Unique => Ok(BusName::Unique(UniqueName(value))),
+            BusNameKind::WellKnown => Ok(BusName::WellKnown(WellKnownName(value))),
         }
     }
 }
@@ -544,6 +542,3 @@ impl NoneValue for OwnedBusName {
         BusName::null_value()
     }
 }
-
-const INVALID_BUS_NAME_ERROR: &str = "Invalid bus name. \
-    See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus";

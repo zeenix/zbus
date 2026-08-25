@@ -2215,8 +2215,8 @@ version = "4.3.4"
 dependencies = [
  "codspeed-criterion-compat",
  "serde",
- "winnow 1.0.4",
  "zvariant",
+ "zvariant_utils",
 ]
 
 [[package]]

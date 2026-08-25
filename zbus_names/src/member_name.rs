@@ -1,4 +1,4 @@
-use crate::{Error, Result, utils::define_name_type_impls};
+use crate::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -36,40 +36,5 @@ pub struct OwnedMemberName(#[serde(borrow)] MemberName<'static>);
 define_name_type_impls! {
     name: MemberName,
     owned: OwnedMemberName,
-    validate: validate,
-}
-
-fn validate(name: &str) -> Result<()> {
-    validate_bytes(name.as_bytes()).map_err(|_| {
-        Error::InvalidName(
-            "Invalid member name. See \
-            https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member",
-        )
-    })
-}
-
-pub(crate) fn validate_bytes(bytes: &[u8]) -> std::result::Result<(), ()> {
-    use winnow::{
-        Parser,
-        stream::AsChar,
-        token::{one_of, take_while},
-    };
-    // Rules
-    //
-    // * Only ASCII alphanumeric or `_`.
-    // * Must not begin with a digit.
-    // * Must contain at least 1 character.
-    // * <= 255 characters.
-    let first_element_char = one_of((AsChar::is_alpha, b'_'));
-    let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_'));
-    let mut member_name = (first_element_char, subsequent_element_chars);
-
-    member_name.parse(bytes).map_err(|_| ()).and_then(|_| {
-        // Least likely scenario so we check this last.
-        if bytes.len() > 255 {
-            return Err(());
-        }
-
-        Ok(())
-    })
+    validate: validate_member_name,
 }

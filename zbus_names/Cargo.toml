@@ -16,9 +16,9 @@ readme = "README.md"
 zvariant = { path = "../zvariant", features = [
     "enumflags2",
 ], version = "5.15.0" }
+zvariant_utils = { path = "../zvariant_utils", version = "4.3.0" }
 
 serde.workspace = true
-winnow.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

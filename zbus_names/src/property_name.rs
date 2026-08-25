@@ -1,4 +1,4 @@
-use crate::{Error, Result, utils::define_name_type_impls};
+use crate::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -31,19 +31,5 @@ pub struct OwnedPropertyName(#[serde(borrow)] PropertyName<'static>);
 define_name_type_impls! {
     name: PropertyName,
     owned: OwnedPropertyName,
-    validate: ensure_correct_property_name,
-}
-
-fn ensure_correct_property_name(name: &str) -> Result<()> {
-    if name.is_empty() {
-        return Err(Error::InvalidName(
-            "Invalid property name. It has to be at least 1 character long.",
-        ));
-    } else if name.len() > 255 {
-        return Err(Error::InvalidName(
-            "Invalid property name. It can not be longer than 255 characters.",
-        ));
-    }
-
-    Ok(())
+    validate: validate_property_name,
 }

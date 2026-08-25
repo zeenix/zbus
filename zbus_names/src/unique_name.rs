@@ -1,4 +1,4 @@
-use crate::{Error, Result, utils::define_name_type_impls};
+use crate::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -35,45 +35,7 @@ pub struct OwnedUniqueName(#[serde(borrow)] UniqueName<'static>);
 define_name_type_impls! {
     name: UniqueName,
     owned: OwnedUniqueName,
-    validate: validate,
-}
-
-fn validate(name: &str) -> Result<()> {
-    validate_bytes(name.as_bytes()).map_err(|_| {
-        Error::InvalidName(
-            "Invalid unique name. \
-            See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus"
-        )
-    })
-}
-
-pub(crate) fn validate_bytes(bytes: &[u8]) -> std::result::Result<(), ()> {
-    use winnow::{
-        Parser,
-        combinator::{alt, separated},
-        stream::AsChar,
-        token::take_while,
-    };
-    // Rules
-    //
-    // * Only ASCII alphanumeric, `_` or '-'
-    // * Must begin with a `:`.
-    // * Must contain at least one `.`.
-    // * Each element must be 1 character (so name must be minimum 4 characters long).
-    // * <= 255 characters.
-    let element = take_while::<_, _, ()>(1.., (AsChar::is_alphanum, b'_', b'-'));
-    let peer_name = (b':', (separated(2.., element, b'.'))).map(|_: (_, ())| ());
-    let bus_name = b"org.freedesktop.DBus".map(|_| ());
-    let mut unique_name = alt((bus_name, peer_name));
-
-    unique_name.parse(bytes).map_err(|_| ()).and_then(|_: ()| {
-        // Least likely scenario so we check this last.
-        if bytes.len() > 255 {
-            return Err(());
-        }
-
-        Ok(())
-    })
+    validate: validate_unique_name,
 }
 
 #[cfg(test)]

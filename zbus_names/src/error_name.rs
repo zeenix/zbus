@@ -1,4 +1,4 @@
-use crate::{Error, Result, utils::define_name_type_impls};
+use crate::utils::define_name_type_impls;
 use serde::Serialize;
 use zvariant::{Str, Type};
 
@@ -40,15 +40,5 @@ pub struct OwnedErrorName(#[serde(borrow)] ErrorName<'static>);
 define_name_type_impls! {
     name: ErrorName,
     owned: OwnedErrorName,
-    validate: validate,
-}
-
-fn validate(name: &str) -> Result<()> {
-    // Error names follow the same rules as interface names.
-    crate::interface_name::validate_bytes(name.as_bytes()).map_err(|_| {
-        Error::InvalidName(
-            "Invalid error name. See \
-            https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error",
-        )
-    })
+    validate: validate_error_name,
 }
