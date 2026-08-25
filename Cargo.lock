@@ -2351,7 +2351,6 @@ dependencies = [
  "time",
  "url",
  "uuid",
- "winnow 1.0.4",
  "zcheapstr",
  "zvariant_derive",
  "zvariant_utils",

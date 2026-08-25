@@ -209,7 +209,6 @@ version = "5.15.0"
 dependencies = [
  "endi",
  "serde",
- "winnow 1.0.3",
  "zcheapstr",
  "zvariant_derive",
  "zvariant_utils",

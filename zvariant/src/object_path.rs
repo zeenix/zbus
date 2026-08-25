@@ -6,6 +6,7 @@ use serde::{
 use std::borrow::{Borrow, Cow};
 
 use crate::{Basic, Error, Result, Str, Type};
+use zvariant_utils::object_path;
 
 /// String that identifies objects at a given destination on the D-Bus bus.
 ///
@@ -246,20 +247,7 @@ impl<'de> Visitor<'de> for ObjectPathVisitor {
 }
 
 fn validate(path: &[u8]) -> Result<()> {
-    use winnow::{Parser, combinator::separated, stream::AsChar, token::take_while};
-    // Rules
-    //
-    // * At least 1 character.
-    // * First character must be `/`
-    // * No trailing `/`
-    // * No `//`
-    // * Only ASCII alphanumeric, `_` or '/'
-
-    let allowed_chars = (AsChar::is_alphanum, b'_');
-    let name = take_while::<_, _, ()>(1.., allowed_chars);
-    let mut full_path = (b'/', separated(0.., name, b'/')).map(|_: (u8, ())| ());
-
-    full_path.parse(path).map_err(|_| Error::InvalidObjectPath)
+    object_path::validate(path).map_err(|_| Error::InvalidObjectPath)
 }
 
 /// Owned [`ObjectPath`](struct.ObjectPath.html)

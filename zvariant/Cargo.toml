@@ -20,11 +20,10 @@ camino = ["dep:camino"]
 
 [dependencies]
 zvariant_derive = { path = "../zvariant_derive", version = "5.15.0" }
-zvariant_utils = { path = "../zvariant_utils", version = "4.2.0" }
+zvariant_utils = { path = "../zvariant_utils", version = "4.3.0" }
 zcheapstr.workspace = true
 endi.workspace = true
 serde.workspace = true
-winnow.workspace = true
 
 # Optional dependencies
 arrayvec = { workspace = true, optional = true }
