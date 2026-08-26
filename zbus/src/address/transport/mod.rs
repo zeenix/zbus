@@ -104,10 +104,10 @@ impl Transport {
                     move || -> Result<_> {
                         #[cfg(unix)]
                         let stream = UnixStream::connect_addr(&addr)
-                            .map_err(|e| Error::Connection(Arc::new(e), address))?;
+                            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address)))?;
                         #[cfg(windows)]
                         let stream = UnixStream::connect(addr)
-                            .map_err(|e| Error::Connection(Arc::new(e), address))?;
+                            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address)))?;
                         stream.set_nonblocking(true)?;
 
                         Ok(stream)
@@ -293,7 +293,7 @@ fn tcp_async_to_split(stream: Async<std::net::TcpStream>) -> Result<BoxedSplit> 
 #[cfg(feature = "vsock")]
 fn vsock_connect_async_io(addr: &Vsock, address: &Address) -> Result<Stream> {
     let stream = vsock::VsockStream::connect_with_cid_port(addr.cid(), addr.port())
-        .map_err(|e| Error::Connection(Arc::new(e), address.clone()))?;
+        .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))?;
     Async::new(stream)
         .map(|s| Stream::Vsock(s.into()))
         .map_err(Into::into)
@@ -304,7 +304,7 @@ async fn vsock_connect_tokio(addr: &Vsock, address: &Address) -> Result<Stream> 
     tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(addr.cid(), addr.port()))
         .await
         .map(|s| Stream::Vsock(s.into()))
-        .map_err(|e| Error::Connection(Arc::new(e), address.clone()))
+        .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))
 }
 
 fn decode_hex(c: char) -> Result<u8> {

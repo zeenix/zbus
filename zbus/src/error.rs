@@ -94,8 +94,12 @@ pub enum Error {
     InterfaceExists(InterfaceName<'static>, ObjectPath<'static>),
     /// Failed to connect to the D-Bus server at the given address.
     #[cfg(feature = "comms")]
-    Connection(Arc<io::Error>, Address),
+    Connection(Arc<io::Error>, Box<Address>),
 }
+
+// The wire (de)serializers return this type by value out of deeply recursive calls, so its size
+// is on a hot path.
+const _: () = assert!(size_of::<Error>() <= 64);
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {

@@ -183,7 +183,7 @@ fn describe(error: &Error) -> String {
 `?` keeps working everywhere: a function that returned `zvariant::Result<T>` now returns
 `zbus::Result<T>`, and the conversion that used to happen has become an identity.
 
-Four details that a `match` or a log line can notice:
+Five details that a `match` or a log line can notice:
 
 * `zvariant::Error::Message(s)` — what serde's `Error::custom` produced — is now
   `zbus::Error::Failure(s)`, which is where zbus already collected such errors.
@@ -193,6 +193,9 @@ Four details that a `match` or a log line can notice:
 * `Error::MissingFramingOffset` is gone with the rest of GVariant, and so is
   `Error::IncompatibleFormat`: with a single wire format left, nothing can be incompatible with
   it.
+* `Error::Connection` carries a `Box<Address>` where zbus 5 inlined the `Address`. `Display` is
+  unchanged, but `Error::Connection(_, addr)` now binds a box; dereference it where you need the
+  `Address` itself.
 * `Error::MethodError`, `Error::FDO` and `Error::Connection` only exist with `comms` enabled.
   A `match` in a wire-only crate cannot name them. `Error` is `#[non_exhaustive]`, so the
   wildcard arm you already need covers them.
