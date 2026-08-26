@@ -37,6 +37,7 @@ mod doctests {
     doc_comment::doctest!("../../book/src/service.md");
     #[cfg(feature = "blocking-api")]
     doc_comment::doctest!("../../book/src/blocking.md");
+    doc_comment::doctest!("../../book/src/upgrading-to-6.md");
     doc_comment::doctest!("../../book/src/faq.md");
 }
 

@@ -15,30 +15,37 @@ and receive messages over a connection, as well as API to interact with peers th
 concepts like method calls, signals and properties[^high-level-api]. Thanks to the power of Rust
 macros, zbus is able to make interacting with D-Bus very easy.
 
-zbus project provides two crates:
+The crate has two halves.
 
-## zvariant
+## The wire format
 
-D-Bus defines a marshalling format for its messages. The [zvariant] crate provides a [serde]-based
-[API] to serialize/deserialize Rust data types to/from this format. Outside of D-Bus context, a
-modified form of this format, [GVariant](https://developer.gnome.org/documentation/specifications/gvariant-specification-1.0.html)
-is very commonly used for efficient storage of arbitrary data and is supported by the separate
-[zgvariant](https://crates.io/crates/zgvariant) crate.
+D-Bus defines a marshalling format for its messages. The `zbus::wire` module provides a
+[serde]-based [API] to serialize and deserialize Rust data types to and from that format. It does
+not need the rest of zbus, so if the format is all you are after — no connection, no proxies —
+depend on zbus with its default features disabled:
 
-## zbus
+```toml
+[dependencies]
+zbus = { version = "6", default-features = false }
+```
 
-The [zbus crate] provides the main API you will use to interact with D-Bus from Rust. It takes care
-of the establishment of a connection, the creation, sending and receiving of different kind of D-Bus
-messages (method calls, signals etc) for you.
+Outside of a D-Bus context, a modified form of this format, [GVariant], is commonly used for
+efficient storage of arbitrary data; the separate [zgvariant] crate implements it.
+
+## The D-Bus API
+
+Everything else — connections, messages, proxies, the object server — is the API you will use to
+interact with D-Bus from Rust. It takes care of the establishment of a connection, the creation,
+sending and receiving of different kind of D-Bus messages (method calls, signals etc) for you.
 
 [zbus]: https://github.com/z-galaxy/zbus
 [Rust]: https://www.rust-lang.org/
 [D-Bus]: https://dbus.freedesktop.org/
 [what is D-Bus?]: https://www.freedesktop.org/wiki/Software/dbus/#index1h1
 [serde]: https://serde.rs/
-[zvariant]: https://crates.io/crates/zvariant
-[zbus crate]: https://crates.io/crates/zbus
-[API]: https://docs.rs/zvariant/
+[API]: https://docs.rs/zbus/latest/zbus/wire/index.html
+[GVariant]: https://developer.gnome.org/documentation/specifications/gvariant-specification-1.0.html
+[zgvariant]: https://crates.io/crates/zgvariant
 
 [^outdated]: D-Bus is ~15y old, unfortunately many documents out there are
     sometime aging or misleading.

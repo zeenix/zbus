@@ -10,7 +10,7 @@ a struct, you might find yourself wanting to use a struct as a dictionary.
 
 It's possible to do so, using either of the following methods:
 
-1. Using the `SerializeDict` and `DeserializeDict` derive macros from `zvariant`. This is the best
+1. Using the `SerializeDict` and `DeserializeDict` derive macros from `zbus::wire`. This is the best
   option for simple cases.
 2. Using the `Serialize` and `Deserialize` derive macros from the `serde` crate. This is the best
   option for more complex cases, where you need more fine-grained control over the serialization
@@ -26,10 +26,10 @@ use zbus::{
 
 #[derive(DeserializeDict, SerializeDict, Type)]
 // `Type` treats `dict` is an alias for `a{sv}`.
-#[zvariant(signature = "dict")]
+#[zbus(signature = "dict")]
 pub struct Dictionary {
     field1: u16,
-    #[zvariant(rename = "another-name")]
+    #[zbus(rename = "another-name")]
     field2: i64,
     optional_field: Option<String>,
 }
@@ -66,7 +66,7 @@ use zbus::wire::{Type, OwnedValue, as_value::{self, optional}};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type)]
-#[zvariant(signature = "dict")]
+#[zbus(signature = "dict")]
 pub struct Dictionary {
     #[serde(with = "as_value")]
     field1: u16,
@@ -83,8 +83,8 @@ pub struct Dictionary {
 }
 ```
 
-Since the fields have to be transformed from/into `zvariant::Value`, make sure to use the `with`
-attribute with the appropriate helper module from `zvariant::as_value` module.
+Since the fields have to be transformed from/into `zbus::wire::Value`, make sure to use the
+`with` attribute with the appropriate helper module from the `zbus::wire::as_value` module.
 
 Moreover, since D-Bus does not have a concept of nullable types, it's important to ensure that
 `skip_serializing_if` and `default` attributes are used for optional fields. Fortunately, you can
@@ -95,7 +95,7 @@ make use of the `default` container attribute if your struct can implemented the
 # use serde::{Deserialize, Serialize};
 #
 #[derive(Default, Deserialize, Serialize, Type)]
-#[zvariant(signature = "dict")]
+#[zbus(signature = "dict")]
 #[serde(default)]
 pub struct Dictionary {
     #[serde(with = "as_value")]
@@ -120,7 +120,7 @@ use zbus::wire::{DeserializeDict, SerializeDict, Type};
 
 
 #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default, Clone)]
-#[zvariant(signature = "a{sv}", rename_all = "PascalCase")]
+#[zbus(signature = "a{sv}", rename_all = "PascalCase")]
 struct Adapter {
     address: Option<String>,
     name: Option<String>,
@@ -128,19 +128,19 @@ struct Adapter {
 }
 
 #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default, Clone)]
-#[zvariant(signature = "a{sv}", rename_all = "PascalCase")]
+#[zbus(signature = "a{sv}", rename_all = "PascalCase")]
 struct Media {
     supported_features: Vec<String>,
-    #[zvariant(rename = "SupportedUUIDs")]
+    #[zbus(rename = "SupportedUUIDs")]
     supported_uuids: Vec<String>,
 }
 
 #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default)]
-#[zvariant(signature = "a{sa{sv}}")]
+#[zbus(signature = "a{sa{sv}}")]
 struct Interfaces {
-    #[zvariant(rename = "org.bluez.Adapter1")]
+    #[zbus(rename = "org.bluez.Adapter1")]
     adapter: Option<Adapter>,
-    #[zvariant(rename = "org.bluez.Media1")]
+    #[zbus(rename = "org.bluez.Media1")]
     media: Media,
 }
 ```
@@ -214,7 +214,7 @@ However, you can disabling caching for specific properties:
 - Use `proxy::Builder` to build your proxy instance and use [`proxy::Builder::uncached_properties`]
   method to list all properties you wish to disable caching for.
 
-- In order to disable caching for either type of proxy use the [`proxy::Builder::cache_properites`]
+- In order to disable caching for either type of proxy use the [`proxy::Builder::cache_properties`]
   method.
 
 ## How do I use `Option<T>` with zbus?
@@ -230,15 +230,15 @@ often used as `None` for strings and string-based types. Note however that this 
 work for all types, for example `bool`.
 
 Since this is the most widely used solution in the D-Bus world and is even used by the [D-Bus
-standard interfaces][dsi], `zvariant` provides a custom type for this, [`Optional<T>`] that makes
-it super easy to simulate a nullable type, especially if the contained type implements the `Default`
-trait.
+standard interfaces][dsi], `zbus::wire` provides a custom type for this, [`Optional<T>`] that
+makes it super easy to simulate a nullable type, especially if the contained type implements the
+`Default` trait.
 
 ### 2. Encoding as an array (`a?`)
 
 The idea here is to represent `None` case with 0 elements (empty array) and the `Some` case with 1
-element. `zvariant` and `zbus` provide `option-as-array` Cargo feature, which when enabled, allows
-the (de)serialization of `Option<T>`. Unlike the previous solution, this solution can be used with
+element. zbus provides an `option-as-array` Cargo feature, which when enabled, allows the
+(de)serialization of `Option<T>`. Unlike the previous solution, this solution can be used with
 all types. However, it does come with some caveats and limitations:
 
   1. Since the D-Bus type signature does not provide any hints about the array being in fact a
@@ -249,7 +249,7 @@ all types. However, it does come with some caveats and limitations:
     methods.
   3. Both the sender and receiver must agree on use of this encoding. If the sender sends `T`, the
     receiver will not be able to decode it successfully as `Option<T>` and vice versa.
-  4. While `zvariant::Value` can be converted into `Option<T>`, the reverse is currently not
+  4. While `zbus::wire::Value` can be converted into `Option<T>`, the reverse is currently not
     possible.
 
 Due to these limitations, `option-as-array` feature is not enabled by default and must be explicitly
@@ -259,10 +259,11 @@ enabled.
 
 ## How do enums work?
 
-By default, `zvariant` encodes an unit-type enum as a `u32`, denoting the variant index. Other enums
-are encoded as a structure whose first field is the variant index and the second one are the
+By default, `zbus::wire` encodes an unit-type enum as a `u32`, denoting the variant index. Other
+enums are encoded as a structure whose first field is the variant index and the second one are the
 variant's field(s). The only caveat here is that all variants must have the same number and types
-of fields. Names of fields don't matter though. You can make use of [`Value`] or [`OwnedValue`] if you want to encode different data in different fields. Here is a simple example:
+of fields. Names of fields don't matter though. You can make use of [`Value`] or [`OwnedValue`] if
+you want to encode different data in different fields. Here is a simple example:
 
 ```rust,noplayground
 use zbus::wire::{serialized::Context, to_bytes, Type, LE};
@@ -286,7 +287,8 @@ let decoded: Enum = encoded.deserialize().unwrap().0;
 assert_eq!(decoded, e);
 ```
 
-Enum encoding can be adjusted by using the [`serde_repr`] crate and by annotating the representation of the enum with `repr`:
+Enum encoding can be adjusted by using the [`serde_repr`] crate and by annotating the
+representation of the enum with `repr`:
 
 ```rust,noplayground
 use zbus::wire::{serialized::Context, to_bytes, Type, LE};
@@ -313,7 +315,7 @@ use zbus::wire::{serialized::Context, to_bytes, Type, LE};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]
-#[zvariant(signature = "s")]
+#[zbus(signature = "s")]
 enum StrEnum {
     Variant1,
     Variant2,
@@ -331,17 +333,16 @@ let s: &str = encoded.deserialize().unwrap().0;
 assert_eq!(s, "Variant2");
 ```
 
-[`proxy::Builder::uncached_properties`]: https://docs.rs/zbus/5/zbus/proxy/struct.Builder.html#method.uncached_properties
-[`proxy::Builder::cache_properites`]: https://docs.rs/zbus/5/zbus/proxy/struct.Builder.html#method.cache_properties
-[`proxy`]: https://docs.rs/zbus/5/zbus/attr.proxy.html
+[`proxy::Builder::uncached_properties`]: https://docs.rs/zbus/latest/zbus/proxy/struct.Builder.html#method.uncached_properties
+[`proxy::Builder::cache_properties`]: https://docs.rs/zbus/latest/zbus/proxy/struct.Builder.html#method.cache_properties
+[`proxy`]: https://docs.rs/zbus/latest/zbus/attr.proxy.html
 [tctiog]: https://github.com/tokio-rs/tokio/issues/2201
-[`Type`]: https://docs.rs/zvariant/5/zvariant/derive.Type.html
-[`MessageStream`]: https://docs.rs/zbus/5/zbus/struct.MessageStream.html
+[`MessageStream`]: https://docs.rs/zbus/latest/zbus/struct.MessageStream.html
 [nonull]: https://gitlab.freedesktop.org/dbus/dbus/-/issues/25
 [dsi]: http://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces
-[`Optional<T>`]: https://docs.rs/zvariant/5/zvariant/struct.Optional.html
+[`Optional<T>`]: https://docs.rs/zbus/latest/zbus/wire/struct.Optional.html
 [`d-feet`]: https://wiki.gnome.org/Apps/DFeet
 [specialization]: https://rust-lang.github.io/rfcs/1210-impl-specialization.html
-[`Value`]: https://docs.rs/zvariant/5/zvariant/enum.Value.html
-[`OwnedValue`]: https://docs.rs/zvariant/5/zvariant/struct.OwnedValue.html
+[`Value`]: https://docs.rs/zbus/latest/zbus/wire/enum.Value.html
+[`OwnedValue`]: https://docs.rs/zbus/latest/zbus/wire/struct.OwnedValue.html
 [`serde_repr`]: https://crates.io/crates/serde_repr
