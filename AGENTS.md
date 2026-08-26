@@ -18,8 +18,11 @@ cargo test --all-features
 
 # Test individual crates
 cargo test -p zbus
-cargo test -p zvariant
-cargo test -p zbus_names
+cargo test -p zbus_macros
+cargo test -p zbus_xml
+
+# Test the wire-format-only build (the D-Bus API, i.e. the `comms` feature, off)
+cargo test -p zbus --no-default-features
 
 # Test with specific features
 cargo test --no-default-features --features tokio
@@ -48,7 +51,8 @@ cargo check --target x86_64-unknown-freebsd
 ```bash
 # Build docs for individual crates
 cargo doc --all-features -p zbus
-cargo doc --all-features -p zvariant
+cargo doc --no-default-features -p zbus
+cargo doc --all-features -p zbus_xml
 
 # Build the mdbook (in book/ directory)
 cd book && mdbook build
@@ -61,18 +65,23 @@ cargo bench
 
 # Fuzz testing (requires nightly and cargo-fuzz)
 cargo install cargo-fuzz
-cargo fuzz run --fuzz-dir zvariant/fuzz dbus
+cargo fuzz run --fuzz-dir zbus/fuzz dbus
 ```
 
 ## Workspace Architecture
 
 ### Core Crates
-- **zbus**: Main D-Bus API (connection, proxy, object server)
-- **zvariant**: D-Bus serialization (GVariant lives in the separate zgvariant crate)
-- **zbus_names**: Type-safe D-Bus name handling
-- **zbus_macros**: Procedural macros for `#[interface]` and `#[proxy]`
+- **zbus**: Everything a user sees. The D-Bus API (connection, proxy, object server) sits behind
+  the `comms` feature; the `wire` module (D-Bus wire format) and the `names` module (D-Bus name
+  types) are always compiled
+- **zbus_macros**: Procedural macros: `#[interface]`, `#[proxy]`, `#[derive(DBusError)]` and the
+  wire derives (`Type`, `Value`, `OwnedValue`, `SerializeDict`, `DeserializeDict`, `signature!`)
+- **zvariant_utils**: Signature parser, D-Bus name validators and the derive codegen shared by
+  zbus_macros and the sibling zgvariant project
 - **zbus_xml**: D-Bus introspection XML handling
 - **zbus_xmlgen**: Code generation from D-Bus interface XML
+
+GVariant is not supported; it lives in the separate zgvariant crate.
 
 ### Key Design Patterns
 
@@ -94,16 +103,22 @@ cargo fuzz run --fuzz-dir zvariant/fuzz dbus
 
 ```
 zbus/src/
-├── connection/          # Core connection handling & handshake
+├── wire/               # D-Bus wire format (de)serialization; always compiled
+├── names/              # D-Bus bus name types; always compiled
+├── zvariant.rs         # Deprecated aliases for `wire` (removed in 7.0)
+├── error.rs            # The single `Error`/`Result` for all of the above
+├── connection/         # Core connection handling & handshake
 ├── proxy/              # Client-side proxy objects with #[proxy] macro
-├── object_server/      # Service-side interface implementation  
+├── object_server/      # Service-side interface implementation
 ├── message/            # D-Bus message serialization/parsing
 ├── address/            # Transport layer abstraction
-├── fdo/               # Standard D-Bus interfaces (Peer, Properties, etc.)
-└── blocking/          # Sync wrappers around async API
+├── fdo/                # Standard D-Bus interfaces (Peer, Properties, etc.)
+└── blocking/           # Sync wrappers around async API
 ```
 
-**Message Flow**: Connection ↔ Message ↔ zvariant serialization ↔ Transport
+Everything below `error.rs` in that list is behind the `comms` feature.
+
+**Message Flow**: Connection ↔ Message ↔ `zbus::wire` serialization ↔ Transport
 
 **Service Pattern**: Use `#[interface]` macro on trait impl, register with `ObjectServer`
 
@@ -130,6 +145,7 @@ zbus/src/
 - `zbus/src/connection/mod.rs`: Core connection abstraction
 - `zbus/src/proxy/mod.rs`: Client proxy generation
 - `zbus/src/object_server/mod.rs`: Service object management
-- `zvariant/src/lib.rs`: Serialization system entry point
+- `zbus/src/wire/mod.rs`: Serialization system entry point
+- `zbus/src/error.rs`: The unified error type
 - `zbus_macros/src/iface.rs`: `#[interface]` macro implementation
 - `zbus_macros/src/proxy.rs`: `#[proxy]` macro implementation
