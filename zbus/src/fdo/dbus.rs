@@ -203,6 +203,13 @@ impl ConnectionCredentials {
         self.process_fd.as_ref()
     }
 
+    /// Same as [`ConnectionCredentials::process_fd`], but consumes `self` and returns the owned
+    /// file descriptor.
+    #[cfg(unix)]
+    pub fn into_process_fd(self) -> Option<OwnedFd> {
+        self.process_fd
+    }
+
     /// The numeric process ID, on platforms that have this concept. On Unix, this is the process ID
     /// defined by POSIX.
     pub fn process_id(&self) -> Option<u32> {
