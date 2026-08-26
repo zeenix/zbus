@@ -9,7 +9,10 @@ use crate::{
 #[cfg(unix)]
 use crate::Fd;
 
-use std::{collections::HashMap, hash::BuildHasher};
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
+};
 
 macro_rules! value_try_from {
     ($kind:ident, $to:ty) => {
@@ -175,6 +178,24 @@ where
     fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
         Self::from_bits(F::Numeric::try_from(value)?)
             .map_err(|_| Error::Message("Failed to convert to bitflags".into()))
+    }
+}
+
+impl<'a, K, V> TryFrom<Value<'a>> for BTreeMap<K, V>
+where
+    K: crate::Basic + TryFrom<Value<'a>> + std::cmp::Ord,
+    V: TryFrom<Value<'a>>,
+    K::Error: Into<crate::Error>,
+    V::Error: Into<crate::Error>,
+{
+    type Error = crate::Error;
+
+    fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
+        if let Value::Dict(v) = value {
+            Self::try_from(v)
+        } else {
+            Err(crate::Error::IncorrectType)
+        }
     }
 }
 

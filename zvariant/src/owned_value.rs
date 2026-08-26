@@ -1,5 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{borrow::Borrow, collections::HashMap, hash::BuildHasher};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
+};
 
 use crate::{
     Array, Dict, NoneValue, ObjectPath, Optional, OwnedObjectPath, Signature, Str, Structure, Type,
@@ -135,6 +139,34 @@ where
 
     fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
         Self::try_from(value.0)
+    }
+}
+
+impl<'k, 'v, K, V> TryFrom<OwnedValue> for BTreeMap<K, V>
+where
+    K: crate::Basic + TryFrom<Value<'k>> + std::cmp::Ord,
+    V: TryFrom<Value<'v>>,
+    K::Error: Into<crate::Error>,
+    V::Error: Into<crate::Error>,
+{
+    type Error = crate::Error;
+
+    fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
+        if let Value::Dict(v) = value.0 {
+            Self::try_from(v)
+        } else {
+            Err(crate::Error::IncorrectType)
+        }
+    }
+}
+
+impl<K, V> From<BTreeMap<K, V>> for OwnedValue
+where
+    K: Type + Into<Value<'static>> + std::cmp::Ord,
+    V: Type + Into<Value<'static>>,
+{
+    fn from(value: BTreeMap<K, V>) -> Self {
+        Self(value.into())
     }
 }
 
