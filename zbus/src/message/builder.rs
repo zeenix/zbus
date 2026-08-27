@@ -27,7 +27,7 @@ type BuildGenericResult = ();
 
 macro_rules! dbus_context {
     ($self:ident, $n_bytes_before: expr) => {
-        Context::new_dbus($self.header.primary().endian_sig().into(), $n_bytes_before)
+        Context::new($self.header.primary().endian_sig().into(), $n_bytes_before)
     };
 }
 

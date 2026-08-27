@@ -5,7 +5,7 @@ use zbus::wire::Fd;
 
 #[test]
 fn test_serialized_size() {
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let l = serialized_size(ctxt, &()).unwrap();
     assert_eq!(*l, 0);
 

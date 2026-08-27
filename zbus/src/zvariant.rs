@@ -311,10 +311,6 @@ pub mod serialized {
     #[deprecated(since = "6.0.0", note = "use `zbus::wire::serialized::Data` instead")]
     pub type Data<'bytes, 'fds> = wire::serialized::Data<'bytes, 'fds>;
 
-    /// Deprecated alias of [`crate::wire::serialized::Format`].
-    #[deprecated(since = "6.0.0", note = "use `zbus::wire::serialized::Format` instead")]
-    pub type Format = wire::serialized::Format;
-
     /// Deprecated alias of [`crate::wire::serialized::Size`].
     #[deprecated(since = "6.0.0", note = "use `zbus::wire::serialized::Size` instead")]
     pub type Size = wire::serialized::Size;

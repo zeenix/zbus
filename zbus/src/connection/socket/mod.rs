@@ -192,7 +192,7 @@ pub trait ReadHalf: std::fmt::Debug + Send + Sync + 'static {
         if !already_received_fds.is_empty() {
             use crate::message::header::PRIMARY_HEADER_SIZE;
 
-            let ctxt = Context::new_dbus(endian, PRIMARY_HEADER_SIZE);
+            let ctxt = Context::new(endian, PRIMARY_HEADER_SIZE);
             let encoded_fields =
                 serialized::Data::new(&bytes[PRIMARY_HEADER_SIZE..header_len], ctxt);
             let fields: crate::message::Fields<'_> = encoded_fields.deserialize()?.0;
@@ -213,7 +213,7 @@ pub trait ReadHalf: std::fmt::Debug + Send + Sync + 'static {
             fds.extend(already_received);
         }
 
-        let ctxt = Context::new_dbus(endian, 0);
+        let ctxt = Context::new(endian, 0);
         #[cfg(unix)]
         let bytes = serialized::Data::new_fds(bytes, ctxt, fds);
         #[cfg(not(unix))]

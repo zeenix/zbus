@@ -10,7 +10,7 @@ use crate::{
     wire::{
         Basic, ObjectPath, Signature,
         de::{DeserializerCommon, ValueParseStage},
-        serialized::{Context, Format},
+        serialized::Context,
         utils::*,
     },
 };
@@ -30,7 +30,6 @@ impl<'de, 'sig, 'f, F> Deserializer<'de, 'sig, 'f, F> {
         signature: &'sig Signature,
         ctxt: Context,
     ) -> Result<Self> {
-        assert_eq!(ctxt.format(), Format::DBus);
         super::reject_maybe(signature)?;
 
         Ok(Self(DeserializerCommon {
@@ -693,7 +692,6 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
                 super::reject_maybe(&signature)?;
 
                 let ctxt = Context::new(
-                    Format::DBus,
                     self.de.0.ctxt.endian(),
                     self.de.0.ctxt.position() + value_start,
                 );

@@ -11,7 +11,7 @@ fn array_value() {
     // First a normal Rust array that is actually serialized as a struct (thank you Serde!)
     assert_eq!(<[u8; 2]>::SIGNATURE, "(yy)");
     let ay = [77u8, 88];
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &ay).unwrap();
     assert_eq!(encoded.len(), 2);
     let decoded: [u8; 2] = encoded.deserialize().unwrap().0;
@@ -24,7 +24,7 @@ fn array_value() {
     let ay = heapless::Vec::<_, 2>::from_slice(&[77u8, 88]).unwrap();
     #[cfg(all(not(feature = "arrayvec"), not(feature = "heapless")))]
     let ay = vec![77u8, 88];
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &ay).unwrap();
     assert_eq!(encoded.len(), 6);
 
@@ -138,7 +138,7 @@ fn array_value() {
         // one more top-most simple field
         "hello",
     )];
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &ar).unwrap();
     assert_eq!(encoded.len(), 78);
     #[allow(clippy::type_complexity)]

@@ -1,13 +1,9 @@
 // Test through both generic and specific API (wrt byte order)
 #[macro_export]
 macro_rules! basic_type_test {
-    ($endian:expr, $format:ident, $test_value:expr, $expected_len:expr, $expected_ty:ty, $align:literal) => {{
+    ($endian:expr, $test_value:expr, $expected_len:expr, $expected_ty:ty, $align:literal) => {{
         // Lie that we're starting at byte 1 in the overall message to test padding
-        let ctxt = zbus::wire::serialized::Context::new(
-            zbus::wire::serialized::Format::$format,
-            $endian,
-            1,
-        );
+        let ctxt = zbus::wire::serialized::Context::new($endian, 1);
         let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         let padding = zbus::wire::padding_for_n_bytes(1, $align);
 
@@ -21,11 +17,7 @@ macro_rules! basic_type_test {
         assert!(parsed == encoded.len(), "invalid parsing");
 
         // Now encode w/o padding
-        let ctxt = zbus::wire::serialized::Context::new(
-            zbus::wire::serialized::Format::$format,
-            $endian,
-            0,
-        );
+        let ctxt = zbus::wire::serialized::Context::new($endian, 0);
         let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         assert_eq!(
             encoded.len(),
@@ -35,15 +27,16 @@ macro_rules! basic_type_test {
 
         encoded
     }};
-    ($endian:expr, $format:ident, $test_value:expr, $expected_len:expr, $expected_ty:ty, $align:literal, $kind:ident, $expected_value_len:expr) => {{
-        let encoded = basic_type_test!(
-            $endian,
-            $format,
-            $test_value,
-            $expected_len,
-            $expected_ty,
-            $align
-        );
+    (
+        $endian:expr,
+        $test_value:expr,
+        $expected_len:expr,
+        $expected_ty:ty,
+        $align:literal,
+        $kind:ident,
+        $expected_value_len:expr
+    ) => {{
+        let encoded = basic_type_test!($endian, $test_value, $expected_len, $expected_ty, $align);
 
         // As Value
         let v: zbus::wire::Value<'_> = $test_value.into();
@@ -52,7 +45,7 @@ macro_rules! basic_type_test {
             <$expected_ty as zbus::wire::Basic>::SIGNATURE_STR
         );
         assert_eq!(v, zbus::wire::Value::$kind($test_value));
-        value_test!($endian, $format, v, $expected_value_len);
+        value_test!($endian, v, $expected_value_len);
 
         let v: $expected_ty = v.try_into().unwrap();
         assert_eq!(v, $test_value);
@@ -63,12 +56,8 @@ macro_rules! basic_type_test {
 
 #[macro_export]
 macro_rules! value_test {
-    ($endian:expr, $format:ident, $test_value:expr, $expected_len:expr) => {{
-        let ctxt = zbus::wire::serialized::Context::new(
-            zbus::wire::serialized::Format::$format,
-            $endian,
-            0,
-        );
+    ($endian:expr, $test_value:expr, $expected_len:expr) => {{
+        let ctxt = zbus::wire::serialized::Context::new($endian, 0);
         let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         assert_eq!(
             encoded.len(),
@@ -86,15 +75,17 @@ macro_rules! value_test {
 #[cfg(unix)]
 #[macro_export]
 macro_rules! fd_value_test {
-    ($endian:expr, $format:ident, $test_value:expr, $expected_len:expr, $align:literal, $expected_value_len:expr) => {{
+    (
+        $endian:expr,
+        $test_value:expr,
+        $expected_len:expr,
+        $align:literal,
+        $expected_value_len:expr
+    ) => {{
         use std::os::fd::AsFd;
 
         // Lie that we're starting at byte 1 in the overall message to test padding
-        let ctxt = zbus::wire::serialized::Context::new(
-            zbus::wire::serialized::Format::$format,
-            $endian,
-            1,
-        );
+        let ctxt = zbus::wire::serialized::Context::new($endian, 1);
         let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         let padding = zbus::wire::padding_for_n_bytes(1, $align);
         assert_eq!(
@@ -110,11 +101,7 @@ macro_rules! fd_value_test {
         );
 
         // Now encode w/o padding
-        let ctxt = zbus::wire::serialized::Context::new(
-            zbus::wire::serialized::Format::$format,
-            $endian,
-            0,
-        );
+        let ctxt = zbus::wire::serialized::Context::new($endian, 0);
         let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         assert_eq!(
             encoded.len(),

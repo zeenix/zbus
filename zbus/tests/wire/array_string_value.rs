@@ -6,7 +6,7 @@ fn array_string_value() {
     use zbus::wire::{LE, serialized::Context, to_bytes};
 
     let s = ArrayString::<32>::from_str("hello world!").unwrap();
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &s).unwrap();
     assert_eq!(encoded.len(), 17);
     let decoded: ArrayString<32> = encoded.deserialize().unwrap().0;

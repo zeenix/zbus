@@ -19,7 +19,7 @@ fn dbus_deserialize_rejects_maybe_layout_signatures() {
     for s in MAYBE_SIGNATURES {
         let sig = Signature::try_from(*s).unwrap();
         let bytes = [0u8, 0, 0, 0];
-        let ctxt = Context::new_dbus(LE, 0);
+        let ctxt = Context::new(LE, 0);
         let data = Data::new(&bytes[..], ctxt);
         let res: zbus::Result<(Vec<i32>, usize)> = data.deserialize_for_signature(&sig);
         assert_maybe_rejected(res, &format!("deserialize layout {s:?}"));
@@ -33,7 +33,7 @@ fn dbus_serialize_rejects_maybe_layout_signatures() {
     }
     for s in MAYBE_SIGNATURES {
         let sig = Signature::try_from(*s).unwrap();
-        let ctxt = Context::new_dbus(LE, 0);
+        let ctxt = Context::new(LE, 0);
         assert_maybe_rejected(
             to_bytes_for_signature(ctxt, &sig, &0u8),
             &format!("serialize layout {s:?}"),
@@ -50,7 +50,7 @@ fn dbus_rejects_signature_value_carrying_maybe() {
     }
     let g = Signature::try_from("g").unwrap();
     let maybe_sig = Signature::try_from("mi").unwrap();
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
 
     assert_maybe_rejected(
         to_bytes_for_signature(ctxt, &g, &maybe_sig),
@@ -75,7 +75,7 @@ fn dbus_deserialize_rejects_variant_carrying_maybe() {
         return;
     }
     let v = Signature::try_from("v").unwrap();
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let bytes = [3u8, b'a', b'm', b'i', 0, 0, 0, 0, 0, 0, 0, 0];
     let data = Data::new(&bytes[..], ctxt);
     let res: zbus::Result<(Value<'_>, usize)> = data.deserialize_for_signature(&v);

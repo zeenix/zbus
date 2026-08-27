@@ -13,7 +13,7 @@ fn dict_value() {
     let mut map: HashMap<i64, &str> = HashMap::new();
     map.insert(1, "123");
     map.insert(2, "456");
-    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
+    let ctxt = Context::new(NATIVE_ENDIAN, 0);
     let encoded = to_bytes(ctxt, &map).unwrap();
     assert_eq!(dbg!(encoded.len()), 40);
     let decoded: HashMap<i64, &str> = encoded.deserialize().unwrap().0;
@@ -201,7 +201,7 @@ fn dict_value() {
 
 #[test]
 fn struct_with_object_path_keys() {
-    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
+    let ctxt = Context::new(NATIVE_ENDIAN, 0);
 
     #[derive(serde::Deserialize, Type, PartialEq, Debug, Default)]
     #[zvariant(signature = "a{ou}")]
@@ -224,7 +224,7 @@ fn struct_with_object_path_keys() {
 
 #[test]
 fn nested_dict_value() {
-    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
+    let ctxt = Context::new(NATIVE_ENDIAN, 0);
 
     #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default, Clone)]
     #[zvariant(signature = "a{sv}", rename_all = "PascalCase")]
@@ -377,7 +377,7 @@ fn nested_dict_value() {
 
 #[test]
 fn nested_dict_object_path_keys() {
-    let ctxt = Context::new_dbus(NATIVE_ENDIAN, 0);
+    let ctxt = Context::new(NATIVE_ENDIAN, 0);
 
     #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default)]
     #[zvariant(signature = "a{sv}", rename_all = "PascalCase")]

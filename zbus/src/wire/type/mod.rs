@@ -111,7 +111,7 @@ macro_rules! impl_type_with_repr {
 
             #[test]
             fn type_can_be_deserialized_from_encoded_type() {
-                let ctx = Context::new_dbus(LE, 0);
+                let ctx = Context::new(LE, 0);
                 let samples = $samples;
                 let _: &[Ty] = &samples;
 
@@ -124,7 +124,7 @@ macro_rules! impl_type_with_repr {
 
             #[test]
             fn repr_can_be_deserialized_from_encoded_type() {
-                let ctx = Context::new_dbus(LE, 0);
+                let ctx = Context::new(LE, 0);
                 let samples = $samples;
                 let _: &[Ty] = &samples;
 
@@ -138,7 +138,7 @@ macro_rules! impl_type_with_repr {
 
             #[test]
             fn type_can_be_deserialized_from_encoded_repr() {
-                let ctx = Context::new_dbus(LE, 0);
+                let ctx = Context::new(LE, 0);
                 let samples = $samples;
                 let _: &[Ty] = &samples;
 
@@ -152,7 +152,7 @@ macro_rules! impl_type_with_repr {
 
             #[test]
             fn encoding_of_type_and_repr_match() {
-                let ctx = Context::new_dbus(LE, 0);
+                let ctx = Context::new(LE, 0);
                 let samples = $samples;
                 let _: &[Ty] = &samples;
 

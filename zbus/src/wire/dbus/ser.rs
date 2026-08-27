@@ -10,10 +10,8 @@ use std::{
 use crate::{
     Error, Result,
     wire::{
-        Basic, ObjectPath, Signature, WriteBytes,
-        container_depths::ContainerDepths,
-        serialized::{Context, Format},
-        utils::*,
+        Basic, ObjectPath, Signature, WriteBytes, container_depths::ContainerDepths,
+        serialized::Context, utils::*,
     },
 };
 
@@ -33,7 +31,6 @@ where
         #[cfg(unix)] fds: &'f mut crate::wire::ser::FdList,
         ctxt: Context,
     ) -> Result<Self> {
-        assert_eq!(ctxt.format(), Format::DBus);
         super::reject_maybe(signature)?;
 
         Ok(Self(crate::wire::SerializerCommon {

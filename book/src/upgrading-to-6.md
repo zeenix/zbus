@@ -124,7 +124,7 @@ struct Struct<'s> {
 
 assert_eq!(Struct::SIGNATURE, "(qxs)");
 
-let ctxt = Context::new_dbus(LE, 0);
+let ctxt = Context::new(LE, 0);
 let s = Struct { field1: 42, field2: i64::MAX, field3: "hello" };
 let encoded = to_bytes(ctxt, &s).unwrap();
 let decoded: Struct<'_> = encoded.deserialize().unwrap().0;
@@ -296,8 +296,31 @@ The compatibility module is removed in zbus 7.0.
 
 ## Other changes in 6.0
 
-Three more things break in 6.0 without being a consequence of the crate merge. They reach code
+Four more things break in 6.0 without being a consequence of the crate merge. They reach code
 that never mentioned `zvariant` or `zbus_names`.
+
+### The encoding context has no format
+
+`zbus::wire` speaks one format, so `serialized::Context` no longer says which:
+
+```rust,noplayground
+use zbus::wire::{serialized::Context, to_bytes, LE};
+
+// Was `Context::new(Format::DBus, LE, 0)`.
+let ctxt = Context::new(LE, 0);
+let encoded = to_bytes(ctxt, &"hello").unwrap();
+assert_eq!(encoded.len(), 10);
+```
+
+`Context::new_dbus` is a deprecated alias of `Context::new`, removed in 7.0. `Context::format()`
+is gone, and so is the enum it returned: `zbus::wire::serialized::Format`, along with its
+`zbus::zvariant::serialized::Format` alias.
+
+Two signatures lose the argument with it. `Signature::alignment(format)` is
+`Signature::alignment_dbus()` — plus `Signature::alignment_gvariant()`, behind `zbus_utils`'s
+`gvariant` feature, for whoever needs the other rules. And `Basic::alignment(format)` is
+`Basic::alignment()`; its default body covers every type zbus can encode, so that one reaches you
+only through a direct `T::alignment(..)` call or an `impl Basic` that overrode it.
 
 ### `PropertiesProxy::set` takes a `&Value`
 
@@ -382,7 +405,7 @@ code, and its test suite, live in the [zgvariant] crate now:
 zgvariant = "1"
 ```
 
-zgvariant only speaks GVariant, so it has no format to choose: what was
+zgvariant only speaks GVariant, so, like zbus, it has no format to choose: what was
 `zvariant::serialized::Context::new_gvariant(LE, 0)` is `zgvariant::serialized::Context::new(LE, 0)`
 there. The rest reads the same.
 

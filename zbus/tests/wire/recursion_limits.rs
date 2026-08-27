@@ -5,7 +5,7 @@ use zbus::{
 
 #[test]
 fn recursion_limits() {
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     // Total container depth exceeds limit (64)
     let mut value = Value::from(0u8);
     for _ in 0..64 {

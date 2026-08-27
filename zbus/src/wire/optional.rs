@@ -55,7 +55,7 @@ where
 /// use zbus::wire::{serialized::Context, Optional, to_bytes, LE};
 ///
 /// // `Null` case.
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let s = Optional::<&str>::default();
 /// let encoded = to_bytes(ctxt, &s).unwrap();
 /// assert_eq!(encoded.bytes(), &[0, 0, 0, 0, 0]);
@@ -220,7 +220,7 @@ mod tests {
         // Ensure trying to encode/decode `bool` in `Optional` fails.
         use crate::wire::{LE, Optional, to_bytes};
 
-        let ctxt = crate::wire::serialized::Context::new_dbus(LE, 0);
+        let ctxt = crate::wire::serialized::Context::new(LE, 0);
         let res = catch_unwind(|| to_bytes(ctxt, &Optional::<bool>::default()));
         assert!(res.is_err());
 

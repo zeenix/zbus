@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use zbus::wire::{
     LE, OwnedValue, Signature, Type, Value,
     as_value::{self, optional},
-    serialized::{Context, Format},
+    serialized::Context,
 };
 
 #[test]
@@ -61,7 +61,7 @@ fn derive_dict() {
         field_c: vec![1, 2, 3],
     };
 
-    let ctxt = Context::new(Format::DBus, LE, 0);
+    let ctxt = Context::new(LE, 0);
     let serialized = zbus::wire::to_bytes(ctxt, &test).unwrap();
     let deserialized: HashMap<String, OwnedValue> = serialized.deserialize().unwrap().0;
 

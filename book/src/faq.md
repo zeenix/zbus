@@ -281,7 +281,7 @@ let e = Enum::Variant3 {
     f2: i64::max_value(),
     f3: "hello",
 };
-let ctxt = Context::new_dbus(LE, 0);
+let ctxt = Context::new(LE, 0);
 let encoded = to_bytes(ctxt, &e).unwrap();
 let decoded: Enum = encoded.deserialize().unwrap().0;
 assert_eq!(decoded, e);
@@ -302,7 +302,7 @@ enum UnitEnum {
     Variant3,
 }
 
-let ctxt = Context::new_dbus(LE, 0);
+let ctxt = Context::new(LE, 0);
 let encoded = to_bytes(ctxt, &UnitEnum::Variant2).unwrap();
 let e: UnitEnum = encoded.deserialize().unwrap().0;
 assert_eq!(e, UnitEnum::Variant2);
@@ -325,7 +325,7 @@ enum StrEnum {
     Other(String),
 }
 
-let ctxt = Context::new_dbus(LE, 0);
+let ctxt = Context::new(LE, 0);
 let encoded = to_bytes(ctxt, &StrEnum::Variant2).unwrap();
 let e: StrEnum = encoded.deserialize().unwrap().0;
 assert_eq!(e, StrEnum::Variant2);

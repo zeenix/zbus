@@ -20,7 +20,7 @@ fn issue_1819() {
         update: Option<UpdateInfo>,
     }
 
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let mut update: HashMap<&str, Value<'_>> = HashMap::new();
     update.insert("version", Value::new("1.0"));
     let mut info: HashMap<&str, Value<'_>> = HashMap::new();

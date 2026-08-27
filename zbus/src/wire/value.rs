@@ -40,7 +40,7 @@ use crate::wire::Fd;
 /// let v = Value::new(i16::max_value());
 ///
 /// // Encode it
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let encoding = to_bytes(ctxt, &v).unwrap();
 ///
 /// // Decode it back
@@ -60,7 +60,7 @@ use crate::wire::Fd;
 /// let v = Value::new((i16::max_value(), "hello", true));
 ///
 /// // Same drill as previous example
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let encoding = to_bytes(ctxt, &v).unwrap();
 /// let v: Value = encoding.deserialize().unwrap().0;
 ///
