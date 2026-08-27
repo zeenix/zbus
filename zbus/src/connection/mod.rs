@@ -13,8 +13,6 @@ use std::{
     time::Duration,
 };
 use tracing::{Instrument, debug, info_span, instrument, trace, trace_span, warn};
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
-use zvariant::ObjectPath;
 
 use futures_lite::StreamExt;
 use ordered_stream::OrderedFuture;
@@ -25,7 +23,9 @@ use crate::{
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
     is_flatpak,
     message::{Flags, Message, Type},
+    names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     timeout::timeout,
+    wire::ObjectPath,
 };
 
 mod builder;
@@ -252,7 +252,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let method = self
             .call_method_raw(
@@ -306,7 +306,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -358,7 +358,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -380,7 +380,7 @@ impl Connection {
     /// given `body`.
     pub async fn reply<B>(&self, call: &zbus::message::Header<'_>, body: &B) -> Result<()>
     where
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -403,7 +403,7 @@ impl Connection {
         body: &B,
     ) -> Result<()>
     where
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {
@@ -764,7 +764,11 @@ impl Connection {
     /// The unique name of the connection, if set/applicable.
     ///
     /// The unique name is assigned by the message bus, or set manually using
-    /// [`Connection::set_unique_name`].
+    #[cfg_attr(feature = "bus-impl", doc = "[`Connection::set_unique_name`].")]
+    #[cfg_attr(
+        not(feature = "bus-impl"),
+        doc = "`Connection::set_unique_name` (requires the `bus-impl` feature)."
+    )]
     pub fn unique_name(&self) -> Option<&OwnedUniqueName> {
         self.inner.unique_name.get()
     }
@@ -1551,11 +1555,11 @@ mod tests {
 #[cfg(feature = "p2p")]
 #[cfg(test)]
 mod p2p_tests {
+    use crate::wire::{Endian, NATIVE_ENDIAN};
     use event_listener::Event;
     use futures_util::TryStreamExt;
     use ntest::timeout;
     use test_log::test;
-    use zvariant::{Endian, NATIVE_ENDIAN};
 
     use super::{Builder, Connection, socket};
     use crate::{Guid, Message, MessageStream, Result, conn::AuthMechanism};

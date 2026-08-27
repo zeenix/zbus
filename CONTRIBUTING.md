@@ -36,9 +36,9 @@ Same rules apply here as for bug reports and feature requests. Plus:
   **NOTE:** This is a curated list of emojis that have specific meanings. Please use one of the
   methods recommended here to select/fetch the most appropriate one. 🙏
 * Add a prefix indicating the packages being changed. Use either the package name or an abbreviation
-  (for example, `zb` for `zbus`, `zv` for `zvariant` etc). If a commit touches multiple packages,
-  separate with a comma. For example, for a commit changing the packages `zbus` and `zvariant`,
-  prefix the commit message with `zb,zv: `.
+  (for example, `zb` for `zbus`, `zm` for `zbus_macros` etc). If a commit touches multiple packages,
+  separate with a comma. For example, for a commit changing the packages `zbus` and `zbus_macros`,
+  prefix the commit message with `zb,zm: `.
 * Add details to each commit about the changes it contains. PR description is for summarizing the
   overall changes in the PR, while commit logs are for describing the specific changes of the
   commit in question.

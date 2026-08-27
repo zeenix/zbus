@@ -1,6 +1,6 @@
 [package]
 name = "zbus_xmlgen"
-version = "5.4.1"
+version = "6.0.0"
 authors = [
     "Bilal Elmoussaoui <bil.elmoussaoui@gmail.com>",
     "Federico Mena Quintero <federico@gnome.org>",
@@ -30,8 +30,8 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-zbus = { path = "../zbus", features = ["blocking-api"], version = "5.19.0" }
-zbus_xml = { path = "../zbus_xml", version = "5.2.1" }
+zbus = { path = "../zbus", features = ["blocking-api"], version = "6.0.0" }
+zbus_xml = { path = "../zbus_xml", version = "6.0.0" }
 
 snakecase.workspace = true
 clap = { workspace = true, optional = true }

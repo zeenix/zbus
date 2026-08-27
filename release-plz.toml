@@ -70,7 +70,7 @@ protect_breaking_commits = true
 
 # Commit message preprocessors (applied in order).
 commit_preprocessors = [
-    # Remove package prefix (e.g., "zb: " or "zvariant_derive: ") but keep gimoji emojis.
+    # Remove package prefix (e.g., "zb: " or "zbus_macros: ") but keep gimoji emojis.
     # Pattern handles emojis with variation selectors (U+FE0F) and ZWJ sequences (U+200D).
     { pattern = "^((?:[\\p{Emoji_Presentation}\\p{Extended_Pictographic}](?:\\u{FE0F}|\\u{200D})?)+) [\\w, -]+: ", replace = "$1 " },
     # Extract issue refs from commit body using $COMMIT_SHA.
@@ -156,12 +156,3 @@ version_group = "zbus"
 [[package]]
 name = "zbus_macros"
 version_group = "zbus"
-
-# zvariant and zvariant_derive major/minor versions are kept in sync.
-[[package]]
-name = "zvariant"
-version_group = "zvariant"
-
-[[package]]
-name = "zvariant_derive"
-version_group = "zvariant"

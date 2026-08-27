@@ -1,33 +1,65 @@
 use std::{convert::Infallible, error, fmt, io, sync::Arc};
-use zbus_names::{Error as NamesError, InterfaceName, OwnedErrorName};
-use zvariant::{Error as VariantError, ObjectPath};
 
+use serde::{de, ser};
+
+#[cfg(feature = "comms")]
 use crate::{
     Address, fdo,
     message::{Message, Type},
+    names::OwnedErrorName,
+};
+use crate::{
+    names::InterfaceName,
+    wire::{self, ObjectPath, Signature},
 };
 
 /// The error type for `zbus`.
 ///
 /// The various errors that can be reported by this crate.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Error {
+    /// Generic error. All serde errors get transformed into this variant.
+    Failure(String),
+    /// An I/O error.
+    InputOutput(Arc<io::Error>),
+    /// Type conversions errors.
+    IncorrectType,
+    /// Wrapper for [`std::str::Utf8Error`].
+    Utf8(std::str::Utf8Error),
+    /// Non-0 padding byte(s) encountered.
+    PaddingNot0(u8),
+    /// The deserialized file descriptor is not in the given FD index.
+    UnknownFd,
+    /// The provided signature (first argument) was not valid for reading as the requested type.
+    /// Details on the expected signatures are in the second argument.
+    SignatureMismatch(Signature, String),
+    /// Out of bounds range specified.
+    OutOfBounds,
+    /// The maximum allowed depth for containers in encoding was exceeded.
+    MaxDepthExceeded(MaxDepthExceeded),
+    /// Error from parsing a signature.
+    SignatureParse(wire::signature::Error),
+    /// Attempted to create an empty structure (which is not allowed by the D-Bus specification).
+    EmptyStructure,
+    /// Invalid object path.
+    InvalidObjectPath,
+    /// An invalid name.
+    InvalidName(&'static str),
+    /// Invalid conversion from name type `from` to name type `to`.
+    InvalidNameConversion {
+        from: &'static str,
+        to: &'static str,
+    },
     /// Interface not found.
     InterfaceNotFound,
     /// Invalid D-Bus address.
     Address(String),
-    /// An I/O error.
-    InputOutput(Arc<io::Error>),
     /// Invalid message field.
     InvalidField,
     /// Data too large.
     ExcessData,
-    /// A [zvariant](https://docs.rs/zvariant) error.
-    Variant(VariantError),
-    /// A [zbus_names](https://docs.rs/zbus_names) error.
-    Names(NamesError),
     /// Endian signature invalid or doesn't match expectation.
     IncorrectEndian,
     /// Initial handshake error.
@@ -37,6 +69,7 @@ pub enum Error {
     /// A D-Bus method error reply.
     // According to the spec, there can be all kinds of details in D-Bus errors but nobody adds
     // anything more than a string description.
+    #[cfg(feature = "comms")]
     MethodError(OwnedErrorName, Option<String>, Message),
     /// A required field is missing in the message headers.
     MissingField,
@@ -45,6 +78,7 @@ pub enum Error {
     /// Unsupported function, or support currently lacking.
     Unsupported,
     /// A [`fdo::Error`] transformed into [`Error`].
+    #[cfg(feature = "comms")]
     FDO(Box<fdo::Error>),
     /// The requested name was already claimed by another peer.
     NameTaken,
@@ -52,8 +86,6 @@ pub enum Error {
     ///
     /// [MR]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-bus-routing-match-rules
     InvalidMatchRule,
-    /// Generic error.
-    Failure(String),
     /// A required parameter was missing.
     MissingParameter(&'static str),
     /// Serial number in the message header is 0 (which is invalid).
@@ -61,33 +93,54 @@ pub enum Error {
     /// The given interface already exists at the given path.
     InterfaceExists(InterfaceName<'static>, ObjectPath<'static>),
     /// Failed to connect to the D-Bus server at the given address.
-    Connection(Arc<io::Error>, Address),
+    #[cfg(feature = "comms")]
+    Connection(Arc<io::Error>, Box<Address>),
 }
+
+// The wire (de)serializers return this type by value out of deeply recursive calls, so its size
+// is on a hot path.
+const _: () = assert!(size_of::<Error>() <= 64);
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Address(_), Self::Address(_)) => true,
+            (Self::Failure(s1), Self::Failure(s2)) => s1 == s2,
+            (Self::IncorrectType, Self::IncorrectType) => true,
+            (Self::Utf8(s), Self::Utf8(o)) => s == o,
+            (Self::PaddingNot0(s), Self::PaddingNot0(o)) => s == o,
+            (Self::UnknownFd, Self::UnknownFd) => true,
+            (Self::SignatureMismatch(p1, e1), Self::SignatureMismatch(p2, e2)) => {
+                p1 == p2 && e1 == e2
+            }
+            (Self::OutOfBounds, Self::OutOfBounds) => true,
+            (Self::MaxDepthExceeded(m1), Self::MaxDepthExceeded(m2)) => m1 == m2,
+            (Self::SignatureParse(e1), Self::SignatureParse(e2)) => e1 == e2,
+            (Self::EmptyStructure, Self::EmptyStructure) => true,
+            (Self::InvalidObjectPath, Self::InvalidObjectPath) => true,
+            (Self::InvalidName(_), Self::InvalidName(_)) => true,
+            (Self::InvalidNameConversion { .. }, Self::InvalidNameConversion { .. }) => true,
             (Self::InterfaceNotFound, Self::InterfaceNotFound) => true,
-            (Self::Handshake(_), Self::Handshake(_)) => true,
-            (Self::InvalidReply, Self::InvalidReply) => true,
+            (Self::Address(_), Self::Address(_)) => true,
+            (Self::InvalidField, Self::InvalidField) => true,
             (Self::ExcessData, Self::ExcessData) => true,
             (Self::IncorrectEndian, Self::IncorrectEndian) => true,
+            (Self::Handshake(_), Self::Handshake(_)) => true,
+            (Self::InvalidReply, Self::InvalidReply) => true,
+            #[cfg(feature = "comms")]
             (Self::MethodError(_, _, _), Self::MethodError(_, _, _)) => true,
             (Self::MissingField, Self::MissingField) => true,
             (Self::InvalidGUID, Self::InvalidGUID) => true,
-            (Self::InvalidSerial, Self::InvalidSerial) => true,
             (Self::Unsupported, Self::Unsupported) => true,
+            #[cfg(feature = "comms")]
             (Self::FDO(s), Self::FDO(o)) => s == o,
-            (Self::InvalidField, Self::InvalidField) => true,
-            (Self::InvalidMatchRule, Self::InvalidMatchRule) => true,
-            (Self::Variant(s), Self::Variant(o)) => s == o,
-            (Self::Names(s), Self::Names(o)) => s == o,
             (Self::NameTaken, Self::NameTaken) => true,
-            (Error::InputOutput(_), Self::InputOutput(_)) => false,
-            (Self::Failure(s1), Self::Failure(s2)) => s1 == s2,
+            (Self::InvalidMatchRule, Self::InvalidMatchRule) => true,
+            (Self::InvalidSerial, Self::InvalidSerial) => true,
             (Self::InterfaceExists(s1, s2), Self::InterfaceExists(o1, o2)) => s1 == o1 && s2 == o2,
+            #[cfg(feature = "comms")]
             (Self::Connection(_, a1), Self::Connection(_, a2)) => a1 == a2,
+            // `InputOutput` and `MissingParameter` deliberately fall through: two I/O errors are
+            // never considered equal and the parameter name is not a discriminator.
             (_, _) => false,
         }
     }
@@ -96,28 +149,41 @@ impl PartialEq for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Error::InputOutput(e) => Some(e),
+            Error::Utf8(e) => Some(e),
+            #[cfg(feature = "comms")]
+            Error::FDO(e) => Some(e),
+            #[cfg(feature = "comms")]
+            Error::Connection(e, _) => Some(e),
+            Error::Failure(_) => None,
+            Error::IncorrectType => None,
+            Error::PaddingNot0(_) => None,
+            Error::UnknownFd => None,
+            Error::SignatureMismatch(_, _) => None,
+            Error::OutOfBounds => None,
+            Error::MaxDepthExceeded(_) => None,
+            Error::SignatureParse(_) => None,
+            Error::EmptyStructure => None,
+            Error::InvalidObjectPath => None,
+            Error::InvalidName(_) => None,
+            Error::InvalidNameConversion { .. } => None,
             Error::InterfaceNotFound => None,
             Error::Address(_) => None,
-            Error::InputOutput(e) => Some(e),
+            Error::InvalidField => None,
             Error::ExcessData => None,
-            Error::Handshake(_) => None,
             Error::IncorrectEndian => None,
-            Error::Variant(e) => Some(e),
-            Error::Names(e) => Some(e),
+            Error::Handshake(_) => None,
             Error::InvalidReply => None,
+            #[cfg(feature = "comms")]
             Error::MethodError(_, _, _) => None,
+            Error::MissingField => None,
             Error::InvalidGUID => None,
             Error::Unsupported => None,
-            Error::FDO(e) => Some(e),
-            Error::InvalidField => None,
-            Error::MissingField => None,
             Error::NameTaken => None,
             Error::InvalidMatchRule => None,
-            Error::Failure(_) => None,
             Error::MissingParameter(_) => None,
             Error::InvalidSerial => None,
             Error::InterfaceExists(_, _) => None,
-            Error::Connection(e, _) => Some(e),
         }
     }
 }
@@ -125,34 +191,56 @@ impl error::Error for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::Failure(e) => write!(f, "{e}"),
+            Error::InputOutput(e) => write!(f, "I/O error: {e}"),
+            Error::IncorrectType => write!(f, "incorrect type"),
+            Error::Utf8(e) => write!(f, "{e}"),
+            Error::PaddingNot0(b) => write!(f, "Unexpected non-0 padding byte `{b}`"),
+            Error::UnknownFd => write!(f, "File descriptor not in the given FD index"),
+            Error::SignatureMismatch(provided, expected) => write!(
+                f,
+                "Signature mismatch: got `{provided}`, expected {expected}",
+            ),
+            Error::OutOfBounds => write!(
+                f,
+                // FIXME: using the `Debug` impl of `Range` because it doesn't impl `Display`.
+                "Out of bounds range specified",
+            ),
+            Error::MaxDepthExceeded(max) => write!(f, "{max}"),
+            Error::SignatureParse(e) => write!(f, "{e}"),
+            Error::EmptyStructure => write!(f, "Attempted to create an empty structure"),
+            Error::InvalidObjectPath => write!(f, "Invalid object path"),
+            Error::InvalidName(s) => write!(f, "{s}"),
+            Error::InvalidNameConversion { from, to } => {
+                write!(f, "Invalid conversion from `{from}` to `{to}`")
+            }
             Error::InterfaceNotFound => write!(f, "Interface not found"),
             Error::Address(e) => write!(f, "address error: {e}"),
-            Error::ExcessData => write!(f, "excess data"),
-            Error::InputOutput(e) => write!(f, "I/O error: {e}"),
-            Error::Handshake(e) => write!(f, "D-Bus handshake failed: {e}"),
-            Error::IncorrectEndian => write!(f, "incorrect endian"),
             Error::InvalidField => write!(f, "invalid message field"),
-            Error::Variant(e) => write!(f, "{e}"),
-            Error::Names(e) => write!(f, "{e}"),
+            Error::ExcessData => write!(f, "excess data"),
+            Error::IncorrectEndian => write!(f, "incorrect endian"),
+            Error::Handshake(e) => write!(f, "D-Bus handshake failed: {e}"),
             Error::InvalidReply => write!(f, "Invalid D-Bus method reply"),
-            Error::MissingField => write!(f, "A required field is missing from message headers"),
+            #[cfg(feature = "comms")]
             Error::MethodError(name, detail, _reply) => write!(
                 f,
                 "{}: {}",
                 **name,
                 detail.as_ref().map(|s| s.as_str()).unwrap_or("no details")
             ),
+            Error::MissingField => write!(f, "A required field is missing from message headers"),
             Error::InvalidGUID => write!(f, "Invalid GUID"),
             Error::Unsupported => write!(f, "Connection support is lacking"),
+            #[cfg(feature = "comms")]
             Error::FDO(e) => write!(f, "{e}"),
             Error::NameTaken => write!(f, "name already taken on the bus"),
             Error::InvalidMatchRule => write!(f, "Invalid match rule string"),
-            Error::Failure(e) => write!(f, "{e}"),
             Error::MissingParameter(p) => {
                 write!(f, "Parameter `{p}` was not specified but it is required")
             }
             Error::InvalidSerial => write!(f, "Serial number in the message header is 0"),
             Error::InterfaceExists(i, p) => write!(f, "Interface `{i}` already exists at `{p}`"),
+            #[cfg(feature = "comms")]
             Error::Connection(e, addr) => write!(f, "Failed to connect to address `{addr}`: {e}"),
         }
     }
@@ -166,60 +254,62 @@ impl Error {
     /// [`std::string::ToString`].
     pub fn description(&self) -> Option<&str> {
         match self {
+            Error::Failure(e) => Some(e),
+            Error::InputOutput(_) => Some("i/o error"),
+            Error::IncorrectType => Some("incorrect type"),
+            Error::Utf8(_) => Some("invalid UTF-8"),
+            Error::PaddingNot0(_) => Some("unexpected non-0 padding byte"),
+            Error::UnknownFd => Some("file descriptor not in the given FD index"),
+            Error::SignatureMismatch(_, _) => Some("signature mismatch"),
+            Error::OutOfBounds => Some("out of bounds range specified"),
+            Error::MaxDepthExceeded(_) => Some("maximum allowed container depth exceeded"),
+            Error::SignatureParse(_) => Some("invalid signature"),
+            Error::EmptyStructure => Some("attempted to create an empty structure"),
+            Error::InvalidObjectPath => Some("invalid object path"),
+            Error::InvalidName(s) => Some(s),
+            Error::InvalidNameConversion { .. } => Some("invalid name conversion"),
             Error::InterfaceNotFound => Some("interface not found"),
             Error::Address(e) => Some(e),
-            Error::ExcessData => Some("excess data"),
-            Error::InputOutput(_) => Some("i/o error"),
-            Error::Handshake(e) => Some(e),
-            Error::IncorrectEndian => Some("incorrect endian"),
             Error::InvalidField => Some("invalid field"),
-            Error::Variant(_) => Some("variant error"),
-            Error::Names(_) => Some("names error"),
+            Error::ExcessData => Some("excess data"),
+            Error::IncorrectEndian => Some("incorrect endian"),
+            Error::Handshake(e) => Some(e),
             Error::InvalidReply => Some("invalid reply"),
-            Error::MissingField => Some("a required field is missing from message headers"),
+            #[cfg(feature = "comms")]
             Error::MethodError(_, desc, _) => desc.as_deref(),
+            Error::MissingField => Some("a required field is missing from message headers"),
             Error::InvalidGUID => Some("invalid GUID"),
             Error::Unsupported => Some("connection support is lacking"),
+            #[cfg(feature = "comms")]
             Error::FDO(_) => Some("FDO error"),
             Error::NameTaken => Some("name already taken on the bus"),
             Error::InvalidMatchRule => Some("invalid match rule string"),
-            Error::Failure(e) => Some(e),
             Error::MissingParameter(_) => Some("A required parameter is missing"),
             Error::InvalidSerial => Some("serial number in the message header is 0"),
             Error::InterfaceExists(_, _) => Some("interface already exists"),
+            #[cfg(feature = "comms")]
             Error::Connection(_, _) => Some("could not connect to specified address"),
         }
     }
 }
 
-impl Clone for Error {
-    fn clone(&self) -> Self {
-        match self {
-            Error::InterfaceNotFound => Error::InterfaceNotFound,
-            Error::Address(e) => Error::Address(e.clone()),
-            Error::ExcessData => Error::ExcessData,
-            Error::InputOutput(e) => Error::InputOutput(e.clone()),
-            Error::Handshake(e) => Error::Handshake(e.clone()),
-            Error::IncorrectEndian => Error::IncorrectEndian,
-            Error::InvalidField => Error::InvalidField,
-            Error::Variant(e) => Error::Variant(e.clone()),
-            Error::Names(e) => Error::Names(e.clone()),
-            Error::InvalidReply => Error::InvalidReply,
-            Error::MissingField => Error::MissingField,
-            Error::MethodError(name, detail, reply) => {
-                Error::MethodError(name.clone(), detail.clone(), reply.clone())
-            }
-            Error::InvalidGUID => Error::InvalidGUID,
-            Error::Unsupported => Error::Unsupported,
-            Error::FDO(e) => Error::FDO(e.clone()),
-            Error::NameTaken => Error::NameTaken,
-            Error::InvalidMatchRule => Error::InvalidMatchRule,
-            Error::Failure(e) => Error::Failure(e.clone()),
-            Error::MissingParameter(p) => Error::MissingParameter(p),
-            Error::InvalidSerial => Error::InvalidSerial,
-            Error::InterfaceExists(i, p) => Error::InterfaceExists(i.clone(), p.clone()),
-            Error::Connection(e, addr) => Error::Connection(e.clone(), addr.clone()),
-        }
+impl de::Error for Error {
+    // TODO: Add more specific error variants to Error enum above so we can implement other methods
+    // here too.
+    fn custom<T>(msg: T) -> Error
+    where
+        T: fmt::Display,
+    {
+        Error::Failure(msg.to_string())
+    }
+}
+
+impl ser::Error for Error {
+    fn custom<T>(msg: T) -> Error
+    where
+        T: fmt::Display,
+    {
+        Error::Failure(msg.to_string())
     }
 }
 
@@ -229,33 +319,9 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<VariantError> for Error {
-    fn from(val: VariantError) -> Self {
-        Error::Variant(val)
-    }
-}
-
-impl From<zvariant::signature::Error> for Error {
-    fn from(e: zvariant::signature::Error) -> Self {
-        zvariant::Error::from(e).into()
-    }
-}
-
-impl From<NamesError> for Error {
-    fn from(val: NamesError) -> Self {
-        match val {
-            NamesError::Variant(e) => Error::Variant(e),
-            e => Error::Names(e),
-        }
-    }
-}
-
-impl From<fdo::Error> for Error {
-    fn from(val: fdo::Error) -> Self {
-        match val {
-            fdo::Error::ZBus(e) => e,
-            e => Error::FDO(Box::new(e)),
-        }
+impl From<wire::signature::Error> for Error {
+    fn from(e: wire::signature::Error) -> Self {
+        Error::SignatureParse(e)
     }
 }
 
@@ -265,7 +331,18 @@ impl From<Infallible> for Error {
     }
 }
 
+#[cfg(feature = "comms")]
+impl From<fdo::Error> for Error {
+    fn from(val: fdo::Error) -> Self {
+        match val {
+            fdo::Error::ZBus(e) => e,
+            e => Error::FDO(Box::new(e)),
+        }
+    }
+}
+
 // For messages that are D-Bus error returns
+#[cfg(feature = "comms")]
 impl From<Message> for Error {
     fn from(message: Message) -> Error {
         // FIXME: Instead of checking this, we should have Method as trait and specific types for
@@ -283,6 +360,36 @@ impl From<Message> for Error {
             }
         } else {
             Error::InvalidReply
+        }
+    }
+}
+
+/// Enum representing the max depth exceeded error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaxDepthExceeded {
+    /// The maximum allowed depth for structures in encoding was exceeded.
+    Structure,
+    /// The maximum allowed depth for arrays in encoding was exceeded.
+    Array,
+    /// The maximum allowed depth for containers in encoding was exceeded.
+    Container,
+}
+
+impl fmt::Display for MaxDepthExceeded {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Structure => write!(
+                f,
+                "Maximum allowed depth for structures in encoding was exceeded"
+            ),
+            Self::Array => write!(
+                f,
+                "Maximum allowed depth for arrays in encoding was exceeded"
+            ),
+            Self::Container => write!(
+                f,
+                "Maximum allowed depth for containers in encoding was exceeded"
+            ),
         }
     }
 }

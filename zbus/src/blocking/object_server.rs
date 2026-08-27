@@ -1,11 +1,10 @@
 //! The object server API.
 
-use zvariant::ObjectPath;
-
 use crate::{
     Error, Result,
     object_server::{Interface, InterfaceDeref, InterfaceDerefMut, SignalEmitter},
     utils::block_on,
+    wire::ObjectPath,
 };
 
 /// Wrapper over an interface, along with its corresponding `SignalEmitter`

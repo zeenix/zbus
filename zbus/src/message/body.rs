@@ -1,9 +1,10 @@
-use zvariant::{
-    Signature, Type,
-    serialized::{self, Data},
+use crate::{
+    Message, Result,
+    wire::{
+        Signature, Type,
+        serialized::{self, Data},
+    },
 };
-
-use crate::{Error, Message, Result};
 
 /// The body of a message.
 ///
@@ -22,13 +23,12 @@ impl Body {
     /// Deserialize the body using the contained signature.
     pub fn deserialize<'s, B>(&'s self) -> Result<B>
     where
-        B: zvariant::DynamicDeserialize<'s>,
+        B: crate::wire::DynamicDeserialize<'s>,
     {
         let body_sig = self.signature();
 
         self.data
             .deserialize_for_dynamic_signature(body_sig)
-            .map_err(Error::from)
             .map(|b| b.0)
     }
 
@@ -37,7 +37,7 @@ impl Body {
     where
         B: serde::de::Deserialize<'d> + Type,
     {
-        self.data.deserialize().map_err(Error::from).map(|b| b.0)
+        self.data.deserialize().map(|b| b.0)
     }
 
     /// The signature of the body.

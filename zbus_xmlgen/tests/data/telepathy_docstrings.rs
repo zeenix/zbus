@@ -6,11 +6,11 @@
     Eq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(signature = "s", crate = "zbus::zvariant")]
+#[zvariant(signature = "s", crate = "zbus::wire")]
 pub enum PlaylistOrdering {
     /// Alphabetical ordering by name, ascending.
     Alphabetical,
@@ -29,11 +29,11 @@ pub enum PlaylistOrdering {
     Eq,
     serde_repr::Deserialize_repr,
     serde_repr::Serialize_repr,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(crate = "zbus::zvariant")]
+#[zvariant(crate = "zbus::wire")]
 #[repr(u32)]
 pub enum LoopStatus {
     /// The playback will stop when there are no more tracks to play.
@@ -51,11 +51,11 @@ pub enum LoopStatus {
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(crate = "zbus::zvariant")]
+#[zvariant(crate = "zbus::wire")]
 pub struct Playlist {
     /// A unique identifier for the playlist.
     pub id: PlaylistId,
@@ -72,11 +72,11 @@ pub struct Playlist {
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(crate = "zbus::zvariant")]
+#[zvariant(crate = "zbus::wire")]
 pub struct MaybePlaylist {
     /// Whether this structure refers to a valid playlist.
     pub valid: bool,
@@ -85,10 +85,10 @@ pub struct MaybePlaylist {
 }
 
 /// A mapping from metadata attribute names to values.
-pub type MetadataMap = std::collections::HashMap<String, zbus::zvariant::OwnedValue>;
+pub type MetadataMap = std::collections::HashMap<String, zbus::wire::OwnedValue>;
 
 /// Unique playlist identifier.
-pub type PlaylistId = zbus::zvariant::OwnedObjectPath;
+pub type PlaylistId = zbus::wire::OwnedObjectPath;
 
 /// Provides access to the media player's playlists.
 ///

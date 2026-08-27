@@ -7,13 +7,12 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize, de};
-use zvariant::Structure;
 
 use crate::{
     Error, Result,
     message::Type,
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    zvariant::{ObjectPath, Str, Type as VariantType},
+    wire::{ObjectPath, Str, Structure, Type as VariantType},
 };
 
 mod builder;

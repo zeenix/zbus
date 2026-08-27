@@ -300,12 +300,12 @@ org.zbus.MyGreeter1                 interface -         -             -
 ### Trait-bounds for property values
 
 If you use custom types for property values, you might get a compile error for missing
-`TryFrom<zvariant::Value<'_>>` and/or `TryFrom<OwnedValue>` implementations. This is because
+`TryFrom<zbus::wire::Value<'_>>` and/or `TryFrom<OwnedValue>` implementations. This is because
 properties are always sent as Variants on the bus, so you need to implement these conversions for
 your custom types.
 
-Not to worry though, the `zvariant` crate provides a [`Value`] and [`OwnedValue`] derive macro to
-implement these conversions for you.
+Not to worry though, the `zbus::wire` module provides a [`Value`] and [`OwnedValue`] derive macro
+to implement these conversions for you.
 
 ### Method errors
 
@@ -454,10 +454,10 @@ While it's extremely useful to be able to generate the client-side proxy code di
   proxy as well.
 
 [D-Bus concepts]: concepts.html#bus-name--service-name
-[didoc]: https://docs.rs/zbus/5/zbus/attr.interface.html
-[`Value`]: https://docs.rs/zvariant/5/zvariant/derive.Value.html
-[`OwnedValue`]: https://docs.rs/zvariant/5/zvariant/derive.OwnedValue.html
-[`zbus::DBusError`]:https://docs.rs/zbus/5/zbus/trait.DBusError.html
-[`zbus::fdo::Error`]: https://docs.rs/zbus/5/zbus/fdo/enum.Error.html
-[`zbus::fdo::Error::UnknownProperty`]: https://docs.rs/zbus/5/zbus/fdo/enum.Error.html#variant.UnknownProperty
-[`proxy`]: https://docs.rs/zbus/5/zbus/attr.proxy.html
+[didoc]: https://docs.rs/zbus/latest/zbus/attr.interface.html
+[`Value`]: https://docs.rs/zbus/latest/zbus/wire/derive.Value.html
+[`OwnedValue`]: https://docs.rs/zbus/latest/zbus/wire/derive.OwnedValue.html
+[`zbus::DBusError`]:https://docs.rs/zbus/latest/zbus/trait.DBusError.html
+[`zbus::fdo::Error`]: https://docs.rs/zbus/latest/zbus/fdo/enum.Error.html
+[`zbus::fdo::Error::UnknownProperty`]: https://docs.rs/zbus/latest/zbus/fdo/enum.Error.html#variant.UnknownProperty
+[`proxy`]: https://docs.rs/zbus/latest/zbus/attr.proxy.html

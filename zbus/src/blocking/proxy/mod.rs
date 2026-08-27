@@ -3,15 +3,15 @@
 use enumflags2::BitFlags;
 use futures_lite::StreamExt;
 use std::{fmt, ops::Deref};
-use zbus_names::{BusName, InterfaceName, MemberName, UniqueName};
-use zvariant::{ObjectPath, OwnedValue, Value};
 
 use crate::{
     Error, Result,
     blocking::Connection,
     message::Message,
+    names::{BusName, InterfaceName, MemberName, UniqueName},
     proxy::{Defaults, MethodFlags},
     utils::block_on,
+    wire::{ObjectPath, OwnedValue, Value},
 };
 
 use crate::fdo;
@@ -218,7 +218,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         block_on(self.inner().call_method(method_name, body))
     }
@@ -232,8 +232,8 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
-        R: for<'d> zvariant::DynamicDeserialize<'d>,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
+        R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
         block_on(self.inner().call(method_name, body))
     }
@@ -256,8 +256,8 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
-        R: for<'d> zvariant::DynamicDeserialize<'d>,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
+        R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
         block_on(self.inner().call_with_flags(method_name, flags, body))
     }
@@ -269,7 +269,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         block_on(self.inner().call_noreply(method_name, body))
     }
@@ -461,7 +461,7 @@ impl<T> PropertyChanged<'_, T> {
 
 impl<T> PropertyChanged<'_, T>
 where
-    T: TryFrom<zvariant::OwnedValue>,
+    T: TryFrom<crate::wire::OwnedValue>,
     T::Error: Into<crate::Error>,
 {
     /// Get the value of the property that changed.

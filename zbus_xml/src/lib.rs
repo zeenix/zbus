@@ -28,7 +28,7 @@ use std::{
     ops::Deref,
 };
 
-use zbus_names::{InterfaceName, MemberName, PropertyName};
+use zbus::names::{InterfaceName, MemberName, PropertyName};
 
 /// A warning about document content that was ignored during parsing.
 ///
@@ -631,21 +631,21 @@ impl<'a> TryFrom<&'a str> for Node<'a> {
     }
 }
 
-/// A thin wrapper around `zvariant::parsed::Signature`.
+/// A thin wrapper around [`zbus::wire::Signature`].
 ///
 /// This is to allow `Signature` to be deserialized from an owned string, which is what XML
 /// deserializers typically produce.
 #[derive(Debug, Serialize, Clone, PartialEq)]
-pub struct Signature(zvariant::Signature);
+pub struct Signature(zbus::wire::Signature);
 
 impl Signature {
-    /// Return the inner `zvariant::Signature`.
-    pub fn inner(&self) -> &zvariant::Signature {
+    /// The inner [`zbus::wire::Signature`].
+    pub fn inner(&self) -> &zbus::wire::Signature {
         &self.0
     }
 
-    /// Convert this `Signature` into the inner `zvariant::parsed::Signature`.
-    pub fn into_inner(self) -> zvariant::Signature {
+    /// Convert this `Signature` into the inner [`zbus::wire::Signature`].
+    pub fn into_inner(self) -> zbus::wire::Signature {
         self.0
     }
 }
@@ -656,7 +656,7 @@ impl<'de> serde::de::Deserialize<'de> for Signature {
         D: serde::de::Deserializer<'de>,
     {
         String::deserialize(deserializer).and_then(|s| {
-            zvariant::Signature::try_from(s.as_bytes())
+            zbus::wire::Signature::try_from(s.as_bytes())
                 .map_err(serde::de::Error::custom)
                 .map(Signature)
         })
@@ -664,7 +664,7 @@ impl<'de> serde::de::Deserialize<'de> for Signature {
 }
 
 impl Deref for Signature {
-    type Target = zvariant::Signature;
+    type Target = zbus::wire::Signature;
 
     fn deref(&self) -> &Self::Target {
         self.inner()

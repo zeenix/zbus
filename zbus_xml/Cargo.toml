@@ -1,6 +1,6 @@
 [package]
 name = "zbus_xml"
-version = "5.2.1"
+version = "6.0.0"
 authors = ["Zeeshan Ali Khan <zeeshanak@gnome.org>"]
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -14,8 +14,7 @@ readme = "README.md"
 
 [dependencies]
 serde.workspace = true
-zvariant = { path = "../zvariant", version = "5.15.0" }
-zbus_names = { path = "../zbus_names", version = "4.3.4" }
+zbus = { path = "../zbus", version = "6.0.0", default-features = false }
 winnow.workspace = true
 
 [dev-dependencies]

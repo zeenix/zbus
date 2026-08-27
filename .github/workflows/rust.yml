@@ -28,6 +28,13 @@ jobs:
           cargo --locked check --target x86_64-unknown-freebsd
           cargo --locked check --target x86_64-unknown-netbsd
           cargo --locked check --target aarch64-linux-android
+          # The wire-format-only build: the drop-in replacement for zvariant 5.
+          cargo --locked check -p zbus --no-default-features
+          cargo --locked check -p zbus --no-default-features --target x86_64-pc-windows-gnu
+          cargo --locked check -p zbus --no-default-features --target x86_64-apple-darwin
+          cargo --locked check -p zbus --no-default-features --target x86_64-unknown-freebsd
+          cargo --locked check -p zbus --no-default-features --target x86_64-unknown-netbsd
+          cargo --locked check -p zbus --no-default-features --target aarch64-linux-android
         # This would be nice but some optional deps (e.g `time`) move very fast wrt to MSRV.
         # cargo --locked check --all-features
 
@@ -77,6 +84,13 @@ jobs:
           cargo --locked clippy --target x86_64-unknown-netbsd
           cargo --locked clippy --target x86_64-pc-windows-gnu
           cargo --locked clippy --target aarch64-linux-android
+          # The wire-format-only build: the drop-in replacement for zvariant 5.
+          cargo --locked clippy -p zbus --no-default-features --all-targets
+          cargo --locked clippy -p zbus --no-default-features --target x86_64-apple-darwin
+          cargo --locked clippy -p zbus --no-default-features --target x86_64-unknown-freebsd
+          cargo --locked clippy -p zbus --no-default-features --target x86_64-unknown-netbsd
+          cargo --locked clippy -p zbus --no-default-features --target x86_64-pc-windows-gnu
+          cargo --locked clippy -p zbus --no-default-features --target aarch64-linux-android
 
   linux_test:
     runs-on: ubuntu-latest
@@ -99,8 +113,9 @@ jobs:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Test zvariant with zvariant_utils/gvariant enabled without zvariant/gvariant
-        run: cargo --locked test -p zvariant --features zvariant_utils/gvariant
+      - name: Test zbus with zvariant_utils/gvariant enabled (zgvariant coexistence)
+        run: |
+          cargo --locked test -p zbus --no-default-features --features zvariant_utils/gvariant
       - name: Build and Test
         run: |
           dbus-run-session --config-file /tmp/dbus-session-abstract.conf -- cargo --locked test --release --verbose -- basic_connection
@@ -120,10 +135,17 @@ jobs:
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
               -- --skip fdpass_systemd
+          # The executor doctest drives the connection from tokio's scheduler, so it has to build
+          # without the default async-io runtime. `-p zbus` is load-bearing: a workspace-wide
+          # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose --doc --no-default-features connection::Connection::executor
-          # zvariant with its legacy `gvariant` feature (still shipped throughout 5.x).
-          cargo --locked t -p zvariant --features gvariant
+            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
+              --features tokio connection::Connection::executor
+          # The wire-format-only build. No D-Bus API, so no session bus is needed.
+          cargo --locked test --release --verbose -p zbus --no-default-features
+          cargo --locked test --release --verbose -p zbus --no-default-features \
+            --features arrayvec,camino,chrono,enumflags2,heapless \
+            --features option-as-array,serde_bytes,time,url,uuid
 
   windows_test:
     runs-on: windows-latest
@@ -171,12 +193,17 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           Start-Process C:\vcpkg\installed\x64-windows\tools\dbus\dbus-daemon.exe '--config-file=CI/win32-session.conf --address=autolaunch:'
           cargo --locked test
-          # tokio feature
-          cargo --locked test --no-default-features --features tokio
-          # zvariant with its legacy `gvariant` feature (still shipped throughout 5.x).
-          cargo --locked t -p zvariant --features gvariant
+          # The tokio-only build. `-p zbus` is load-bearing: a workspace-wide
+          # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
+          # `--tests` because the doc examples assume the async-io runtime.
+          cargo --locked test -p zbus --no-default-features --features tokio --tests
+          # The wire-format-only build.
+          cargo --locked test -p zbus --no-default-features
+          cargo --locked test -p zbus --no-default-features `
+            --features arrayvec,camino,chrono,enumflags2,heapless `
+            --features option-as-array,serde_bytes,time,url,uuid
 
-  zvariant_fuzz:
+  zbus_fuzz:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
@@ -187,13 +214,14 @@ jobs:
         with:
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      - name: Fuzz zvariant
+      - name: Fuzz the D-Bus wire format
         run: |
           # `cargo fuzz` does not propagate `--locked` to its inner cargo invocation, so check
           # the nested lockfile explicitly.
-          cargo metadata --manifest-path zvariant/fuzz/Cargo.toml --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path zbus/fuzz/Cargo.toml --locked --format-version 1 \
+            > /dev/null
           cargo install cargo-fuzz
-          cargo --locked fuzz run --fuzz-dir zvariant/fuzz dbus -- -max_total_time=30 -max_len=100M
+          cargo --locked fuzz run --fuzz-dir zbus/fuzz dbus -- -max_total_time=30 -max_len=100M
 
   doc_build:
     runs-on: ubuntu-latest
@@ -205,12 +233,10 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
-      - name: Check zvariant documentation build
-        run: cargo --locked doc --all-features -p zvariant
-      - name: Check zbus_names documentation build
-        run: cargo --locked doc --all-features -p zbus_names
       - name: Check zbus documentation build
         run: cargo --locked doc --all-features -p zbus
+      - name: Check wire-format-only documentation build
+        run: cargo --locked doc --no-default-features -p zbus
       - name: Check zbus_xml documentation build
         run: cargo --locked doc --all-features -p zbus_xml
 

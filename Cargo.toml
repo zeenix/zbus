@@ -1,9 +1,6 @@
 [workspace]
 members = [
     "zbus",
-    "zvariant",
-    "zbus_names",
-    "zvariant_derive",
     "zvariant_utils",
     "zbus_macros",
     "zbus_xml",
@@ -27,10 +24,7 @@ strip = "none"
 
 [workspace.dependencies]
 # Local dependencies
-zvariant_derive = { path = "./zvariant_derive" }
 zvariant_utils = { path = "./zvariant_utils" }
-zvariant = { path = "./zvariant", default-features = false }
-zbus_names = { path = "./zbus_names" }
 zbus_macros = { path = "./zbus_macros" }
 zbus_xml = { path = "./zbus_xml" }
 zbus = { path = "./zbus" }
@@ -48,7 +42,6 @@ time = { version = "0.3.36", features = ["serde"] }
 chrono = { version = "0.4.38", features = ["serde"], default-features = false }
 heapless = { version = "0.9.0", features = ["serde"] }
 camino = "1.1.9"
-fastrand = "2.3.0"
 enumflags2 = { version = "0.7.9", features = ["serde"] }
 async-io = "2.3.2"
 async-broadcast = "0.7.0"

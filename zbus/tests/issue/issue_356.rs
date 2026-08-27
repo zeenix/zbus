@@ -1,6 +1,6 @@
 use test_log::test;
 use tracing::instrument;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::wire::OwnedObjectPath;
 
 /// The "child" interface that will be referenced by the property.
 struct Adapter {

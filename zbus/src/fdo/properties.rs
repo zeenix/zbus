@@ -4,11 +4,15 @@
 //! be useful across various D-Bus applications. This module provides their proxy.
 
 use std::{borrow::Cow, collections::HashMap};
-use zbus_names::InterfaceName;
-use zvariant::{OwnedValue, Value};
 
 use super::{Error, Result};
-use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
+use crate::{
+    Connection, ObjectServer, interface,
+    message::Header,
+    names::InterfaceName,
+    object_server::SignalEmitter,
+    wire::{OwnedValue, Value},
+};
 
 /// Service-side implementation for the `org.freedesktop.DBus.Properties` interface.
 /// This interface is implemented automatically for any object registered to the

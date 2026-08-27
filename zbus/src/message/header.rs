@@ -7,13 +7,15 @@ use enumflags2::{BitFlags, bitflags};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
-use zvariant::{
-    Endian, ObjectPath, Signature, Type as VariantType,
-    serialized::{self, Context},
+use crate::{
+    Error,
+    message::Fields,
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    wire::{
+        Endian, ObjectPath, Signature, Type as VariantType,
+        serialized::{self, Context},
+    },
 };
-
-use crate::{Error, message::Fields};
 
 pub(crate) const PRIMARY_HEADER_SIZE: usize = 12;
 pub(crate) const MIN_MESSAGE_SIZE: usize = PRIMARY_HEADER_SIZE + 4;
@@ -318,10 +320,12 @@ static SERIAL_NUM: AtomicU32 = AtomicU32::new(0);
 mod tests {
     use crate::message::{Fields, Header, PrimaryHeader, Type};
 
+    use crate::{
+        names::{InterfaceName, MemberName},
+        wire::{ObjectPath, Signature, signature},
+    };
     use std::{borrow::Cow, error::Error};
     use test_log::test;
-    use zbus_names::{InterfaceName, MemberName};
-    use zvariant::{ObjectPath, Signature, signature};
 
     #[test]
     fn header() -> Result<(), Box<dyn Error>> {

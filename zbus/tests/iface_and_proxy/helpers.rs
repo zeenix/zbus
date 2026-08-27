@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zvariant::{OwnedValue, Value};
+use zbus::wire::{OwnedValue, Value};
 
 use super::types::IP4Adress;
 

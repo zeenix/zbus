@@ -76,7 +76,7 @@ impl Unixexec {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|e| crate::Error::Connection(Arc::new(e), address.clone()))?;
+            .map_err(|e| crate::Error::Connection(Arc::new(e), Box::new(address.clone())))?;
 
         child.borrow_mut().try_into()
     }

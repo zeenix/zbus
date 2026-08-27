@@ -7,10 +7,10 @@ fn issue_466() {
     trait MyGreeter {
         fn foo(
             &self,
-            arg: &(u32, zbus::zvariant::Value<'_>),
-        ) -> zbus::Result<(u32, zbus::zvariant::OwnedValue)>;
+            arg: &(u32, zbus::wire::Value<'_>),
+        ) -> zbus::Result<(u32, zbus::wire::OwnedValue)>;
 
         #[zbus(property)]
-        fn bar(&self) -> zbus::Result<(u32, zbus::zvariant::OwnedValue)>;
+        fn bar(&self) -> zbus::Result<(u32, zbus::wire::OwnedValue)>;
     }
 }

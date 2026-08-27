@@ -1,4 +1,4 @@
-//! Code generation shared by the `zvariant_derive` and `zgvariant_derive` proc-macro crates.
+//! Code generation shared by the `zbus_macros` and `zgvariant_derive` proc-macro crates.
 
 use proc_macro2::TokenStream;
 use quote::quote;

@@ -3,15 +3,15 @@
 use enumflags2::BitFlags;
 use event_listener::EventListener;
 use std::{io, ops::Deref, sync::Arc};
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
-use zvariant::ObjectPath;
 
 use crate::{
     DBusError, Error, Result,
     blocking::ObjectServer,
     fdo::{ConnectionCredentials, RequestNameFlags, RequestNameReply},
     message::Message,
+    names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     utils::block_on,
+    wire::ObjectPath,
 };
 
 mod builder;
@@ -85,7 +85,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         block_on(
             self.inner
@@ -113,7 +113,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         block_on(
             self.inner
@@ -127,7 +127,7 @@ impl Connection {
     /// given `body`.
     pub fn reply<B>(&self, call: &zbus::message::Header<'_>, body: &B) -> Result<()>
     where
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         block_on(self.inner.reply(call, body))
     }
@@ -145,7 +145,7 @@ impl Connection {
         body: &B,
     ) -> Result<()>
     where
-        B: serde::ser::Serialize + zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {

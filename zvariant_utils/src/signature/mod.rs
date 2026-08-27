@@ -18,46 +18,39 @@ use crate::serialized::Format;
 
 /// A D-Bus signature in parsed form.
 ///
-/// This is similar to the [`zvariant::Signature`] type, but unlike `zvariant::Signature`, this is a
-/// parsed representation of a signature. Our (de)serialization API primarily uses this type for
-/// efficiency.
+/// This is the type that zbus re-exports as [`zbus::wire::Signature`] and zgvariant as
+/// `zgvariant::Signature`, so a signature parsed by one of them is the same value in the other.
+/// Parsing a signature once, into this tree, is what lets their (de)serialization API stay
+/// efficient.
 ///
 /// # Examples
 ///
-/// ## Using the `signature!` macro
-///
-/// The recommended way to create a `Signature` is using the [`signature!`] macro, which provides
-/// compile-time validation and can be used in const contexts:
-///
-/// ```
-/// use zvariant::signature;
-/// use zvariant::Signature;
-///
-/// // Compile-time validated signatures
-/// let sig = signature!("a{sv}");
-/// assert_eq!(sig.to_string(), "a{sv}");
-///
-/// let sig = signature!("(xa{bs}as)");
-/// assert_eq!(sig.to_string(), "(xa{bs}as)");
-///
-/// // Can be used in const contexts
-/// const SIGNATURE: Signature = signature!("a{sv}");
-/// ```
-///
 /// ## Creating from a string at runtime
-///
-/// If you need to create a `Signature` from a runtime string, use `from_str`:
 ///
 /// ```
 /// use std::str::FromStr;
-/// use zvariant::Signature;
+/// use zvariant_utils::signature::Signature;
 ///
 /// let sig = Signature::from_str("a{sv}").unwrap();
 /// assert_eq!(sig.to_string(), "a{sv}");
+///
+/// let sig = Signature::from_str("(xa{bs}as)").unwrap();
+/// assert_eq!(sig.to_string(), "(xa{bs}as)");
 /// ```
 ///
-/// [`signature!`]: https://docs.rs/zvariant/latest/zvariant/macro.signature.html
-/// [`zvariant::Signature`]: https://docs.rs/zvariant/latest/zvariant/struct.Signature.html
+/// ## Building one in a `const`
+///
+/// Every variant is `const`-constructible, so a signature can be spelled out where a `const` is
+/// required:
+///
+/// ```
+/// use zvariant_utils::signature::{Child, Signature};
+///
+/// const SIGNATURE: Signature = Signature::Array(Child::Static { child: &Signature::Variant });
+/// assert_eq!(SIGNATURE.to_string(), "av");
+/// ```
+///
+/// [`zbus::wire::Signature`]: https://docs.rs/zbus/latest/zbus/wire/enum.Signature.html
 #[derive(Debug, Default, Clone)]
 pub enum Signature {
     // Basic types
@@ -462,7 +455,7 @@ fn parse(bytes: &[u8], check_only: bool) -> Result<Signature, Error> {
     type ManyError = winnow::error::ErrMode<()>;
 
     // The maximum struct- and array-nesting depths a signature may use, matching the limits
-    // `zvariant` enforces when (de)serializing (see its `container_depths` module). This also
+    // zbus enforces when (de)serializing (see its `wire::container_depths` module). This also
     // bounds the recursion below, so a hostile signature string — e.g. tens of thousands of `(`
     // — cannot exhaust the stack. `maybe` (gvariant) is deliberately not bounded, to stay no
     // stricter than what the (de)serializer accepts.
@@ -543,8 +536,8 @@ fn parse(bytes: &[u8], check_only: bool) -> Result<Signature, Error> {
         check_only: bool,
         depth: Depth,
     ) -> Result<Signature, ManyError> {
-        // Reject types nested past the container-depth limits. Besides matching what `zvariant`
-        // can actually encode, this keeps the recursion below — and hence the stack usage —
+        // Reject types nested past the container-depth limits. Besides matching what zbus can
+        // actually encode, this keeps the recursion below — and hence the stack usage —
         // bounded on adversarial input.
         if depth.exceeded() {
             return fail.parse_next(bytes);

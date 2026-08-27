@@ -2150,8 +2150,9 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "5.19.0"
+version = "6.0.0"
 dependencies = [
+ "arrayvec",
  "async-broadcast",
  "async-executor",
  "async-io",
@@ -2161,40 +2162,48 @@ dependencies = [
  "async-task",
  "async-trait",
  "blocking",
+ "camino",
+ "chrono",
  "codspeed-criterion-compat",
  "doc-comment",
+ "endi",
  "enumflags2",
  "event-listener",
  "futures-core",
  "futures-lite",
  "futures-util",
+ "heapless",
  "hex",
  "libc",
  "ntest",
  "ordered-stream",
  "rustix",
  "serde",
+ "serde_bytes",
+ "serde_json",
  "serde_repr",
  "tempfile",
  "test-log",
+ "time",
  "tokio",
  "tokio-vsock",
  "tracing",
  "tracing-subscriber",
  "uds_windows",
+ "url",
  "uuid",
  "vsock",
  "windows-sys",
  "winnow 1.0.4",
  "zbus_macros",
- "zbus_names",
  "zbus_xml",
- "zvariant",
+ "zcheapstr",
+ "zvariant_utils",
 ]
 
 [[package]]
 name = "zbus_macros"
-version = "5.19.0"
+version = "6.0.0"
 dependencies = [
  "async-io",
  "futures-util",
@@ -2202,38 +2211,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+ "serde_repr",
  "syn 3.0.4",
  "zbus",
- "zbus_names",
- "zvariant",
  "zvariant_utils",
 ]
 
 [[package]]
-name = "zbus_names"
-version = "4.3.4"
-dependencies = [
- "codspeed-criterion-compat",
- "serde",
- "winnow 1.0.4",
- "zvariant",
-]
-
-[[package]]
 name = "zbus_xml"
-version = "5.2.1"
+version = "6.0.0"
 dependencies = [
  "codspeed-criterion-compat",
  "doc-comment",
  "serde",
  "winnow 1.0.4",
- "zbus_names",
- "zvariant",
+ "zbus",
 ]
 
 [[package]]
 name = "zbus_xmlgen"
-version = "5.4.1"
+version = "6.0.0"
 dependencies = [
  "clap",
  "pretty_assertions",
@@ -2334,53 +2331,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 
 [[package]]
-name = "zvariant"
-version = "5.15.0"
-dependencies = [
- "arrayvec",
- "camino",
- "chrono",
- "codspeed-criterion-compat",
- "endi",
- "enumflags2",
- "fastrand",
- "heapless",
- "serde",
- "serde_bytes",
- "serde_json",
- "serde_repr",
- "time",
- "url",
- "uuid",
- "winnow 1.0.4",
- "zcheapstr",
- "zvariant_derive",
- "zvariant_utils",
-]
-
-[[package]]
-name = "zvariant_derive"
-version = "5.15.0"
-dependencies = [
- "enumflags2",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "serde",
- "serde_repr",
- "syn 3.0.4",
- "zvariant",
- "zvariant_utils",
-]
-
-[[package]]
 name = "zvariant_utils"
-version = "4.2.0"
+version = "4.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde",
  "syn 3.0.4",
  "winnow 1.0.4",
- "zvariant",
 ]

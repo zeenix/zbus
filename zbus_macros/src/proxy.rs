@@ -5,7 +5,7 @@ use syn::{
     Error, FnArg, Ident, ItemTrait, Meta, Path, ReturnType, Token, TraitItemFn, Visibility,
     fold::Fold, parse_quote, parse_str, punctuated::Punctuated, spanned::Spanned,
 };
-use zvariant_utils::{case, def_attrs};
+use zvariant_utils::{case, def_attrs, names, object_path};
 
 def_attrs! {
     crate zbus;
@@ -171,9 +171,9 @@ pub fn create_proxy(
     let iface_name = iface_name
         .map(|iface| {
             // Ensure the interface name is valid.
-            zbus_names::InterfaceName::try_from(iface)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|i| i.to_string())
+            names::validate_interface_name(iface.as_bytes())
+                .map_err(|e| Error::new(input.span(), e))
+                .map(|()| iface.to_string())
         })
         .transpose()?
         .unwrap_or(format!("org.freedesktop.{ident}"));
@@ -181,17 +181,17 @@ pub fn create_proxy(
     let default_path = default_path
         .map(|path| {
             // Ensure the path is valid.
-            zvariant::ObjectPath::try_from(path)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|p| p.to_string())
+            object_path::validate(path.as_bytes())
+                .map_err(|e| Error::new(input.span(), e))
+                .map(|()| path.to_string())
         })
         .transpose()?;
     let default_service = default_service
         .map(|srv| {
             // Ensure the service is valid.
-            zbus_names::BusName::try_from(srv)
-                .map_err(|e| Error::new(input.span(), format!("{e}")))
-                .map(|n| n.to_string())
+            names::validate_bus_name(srv.as_bytes())
+                .map_err(|e| Error::new(input.span(), e))
+                .map(|_| srv.to_string())
         })
         .transpose()?;
     let (default_path, default_service) = if assume_defaults {
@@ -311,7 +311,7 @@ pub fn create_proxy(
                 where
                     D: ::std::convert::TryInto<#zbus::names::BusName<'p>>,
                     D::Error: ::std::convert::Into<#zbus::Error>,
-                    P: ::std::convert::TryInto<#zbus::zvariant::ObjectPath<'p>>,
+                    P: ::std::convert::TryInto<#zbus::wire::ObjectPath<'p>>,
                     P::Error: ::std::convert::Into<#zbus::Error>,
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
@@ -343,7 +343,7 @@ pub fn create_proxy(
                 /// Creates a new proxy with the given path, and the default destination.
                 pub #usage fn new<P>(conn: &#connection, path: P) -> #zbus::Result<#proxy_name<'p>>
                 where
-                    P: ::std::convert::TryInto<#zbus::zvariant::ObjectPath<'p>>,
+                    P: ::std::convert::TryInto<#zbus::wire::ObjectPath<'p>>,
                     P::Error: ::std::convert::Into<#zbus::Error>,
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
@@ -363,7 +363,7 @@ pub fn create_proxy(
         }
     };
     let default_path = match default_path {
-        Some(p) => quote! { &Some(#zbus::zvariant::ObjectPath::from_static_str_unchecked(#p)) },
+        Some(p) => quote! { &Some(#zbus::wire::ObjectPath::from_static_str_unchecked(#p)) },
         None => quote! { &None },
     };
     let default_service = match default_service {
@@ -390,7 +390,7 @@ pub fn create_proxy(
             const INTERFACE: &'static Option<#zbus::names::InterfaceName<'static>> =
                 &Some(#zbus::names::InterfaceName::from_static_str_unchecked(#iface_name));
             const DESTINATION: &'static Option<#zbus::names::BusName<'static>> = #default_service;
-            const PATH: &'static Option<#zbus::zvariant::ObjectPath<'static>> = #default_path;
+            const PATH: &'static Option<#zbus::wire::ObjectPath<'static>> = #default_path;
         }
 
         #(#other_attrs)*
@@ -462,9 +462,9 @@ pub fn create_proxy(
             }
         }
 
-        impl<'p> #zbus::zvariant::Type for #proxy_name<'p> {
-            const SIGNATURE: &'static #zbus::zvariant::Signature =
-                &#zbus::zvariant::Signature::ObjectPath;
+        impl<'p> #zbus::wire::Type for #proxy_name<'p> {
+            const SIGNATURE: &'static #zbus::wire::Signature =
+                &#zbus::wire::Signature::ObjectPath;
         }
 
         impl<'p> #zbus::export::serde::ser::Serialize for #proxy_name<'p> {
@@ -597,7 +597,7 @@ fn gen_proxy_method_call(
             parse_quote!(#zbus::export::serde::de::DeserializeOwned)
         };
         where_clause.predicates.push(parse_quote!(
-            #param: #serde_bound + #zbus::zvariant::Type
+            #param: #serde_bound + #zbus::wire::Type
         ));
     }
     let (_, ty_generics, where_clause) = generics.split_for_impl();
@@ -623,13 +623,13 @@ fn gen_proxy_method_call(
         let method_call = quote! {
             self.0.call(
                 #dbus_member_name,
-                &#zbus::zvariant::DynamicTuple((#(#args,)*)),
+                &#zbus::wire::DynamicTuple((#(#args,)*)),
             )
             #wait?
         };
         let body = if proxy_vec {
             quote! {
-                let object_paths: Vec<#zbus::zvariant::OwnedObjectPath> = #method_call;
+                let object_paths: Vec<#zbus::wire::OwnedObjectPath> = #method_call;
 
                 let mut proxies = Vec::with_capacity(object_paths.len());
                 for object_path in object_paths {
@@ -641,7 +641,7 @@ fn gen_proxy_method_call(
             }
         } else {
             quote! {
-                let object_path: #zbus::zvariant::OwnedObjectPath = #method_call;
+                let object_path: #zbus::wire::OwnedObjectPath = #method_call;
                 #proxy_build
             }
         };
@@ -657,11 +657,11 @@ fn gen_proxy_method_call(
             // the '()' from the signature that we add and not the actual intended ones.
             let arg = &args[0];
             quote! {
-                &#zbus::zvariant::DynamicTuple((#arg,))
+                &#zbus::wire::DynamicTuple((#arg,))
             }
         } else {
             quote! {
-                &#zbus::zvariant::DynamicTuple((#(#args),*))
+                &#zbus::wire::DynamicTuple((#(#args),*))
             }
         };
 
@@ -797,7 +797,7 @@ fn gen_proxy_property(
             };
             let body = if proxy_vec {
                 quote_spanned! {body_span =>
-                    let object_paths: Vec<#zbus::zvariant::OwnedObjectPath> =
+                    let object_paths: Vec<#zbus::wire::OwnedObjectPath> =
                         #property_get;
 
                     let mut proxies = Vec::with_capacity(object_paths.len());
@@ -810,7 +810,7 @@ fn gen_proxy_property(
                 }
             } else {
                 quote_spanned! {body_span =>
-                    let object_path: #zbus::zvariant::OwnedObjectPath =
+                    let object_path: #zbus::wire::OwnedObjectPath =
                         #property_get;
                     #proxy_build
                 }
@@ -981,7 +981,7 @@ fn gen_proxy_signal(
     {
         where_clause
                 .predicates
-                .push(parse_quote!(#param: #zbus::export::serde::de::Deserialize<'s> + #zbus::zvariant::Type + ::std::fmt::Debug));
+                .push(parse_quote!(#param: #zbus::export::serde::de::Deserialize<'s> + #zbus::wire::Type + ::std::fmt::Debug));
     }
     generics.params.push(parse_quote!('s));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -1257,4 +1257,63 @@ fn gen_proxy_signal(
     };
 
     (receive_signal, stream_types)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    /// Invalid literals are rejected with the message the D-Bus name types report.
+    #[test]
+    fn invalid_attribute_values_are_rejected() {
+        let cases = [
+            (
+                quote! { interface = "not a valid interface name" },
+                "Invalid interface name. See https://dbus.freedesktop.org/doc/\
+                 dbus-specification.html#message-protocol-names-interface",
+            ),
+            (
+                quote! { interface = "org.freedesktop.Test", default_path = "not/a/path" },
+                "Invalid object path",
+            ),
+            (
+                quote! { interface = "org.freedesktop.Test", default_service = "no-dots" },
+                "Invalid bus name. See https://dbus.freedesktop.org/doc/\
+                 dbus-specification.html#message-protocol-names-bus",
+            ),
+        ];
+
+        for (attr, expected) in cases {
+            let args = Punctuated::<Meta, Token![,]>::parse_terminated
+                .parse2(attr)
+                .unwrap();
+            let input: ItemTrait = parse_quote! {
+                trait Test {
+                    fn thing(&self) -> zbus::Result<()>;
+                }
+            };
+
+            let error = expand(args, input).unwrap_err();
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn valid_attribute_values_are_accepted() {
+        let args = Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse2(quote! {
+                interface = "org.freedesktop.Test",
+                default_path = "/org/freedesktop/Test",
+                default_service = "org.freedesktop.Test"
+            })
+            .unwrap();
+        let input: ItemTrait = parse_quote! {
+            trait Test {
+                fn thing(&self) -> zbus::Result<()>;
+            }
+        };
+
+        expand(args, input).unwrap();
+    }
 }

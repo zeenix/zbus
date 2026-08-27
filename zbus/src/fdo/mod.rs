@@ -36,12 +36,11 @@ pub use stats::StatsProxy;
 
 #[cfg(test)]
 mod tests {
-    use crate::{DBusError, Error, fdo, interface, message::Message};
+    use crate::{DBusError, Error, fdo, interface, message::Message, names::WellKnownName};
     use futures_util::StreamExt;
     use ntest::timeout;
     use test_log::test;
     use tokio::runtime;
-    use zbus_names::WellKnownName;
 
     use super::PeerProxy;
 
@@ -192,7 +191,7 @@ mod tests {
             signal.args().unwrap().interfaces_and_properties,
             vec![(
                 "org.zbus.TestObj".try_into().unwrap(),
-                vec![("Test", zvariant::Value::new("test"))]
+                vec![("Test", crate::wire::Value::new("test"))]
                     .into_iter()
                     .collect()
             )]

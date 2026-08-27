@@ -5,8 +5,8 @@ use std::{
     str::FromStr,
 };
 
+use crate::wire::{Str, Type};
 use serde::{Deserialize, Serialize, de};
-use zvariant::{Str, Type};
 
 /// A D-Bus server GUID.
 ///

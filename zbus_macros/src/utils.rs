@@ -1,11 +1,16 @@
+#[cfg(feature = "comms")]
 use std::fmt::Display;
 
 use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::{Span, TokenStream};
+#[cfg(feature = "comms")]
+use proc_macro2::Span;
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+#[cfg(feature = "comms")]
 use syn::{Attribute, FnArg, Ident, Pat, PatIdent, PatType};
 
 /// Parses the `crate` attribute value into a path.
+#[cfg(feature = "comms")]
 pub fn parse_crate_path(crate_attr: Option<&str>) -> Result<Option<syn::Path>, syn::Error> {
     crate_attr.map(syn::parse_str).transpose()
 }
@@ -25,6 +30,24 @@ pub fn zbus_path(crate_path: Option<&syn::Path>) -> TokenStream {
     }
 }
 
+/// Shared-codegen configuration for the wire derives.
+///
+/// `#[zvariant(...)]` stays accepted next to `#[zbus(...)]`: code written against zvariant 5
+/// keeps compiling unchanged.
+pub fn derive_config() -> zvariant_utils::derive::Config {
+    zvariant_utils::derive::Config {
+        attr_lists: &["zbus", "zvariant"],
+        default_path: wire_path(),
+    }
+}
+
+/// Path of the wire-format module for generated code.
+pub fn wire_path() -> TokenStream {
+    let zbus = zbus_path(None);
+    quote! { #zbus::wire }
+}
+
+#[cfg(feature = "comms")]
 pub fn typed_arg(arg: &FnArg) -> Option<&PatType> {
     match arg {
         FnArg::Typed(t) => Some(t),
@@ -32,6 +55,7 @@ pub fn typed_arg(arg: &FnArg) -> Option<&PatType> {
     }
 }
 
+#[cfg(feature = "comms")]
 pub fn pat_ident(pat: &PatType) -> Option<&Ident> {
     match &*pat.pat {
         Pat::Ident(PatIdent { ident, .. }) => Some(ident),
@@ -39,12 +63,14 @@ pub fn pat_ident(pat: &PatType) -> Option<&Ident> {
     }
 }
 
+#[cfg(feature = "comms")]
 pub fn get_doc_attrs(attrs: &[Attribute]) -> Vec<&Attribute> {
     attrs.iter().filter(|x| x.path().is_ident("doc")).collect()
 }
 
 // Convert to pascal case, assuming snake case.
 // If `s` is already in pascal case, should yield the same result.
+#[cfg(feature = "comms")]
 pub fn pascal_case(s: &str) -> String {
     let mut pascal = String::new();
     let mut capitalize = true;
@@ -61,6 +87,7 @@ pub fn pascal_case(s: &str) -> String {
     pascal
 }
 
+#[cfg(feature = "comms")]
 pub fn is_blank(s: &str) -> bool {
     s.trim().is_empty()
 }
@@ -68,6 +95,7 @@ pub fn is_blank(s: &str) -> bool {
 /// Standard annotation `org.freedesktop.DBus.Property.EmitsChangedSignal`.
 ///
 /// See <https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format>.
+#[cfg(feature = "comms")]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum PropertyEmitsChangedSignal {
     #[default]
@@ -77,6 +105,7 @@ pub enum PropertyEmitsChangedSignal {
     False,
 }
 
+#[cfg(feature = "comms")]
 impl Display for PropertyEmitsChangedSignal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let emits_changed_signal = match self {
@@ -89,6 +118,7 @@ impl Display for PropertyEmitsChangedSignal {
     }
 }
 
+#[cfg(feature = "comms")]
 impl PropertyEmitsChangedSignal {
     pub fn parse(s: &str, span: Span) -> syn::Result<Self> {
         use PropertyEmitsChangedSignal::*;

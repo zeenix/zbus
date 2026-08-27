@@ -136,7 +136,7 @@ impl Tcp {
             move || -> Result<Vec<SocketAddr>> {
                 let addrs = (self.host(), self.port())
                     .to_socket_addrs()
-                    .map_err(|e| Error::Connection(Arc::new(e), address_clone))?
+                    .map_err(|e| Error::Connection(Arc::new(e), Box::new(address_clone)))?
                     .filter(|a| {
                         if let Some(family) = self.family() {
                             if family == TcpTransportFamily::Ipv4 {
@@ -164,7 +164,7 @@ impl Tcp {
         for addr in addrs {
             match Async::<TcpStream>::connect(addr).await {
                 Ok(stream) => return Ok(stream),
-                Err(e) => last_err = Error::Connection(Arc::new(e), address.clone()),
+                Err(e) => last_err = Error::Connection(Arc::new(e), Box::new(address.clone())),
             }
         }
 
@@ -175,7 +175,7 @@ impl Tcp {
     pub(super) async fn connect(self, address: &Address) -> Result<TcpStream> {
         TcpStream::connect((self.host(), self.port()))
             .await
-            .map_err(|e| Error::Connection(Arc::new(e), address.clone()))
+            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))
     }
 }
 

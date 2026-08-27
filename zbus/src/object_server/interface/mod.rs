@@ -13,15 +13,15 @@ use std::{
 };
 
 use async_trait::async_trait;
-use zbus_names::{InterfaceName, MemberName};
-use zvariant::{OwnedValue, Value};
 
 use crate::{
     Connection, ObjectServer,
     async_lock::RwLock,
     fdo,
     message::{self, Header, Message},
+    names::{InterfaceName, MemberName},
     object_server::SignalEmitter,
+    wire::{OwnedValue, Value},
 };
 
 /// This trait is used to dispatch messages to an interface instance.

@@ -1,7 +1,7 @@
 use std::error::Error;
 
+use zbus::wire::Signature;
 use zbus_xml::{Arg, ArgDirection, Interface, Node, PropertyAccess};
-use zvariant::Signature;
 
 #[test]
 fn serde() -> Result<(), Box<dyn Error>> {
@@ -39,7 +39,7 @@ fn invalid_arg_type() {
     let input = include_str!("data/invalid_arg_type.xml");
     assert!(matches!(
         Node::try_from(input),
-        Err(zbus_xml::Error::Variant(_))
+        Err(zbus_xml::Error::Zbus(zbus::Error::SignatureParse(_)))
     ));
 }
 
@@ -323,11 +323,14 @@ const REAL_WORLD_DATA: &[(&str, &str)] = &[
 #[test]
 fn real_world_data() -> Result<(), Box<dyn Error>> {
     for (name, xml) in REAL_WORLD_DATA {
-        // `h` (file descriptor) signatures are only supported by zvariant on Unix, so documents
+        // `h` (file descriptor) signatures are only supported by zbus on Unix, so documents
         // containing them (e.g. from systemd-logind) don't parse on other platforms.
         if cfg!(not(unix)) && xml.contains(r#"type="h""#) {
             assert!(
-                matches!(Node::try_from(*xml), Err(zbus_xml::Error::Variant(_))),
+                matches!(
+                    Node::try_from(*xml),
+                    Err(zbus_xml::Error::Zbus(zbus::Error::SignatureParse(_)))
+                ),
                 "{name}: expected fd signatures to be rejected on non-Unix"
             );
             continue;
@@ -454,7 +457,7 @@ fn real_world_dbus_daemon() -> Result<(), Box<dyn Error>> {
 #[test]
 fn real_world_systemd() -> Result<(), Box<dyn Error>> {
     // The manager document contains `h` (file descriptor) signatures (e.g.
-    // `DumpByFileDescriptor`), which zvariant only supports on Unix.
+    // `DumpByFileDescriptor`), which zbus only supports on Unix.
     if cfg!(unix) {
         let node = Node::try_from(include_str!("data/real_world/systemd1_manager.xml"))?;
         let manager = interface(&node, "org.freedesktop.systemd1.Manager");
@@ -619,7 +622,7 @@ fn malformed_documents() {
     let input = "<node><interface name=\"not a valid name\"/></node>";
     assert!(matches!(
         Node::try_from(input),
-        Err(zbus_xml::Error::Name(_))
+        Err(zbus_xml::Error::Zbus(zbus::Error::InvalidName(_)))
     ));
 }
 
@@ -742,15 +745,16 @@ fn invalid_enum_attributes() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn invalid_member_names() {
-    // An invalid method or signal name is an `Error::Name` (like the interface-name case in
-    // `malformed_documents`), exercising the same validated-name path for both members.
+    // An invalid method or signal name surfaces as `zbus::Error::InvalidName` (like the
+    // interface-name case in `malformed_documents`), exercising the same validated-name path
+    // for both members.
     for input in [
         "<node><interface name=\"org.test.I\"><method name=\"not valid\"/></interface></node>",
         "<node><interface name=\"org.test.I\"><signal name=\"not valid\"/></interface></node>",
     ] {
         assert!(matches!(
             Node::try_from(input),
-            Err(zbus_xml::Error::Name(_))
+            Err(zbus_xml::Error::Zbus(zbus::Error::InvalidName(_)))
         ));
     }
 }

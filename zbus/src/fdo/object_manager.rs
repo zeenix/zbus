@@ -7,11 +7,15 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
 };
-use zbus_names::{InterfaceName, OwnedInterfaceName};
-use zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 
 use super::{Error, Result};
-use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
+use crate::{
+    Connection, ObjectServer, interface,
+    message::Header,
+    names::{InterfaceName, OwnedInterfaceName},
+    object_server::SignalEmitter,
+    wire::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
+};
 
 /// The type returned by the [`ObjectManagerProxy::get_managed_objects`] method.
 pub type ManagedObjects =

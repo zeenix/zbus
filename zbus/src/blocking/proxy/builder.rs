@@ -1,7 +1,11 @@
-use zbus_names::{BusName, InterfaceName};
-use zvariant::ObjectPath;
-
-use crate::{Error, Result, blocking::Connection, proxy::CacheProperties, utils::block_on};
+use crate::{
+    Error, Result,
+    blocking::Connection,
+    names::{BusName, InterfaceName},
+    proxy::CacheProperties,
+    utils::block_on,
+    wire::ObjectPath,
+};
 
 pub use crate::proxy::Defaults;
 

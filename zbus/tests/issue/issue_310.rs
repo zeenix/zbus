@@ -3,7 +3,7 @@ use std::sync::Arc;
 use test_log::test;
 use tracing::instrument;
 
-use zvariant::OwnedObjectPath;
+use zbus::wire::OwnedObjectPath;
 
 #[test(tokio::test(flavor = "multi_thread"))]
 #[instrument]

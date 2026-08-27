@@ -1,0 +1,204 @@
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
+    sync::Arc,
+};
+
+use crate::wire::{Array, Dict, NoneValue, ObjectPath, Optional, Str, Structure, Type, Value};
+
+#[cfg(unix)]
+use crate::wire::Fd;
+
+//
+// Conversions from encodable types to `Value`
+
+macro_rules! into_value {
+    ($from:ty, $kind:ident) => {
+        impl<'a> From<$from> for Value<'a> {
+            fn from(v: $from) -> Self {
+                Value::$kind(v.into())
+            }
+        }
+    };
+}
+
+macro_rules! into_value_from_ref {
+    ($from:ty, $kind:ident) => {
+        impl<'a> From<&'a $from> for Value<'a> {
+            fn from(v: &'a $from) -> Self {
+                Value::$kind(v.clone().into())
+            }
+        }
+    };
+}
+
+macro_rules! into_value_from_both {
+    ($from:ty, $kind:ident) => {
+        into_value!($from, $kind);
+        into_value_from_ref!($from, $kind);
+    };
+}
+
+into_value_from_both!(u8, U8);
+into_value_from_both!(i8, I16);
+into_value_from_both!(bool, Bool);
+into_value_from_both!(u16, U16);
+into_value_from_both!(i16, I16);
+into_value_from_both!(u32, U32);
+into_value_from_both!(i32, I32);
+into_value_from_both!(u64, U64);
+into_value_from_both!(i64, I64);
+into_value_from_both!(f32, F64);
+into_value_from_both!(f64, F64);
+
+into_value!(Arc<str>, Str);
+into_value!(Cow<'a, str>, Str);
+into_value_from_both!(String, Str);
+
+into_value_from_both!(&'a str, Str);
+into_value_from_both!(Str<'a>, Str);
+into_value_from_both!(ObjectPath<'a>, ObjectPath);
+
+macro_rules! try_into_value_from_ref {
+    ($from:ty, $kind:ident) => {
+        impl<'a> TryFrom<&'a $from> for Value<'a> {
+            type Error = crate::Error;
+
+            fn try_from(v: &'a $from) -> crate::Result<Self> {
+                v.try_clone().map(Value::$kind)
+            }
+        }
+    };
+}
+
+into_value!(Array<'a>, Array);
+try_into_value_from_ref!(Array<'a>, Array);
+into_value!(Dict<'a, 'a>, Dict);
+try_into_value_from_ref!(Dict<'a, 'a>, Dict);
+#[cfg(unix)]
+into_value!(Fd<'a>, Fd);
+#[cfg(unix)]
+try_into_value_from_ref!(Fd<'a>, Fd);
+
+#[cfg(feature = "enumflags2")]
+impl<'a, F> From<enumflags2::BitFlags<F>> for Value<'a>
+where
+    F: enumflags2::BitFlag,
+    F::Numeric: Into<Value<'a>>,
+{
+    fn from(v: enumflags2::BitFlags<F>) -> Self {
+        v.bits().into()
+    }
+}
+
+impl<'v, 's: 'v, T> From<T> for Value<'v>
+where
+    T: Into<Structure<'s>>,
+{
+    fn from(v: T) -> Value<'v> {
+        Value::Structure(v.into())
+    }
+}
+
+impl<'b, 'v, V> From<&'b [V]> for Value<'v>
+where
+    &'b [V]: Into<Array<'v>>,
+{
+    fn from(v: &'b [V]) -> Value<'v> {
+        Value::Array(v.into())
+    }
+}
+
+impl<'v, V> From<Vec<V>> for Value<'v>
+where
+    Vec<V>: Into<Array<'v>>,
+{
+    fn from(v: Vec<V>) -> Value<'v> {
+        Value::Array(v.into())
+    }
+}
+
+impl<'b, 'v, V> From<&'b Vec<V>> for Value<'v>
+where
+    &'b Vec<V>: Into<Array<'v>>,
+{
+    fn from(v: &'b Vec<V>) -> Value<'v> {
+        Value::Array(v.into())
+    }
+}
+
+impl<'a, 'k, 'v, K, V> From<BTreeMap<K, V>> for Value<'a>
+where
+    'k: 'a,
+    'v: 'a,
+    K: Type + Into<Value<'k>> + std::cmp::Ord,
+    V: Type + Into<Value<'v>>,
+{
+    fn from(value: BTreeMap<K, V>) -> Self {
+        Self::Dict(value.into())
+    }
+}
+
+impl<'a, 'k, 'v, K, V, H> From<HashMap<K, V, H>> for Value<'a>
+where
+    'k: 'a,
+    'v: 'a,
+    K: Type + Into<Value<'k>> + std::hash::Hash + std::cmp::Eq,
+    V: Type + Into<Value<'v>>,
+    H: BuildHasher + Default,
+{
+    fn from(value: HashMap<K, V, H>) -> Self {
+        Self::Dict(value.into())
+    }
+}
+
+impl<'v, V> From<Optional<V>> for Value<'v>
+where
+    V: Into<Value<'v>> + NoneValue<NoneType = V>,
+{
+    fn from(v: Optional<V>) -> Value<'v> {
+        Option::<V>::from(v)
+            .unwrap_or_else(|| V::null_value())
+            .into()
+    }
+}
+
+#[cfg(feature = "option-as-array")]
+impl<'v, V> From<Option<V>> for Value<'v>
+where
+    V: Into<Value<'v>> + Type,
+{
+    fn from(v: Option<V>) -> Value<'v> {
+        let mut array = Array::new(V::SIGNATURE);
+        if let Some(v) = v {
+            // We got the signature from the `Type` impl, so this should never panic.
+            array.append(v.into()).expect("signature mismatch");
+        }
+
+        array.into()
+    }
+}
+
+#[cfg(all(test, feature = "enumflags2"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bitflags_conversion() {
+        #[repr(u32)]
+        #[enumflags2::bitflags]
+        #[derive(Copy, Clone, Debug)]
+        pub enum Flaggy {
+            One = 0x1,
+            Two = 0x2,
+        }
+
+        let flags = Flaggy::One | Flaggy::Two;
+        assert_eq!(Value::from(flags), Value::U32(0x3));
+        assert_eq!(
+            Value::from(enumflags2::BitFlags::<Flaggy>::empty()),
+            Value::U32(0)
+        );
+    }
+}

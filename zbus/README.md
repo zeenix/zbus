@@ -13,6 +13,23 @@ kind of D-Bus messages (method calls, signals etc) for you.
 The best way to get started with zbus is the [book](https://z-galaxy.github.io/zbus/), where we start
 with basic D-Bus concepts and explain with code samples, how zbus makes D-Bus easy.
 
+## Wire format only
+
+If all you need is the D-Bus wire format (the [serde]-based encoding that used to be the
+`zvariant` crate) and the bus name types (that used to be `zbus_names`), and no connection at
+all, disable the default features:
+
+```toml
+[dependencies]
+zbus = { version = "6", default-features = false }
+```
+
+That build compiles `zbus::wire` and `zbus::names` and nothing else — no connection, proxy or
+object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
+`chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
+and enabling any D-Bus feature (`comms`, `async-io`, `tokio`, `blocking-api`, `p2p`,
+`bus-impl`, `vsock`, `tokio-vsock`) brings the full API back.
+
 ## Example code
 
 We'll create a simple D-Bus service and client to demonstrate the usage of zbus. Note that these
@@ -122,7 +139,7 @@ integration with it without you having to worry about any of the above: Enabling
 # Sample Cargo.toml snippet.
 [dependencies]
 # Also disable the default `async-io` feature to avoid unused dependencies.
-zbus = { version = "5", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["tokio"] }
 ```
 
 That's it! No threads launched behind your back by zbus (directly or indirectly) now and no need to
@@ -148,3 +165,4 @@ see [the corresponding tokio issue on GitHub][tctiog].
 [`connection::Builder`]: https://docs.rs/zbus/latest/zbus/connection/struct.ConnectionBuilder.html
 [`tokio`]: https://crates.io/crates/tokio
 [`async-io`]: https://crates.io/crates/async-io
+[serde]: https://crates.io/crates/serde

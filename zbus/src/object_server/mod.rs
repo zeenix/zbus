@@ -3,9 +3,6 @@
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use tracing::{Instrument, debug, instrument, trace, trace_span};
 
-use zbus_names::InterfaceName;
-use zvariant::{ObjectPath, Value};
-
 use crate::{
     Connection, Error, Result,
     async_lock::RwLock,
@@ -13,6 +10,8 @@ use crate::{
     fdo,
     fdo::ObjectManager,
     message::{Header, Message},
+    names::InterfaceName,
+    wire::{ObjectPath, Value},
 };
 
 mod interface;

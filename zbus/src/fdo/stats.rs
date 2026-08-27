@@ -5,11 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zbus_names::{BusName, OwnedUniqueName};
-use zvariant::{OwnedValue, Type, as_value::optional};
 
 use super::Result;
-use crate::proxy;
+use crate::{
+    names::{BusName, OwnedUniqueName},
+    proxy,
+    wire::{OwnedValue, Type, as_value::optional},
+};
 
 /// Proxy for the [`org.freedesktop.DBus.Debug.Stats`][link] interface.
 ///

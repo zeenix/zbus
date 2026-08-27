@@ -12,7 +12,7 @@ use snakecase::ascii::to_snakecase;
 use zbus::{
     blocking::{Connection, connection, fdo::IntrospectableProxy},
     names::BusName,
-    zvariant::ObjectPath,
+    wire::ObjectPath,
 };
 use zbus_xml::{Interface, Node, Warning};
 

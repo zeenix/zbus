@@ -8,7 +8,7 @@ use std::{
 
 use zbus::{
     names::BusName,
-    zvariant::{ObjectPath, Signature},
+    wire::{ObjectPath, Signature},
 };
 use zbus_xml::{
     Arg, ArgDirection, Interface, Property,
@@ -903,9 +903,9 @@ fn write_enum<W: Write>(w: &mut W, e: &telepathy::Enum) -> std::fmt::Result {
                 w,
                 "#[derive(Debug, Clone, Copy, PartialEq, Eq, \
                  serde_repr::Deserialize_repr, serde_repr::Serialize_repr, \
-                 zbus::zvariant::Type, zbus::zvariant::Value, zbus::zvariant::OwnedValue)]"
+                 zbus::wire::Type, zbus::wire::Value, zbus::wire::OwnedValue)]"
             )?;
-            writeln!(w, "#[zvariant(crate = \"zbus::zvariant\")]")?;
+            writeln!(w, "#[zvariant(crate = \"zbus::wire\")]")?;
             writeln!(w, "#[repr({int})]")?;
             writeln!(w, "pub enum {} {{", type_name(e.name()))?;
             for value in e.values() {
@@ -924,12 +924,9 @@ fn write_enum<W: Write>(w: &mut W, e: &telepathy::Enum) -> std::fmt::Result {
                 w,
                 "#[derive(Debug, Clone, Copy, PartialEq, Eq, \
                  serde::Serialize, serde::Deserialize, \
-                 zbus::zvariant::Type, zbus::zvariant::Value, zbus::zvariant::OwnedValue)]"
+                 zbus::wire::Type, zbus::wire::Value, zbus::wire::OwnedValue)]"
             )?;
-            writeln!(
-                w,
-                "#[zvariant(signature = \"s\", crate = \"zbus::zvariant\")]"
-            )?;
+            writeln!(w, "#[zvariant(signature = \"s\", crate = \"zbus::wire\")]")?;
             writeln!(w, "pub enum {} {{", type_name(e.name()))?;
             for value in e.values() {
                 if let Some(docstring) = value.docstring() {
@@ -954,9 +951,9 @@ fn write_struct<W: Write>(w: &mut W, s: &telepathy::Struct, types: &Types<'_>) -
     writeln!(
         w,
         "#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, \
-         zbus::zvariant::Type, zbus::zvariant::Value, zbus::zvariant::OwnedValue)]"
+         zbus::wire::Type, zbus::wire::Value, zbus::wire::OwnedValue)]"
     )?;
-    writeln!(w, "#[zvariant(crate = \"zbus::zvariant\")]")?;
+    writeln!(w, "#[zvariant(crate = \"zbus::wire\")]")?;
     writeln!(w, "pub struct {} {{", type_name(s.name()))?;
     for member in s.members() {
         if let Some(docstring) = member.docstring() {
@@ -1133,31 +1130,31 @@ fn to_rust_type(ty: &Signature, input: bool, as_ref: bool) -> String {
             Signature::U64 => "u64".into(),
             Signature::F64 => "f64".into(),
             #[cfg(unix)]
-            Signature::Fd if input => "zbus::zvariant::Fd<'_>".into(),
+            Signature::Fd if input => "zbus::wire::Fd<'_>".into(),
             #[cfg(unix)]
-            Signature::Fd => "zbus::zvariant::OwnedFd".into(),
+            Signature::Fd => "zbus::wire::OwnedFd".into(),
             Signature::Str if input || as_ref => "&str".into(),
             Signature::Str => "String".into(),
             Signature::ObjectPath if input => {
                 if as_ref {
-                    "&zbus::zvariant::ObjectPath<'_>".into()
+                    "&zbus::wire::ObjectPath<'_>".into()
                 } else {
-                    "zbus::zvariant::ObjectPath<'_>".into()
+                    "zbus::wire::ObjectPath<'_>".into()
                 }
             }
-            Signature::ObjectPath => "zbus::zvariant::OwnedObjectPath".into(),
-            // `zvariant::Signature` has been lifetime-less (with no `Owned` counterpart)
+            Signature::ObjectPath => "zbus::wire::OwnedObjectPath".into(),
+            // `Signature` has been lifetime-less (with no `Owned` counterpart)
             // since zvariant 5.
-            Signature::Signature if input && as_ref => "&zbus::zvariant::Signature".into(),
-            Signature::Signature => "zbus::zvariant::Signature".into(),
+            Signature::Signature if input && as_ref => "&zbus::wire::Signature".into(),
+            Signature::Signature => "zbus::wire::Signature".into(),
             Signature::Variant if input => {
                 if as_ref {
-                    "&zbus::zvariant::Value<'_>".into()
+                    "&zbus::wire::Value<'_>".into()
                 } else {
-                    "zbus::zvariant::Value<'_>".into()
+                    "zbus::wire::Value<'_>".into()
                 }
             }
-            Signature::Variant => "zbus::zvariant::OwnedValue".into(),
+            Signature::Variant => "zbus::wire::OwnedValue".into(),
             Signature::Array(child) => {
                 let child_ty = signature_to_rust_type(child, input, as_ref);
                 if input && as_ref {
@@ -1201,7 +1198,7 @@ fn to_rust_type(ty: &Signature, input: bool, as_ref: bool) -> String {
 fn to_property_setter_type(ty: &Signature) -> String {
     fn inner(signature: &Signature) -> String {
         match signature {
-            Signature::Variant => "zbus::zvariant::Value<'_>".into(),
+            Signature::Variant => "zbus::wire::Value<'_>".into(),
             Signature::Structure(fields) => {
                 let fields = fields.iter().map(inner).collect::<Vec<_>>();
                 if fields.len() > 1 {

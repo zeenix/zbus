@@ -7,8 +7,8 @@ pub enum Format {
     DBus,
     /// [GVariant](https://developer.gnome.org/glib/stable/glib-GVariant.html) format.
     ///
-    /// GVariant support in `zvariant` is deprecated and will be removed in zvariant 6.0; use
-    /// the `zgvariant` crate for GVariant serialization.
+    /// This variant exists for the `zgvariant` crate, which implements the format; `zbus`
+    /// only ever rejects it.
     #[cfg(feature = "gvariant")]
     GVariant,
 }

@@ -6,6 +6,10 @@ use std::future::ready;
 use zbus::{block_on, fdo, object_server::SignalEmitter, proxy::CacheProperties};
 use zbus_macros::{DBusError, interface, proxy};
 
+// `::mybus` only resolves because of this alias; the test below exercises the `crate` attribute
+// on a `Value`-taking property setter.
+extern crate zbus as mybus;
+
 mod param {
     #[zbus_macros::proxy(
         interface = "org.freedesktop.zbus_macros.ProxyParam",
@@ -21,7 +25,7 @@ mod param {
 mod test {
     use zbus::{
         fdo,
-        zvariant::{OwnedStructure, Structure},
+        wire::{OwnedStructure, Structure},
     };
 
     #[zbus_macros::proxy(
@@ -33,7 +37,7 @@ mod test {
         /// comment for a_test()
         fn a_test(&self, val: &str) -> zbus::Result<u32>;
 
-        /// The generated proxies implement both `zvariant::Type` and `serde::ser::Serialize`
+        /// The generated proxies implement both `zbus::wire::Type` and `serde::ser::Serialize`
         /// which is useful to pass in a proxy as a param. It serializes it as an `ObjectPath`.
         fn some_method<T>(&self, object_path: &T) -> zbus::Result<()>;
 
@@ -130,7 +134,7 @@ fn test_interface() {
     use serde::{Deserialize, Serialize};
     use zbus::{
         object_server::Interface,
-        zvariant::{Type, Value},
+        wire::{Type, Value},
     };
 
     // Test write-only property
@@ -165,7 +169,7 @@ fn test_interface() {
     #[interface(name = "org.freedesktop.zbus.Test", spawn = false)]
     impl<T: 'static> Test<T>
     where
-        T: serde::ser::Serialize + zbus::zvariant::Type + Send + Sync,
+        T: serde::ser::Serialize + zbus::wire::Type + Send + Sync,
     {
         /// Testing `no_arg` documentation is reflected in XML.
         fn no_arg(&self) {
@@ -435,7 +439,7 @@ mod signal_from_message {
 fn test_proxy_object_list() {
     #[derive(Clone)]
     struct ObjectList {
-        paths: [zbus::zvariant::ObjectPath<'static>; 2],
+        paths: [zbus::wire::ObjectPath<'static>; 2],
     }
 
     #[zbus_macros::interface(
@@ -444,22 +448,22 @@ fn test_proxy_object_list() {
     )]
     impl ObjectList {
         #[zbus(proxy(object = "ObjectList", object_vec))]
-        async fn get_test_objects(&self) -> Vec<zbus::zvariant::ObjectPath<'static>> {
+        async fn get_test_objects(&self) -> Vec<zbus::wire::ObjectPath<'static>> {
             self.paths.to_vec()
         }
 
         #[zbus(property, proxy(object = "ObjectList", object_vec))]
-        fn objects(&self) -> Vec<zbus::zvariant::ObjectPath<'static>> {
+        fn objects(&self) -> Vec<zbus::wire::ObjectPath<'static>> {
             self.paths.to_vec()
         }
     }
 
     static OBJECT_LIST: ObjectList = ObjectList {
         paths: [
-            zbus::zvariant::ObjectPath::from_static_str_unchecked(
+            zbus::wire::ObjectPath::from_static_str_unchecked(
                 "/org/freedesktop/zbus_macros/object_list/0",
             ),
-            zbus::zvariant::ObjectPath::from_static_str_unchecked(
+            zbus::wire::ObjectPath::from_static_str_unchecked(
                 "/org/freedesktop/zbus_macros/object_list/1",
             ),
         ],
@@ -489,4 +493,84 @@ fn test_proxy_object_list() {
 
     check_return(proxy.get_test_objects().unwrap());
     check_return(proxy.objects().unwrap());
+}
+
+// This crate has no `zvariant` dependency, so the path `signature!` expands to has to resolve
+// through the `zbus` re-export.
+#[test]
+fn signature_macro_resolves_zvariant_through_zbus() {
+    use zbus::wire::{Signature, signature};
+
+    const DICT: Signature = signature!("a{sv}");
+
+    assert_eq!(DICT.to_string(), "a{sv}");
+    assert_eq!(signature!("s").to_string(), "s");
+}
+
+#[test]
+fn interface_property_setter_with_crate_attr() {
+    use mybus::{object_server::Interface, wire::Value};
+
+    struct CrateAttrProperties;
+
+    #[interface(name = "org.freedesktop.CrateAttrProperties", crate = "mybus")]
+    impl CrateAttrProperties {
+        #[zbus(property)]
+        fn set_owned(&self, _value: u32) {}
+
+        #[zbus(property)]
+        fn set_borrowed(&self, _value: Value<'_>) {}
+    }
+
+    assert_eq!(
+        CrateAttrProperties::name(),
+        "org.freedesktop.CrateAttrProperties"
+    );
+}
+
+// The generated setter reports the value-conversion failure through `Into`, so an error type
+// that only implements `Into<zbus::Error>` — without the `From` impl the blanket conversion
+// would need — is enough.
+#[test]
+fn interface_property_setter_with_into_only_error() {
+    use zbus::{
+        object_server::Interface,
+        wire::{Type, Value},
+    };
+
+    struct ConversionError;
+
+    // `Into` rather than `From` is the point of this test.
+    #[allow(clippy::from_over_into)]
+    impl Into<zbus::Error> for ConversionError {
+        fn into(self) -> zbus::Error {
+            zbus::Error::Failure("not a Fahrenheit reading".to_string())
+        }
+    }
+
+    #[derive(Type)]
+    struct Fahrenheit(u32);
+
+    impl TryFrom<Value<'_>> for Fahrenheit {
+        type Error = ConversionError;
+
+        fn try_from(_value: Value<'_>) -> Result<Self, Self::Error> {
+            Err(ConversionError)
+        }
+    }
+
+    struct Thermostat;
+
+    #[interface(name = "org.freedesktop.Thermostat")]
+    impl Thermostat {
+        #[zbus(property)]
+        fn set_target(&self, value: Fahrenheit) -> fdo::Result<()> {
+            match value.0 {
+                32..=212 => Ok(()),
+                _ => Err(fdo::Error::InvalidArgs("out of range".to_string())),
+            }
+        }
+    }
+
+    assert_eq!(Thermostat::name(), "org.freedesktop.Thermostat");
 }
