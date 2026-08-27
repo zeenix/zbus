@@ -1,11 +1,10 @@
 #[cfg(feature = "comms")]
 use std::fmt::Display;
 
-use proc_macro_crate::{FoundCrate, crate_name};
 #[cfg(feature = "comms")]
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 #[cfg(feature = "comms")]
 use syn::{Attribute, FnArg, Ident, Pat, PatIdent, PatType};
 
@@ -18,13 +17,10 @@ pub fn parse_crate_path(crate_attr: Option<&str>) -> Result<Option<syn::Path>, s
 /// Returns the path to the zbus crate.
 ///
 /// If a custom crate path is provided via the `crate` attribute, it will be used.
-/// Otherwise, uses `proc-macro-crate` to detect the crate name.
+/// Otherwise, defaults to `::zbus`.
 pub fn zbus_path(crate_path: Option<&syn::Path>) -> TokenStream {
     if let Some(path) = crate_path {
         quote! { ::#path }
-    } else if let Ok(FoundCrate::Name(name)) = crate_name("zbus") {
-        let ident = format_ident!("{}", name);
-        quote! { ::#ident }
     } else {
         quote! { ::zbus }
     }
