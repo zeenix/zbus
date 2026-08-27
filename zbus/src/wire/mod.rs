@@ -32,7 +32,7 @@
 //! use serde::{Deserialize, Serialize};
 //!
 //! // All serialization and deserialization API, needs a context.
-//! let ctxt = Context::new_dbus(LE, 0);
+//! let ctxt = Context::new(LE, 0);
 //!
 //! // i16
 //! let encoded = to_bytes(ctxt, &42i16).unwrap();
@@ -79,7 +79,7 @@
 //!     field2: i64::MAX,
 //!     field3: "hello",
 //! };
-//! let ctxt = Context::new_dbus(LE, 0);
+//! let ctxt = Context::new(LE, 0);
 //! let encoded = to_bytes(ctxt, &s).unwrap();
 //! let decoded: Struct<'_> = encoded.deserialize().unwrap().0;
 //! assert_eq!(decoded, s);

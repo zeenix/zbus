@@ -6,5 +6,5 @@ fn fd_value() {
 
     let stdout = std::io::stdout();
     let fd = stdout.as_fd();
-    fd_value_test!(LE, DBus, Fd::from(fd), 4, 4, 8);
+    fd_value_test!(LE, Fd::from(fd), 4, 4, 8);
 }

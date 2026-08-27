@@ -13,7 +13,7 @@ use crate::wire::{Signature, Type};
 /// ```
 /// # use zbus::wire::{to_bytes, serialized::Context, as_value::{Deserialize, Serialize}, LE};
 /// #
-/// # let ctxt = Context::new_dbus(LE, 0);
+/// # let ctxt = Context::new(LE, 0);
 /// # let array = [0, 1, 2];
 /// # let v = Serialize(&array);
 /// # let encoded = to_bytes(ctxt, &v).unwrap();

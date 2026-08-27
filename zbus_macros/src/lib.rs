@@ -473,7 +473,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 ///     field2: i64::max_value(),
 ///     field3: "hello",
 /// };
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let encoded = to_bytes(ctxt, &s).unwrap();
 /// let decoded: Struct = encoded.deserialize().unwrap().0;
 /// assert_eq!(decoded, s);
@@ -495,7 +495,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 ///     Variant2,
 /// }
 /// assert_eq!(Enum::SIGNATURE, u8::SIGNATURE);
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let encoded = to_bytes(ctxt, &Enum::Variant2).unwrap();
 /// let decoded: Enum = encoded.deserialize().unwrap().0;
 /// assert_eq!(decoded, Enum::Variant2);
@@ -564,7 +564,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 ///     field2: i64::max_value(),
 ///     field3: "hello".to_string(),
 /// };
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let encoded = to_bytes(ctxt, &s).unwrap();
 /// let decoded: Struct = encoded.deserialize().unwrap().0;
 /// assert_eq!(decoded, s);
@@ -585,7 +585,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 /// }
 ///
 /// assert_eq!(StrEnum::SIGNATURE, "s");
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let encoded = to_bytes(ctxt, &StrEnum::Variant2).unwrap();
 /// assert_eq!(encoded.len(), 13);
 /// let decoded: StrEnum = encoded.deserialize().unwrap().0;

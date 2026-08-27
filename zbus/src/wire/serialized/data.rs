@@ -11,13 +11,11 @@ use serde::{Deserialize, de::DeserializeSeed};
 use crate::{
     Error, Result,
     wire::{
-        DynamicDeserialize, DynamicType, Signature, Type,
-        de::Deserializer,
-        serialized::{Context, Format},
+        DynamicDeserialize, DynamicType, Signature, Type, de::Deserializer, serialized::Context,
     },
 };
 
-/// Represents serialized bytes in a specific format.
+/// Represents serialized bytes.
 ///
 /// On Unix platforms, it also contains a list of file descriptors, whose indexes are included in
 /// the serialized bytes. By packing them together, we ensure that the file descriptors are never
@@ -107,11 +105,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
         );
         assert!(end <= len, "range end out of bounds: {end:?} > {len:?}");
 
-        let context = Context::new(
-            self.context.format(),
-            self.context.endian(),
-            self.context.position() + start,
-        );
+        let context = Context::new(self.context.endian(), self.context.position() + start);
         let range = Range {
             start: self.range.start + start,
             end: self.range.start + end,
@@ -133,7 +127,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
     /// use zbus::wire::to_bytes;
     /// use zbus::wire::serialized::Context;
     ///
-    /// let ctxt = Context::new_dbus(LE, 0);
+    /// let ctxt = Context::new(LE, 0);
     /// let encoded = to_bytes(ctxt, "hello world").unwrap();
     /// let decoded: &str = encoded.deserialize().unwrap().0;
     /// assert_eq!(decoded, "hello world");
@@ -166,7 +160,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
     ///     signature::{Signature, Fields},
     /// };
     ///
-    /// let ctxt = Context::new_dbus(LE, 0);
+    /// let ctxt = Context::new(LE, 0);
     /// #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
     /// enum Unit {
     ///     Variant1,
@@ -234,40 +228,22 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
 
         #[cfg(unix)]
         let fds = &self.inner.fds;
-        let mut de = match self.context.format() {
-            Format::DBus => {
-                #[cfg(unix)]
-                {
-                    crate::wire::dbus::Deserializer::new(
-                        self.bytes(),
-                        Some(fds),
-                        &signature,
-                        self.context,
-                    )
-                }
-                #[cfg(not(unix))]
-                {
-                    crate::wire::dbus::Deserializer::<()>::new(
-                        self.bytes(),
-                        &signature,
-                        self.context,
-                    )
-                }
+        let mut de = {
+            #[cfg(unix)]
+            {
+                crate::wire::dbus::Deserializer::new(
+                    self.bytes(),
+                    Some(fds),
+                    &signature,
+                    self.context,
+                )
             }
-            .map(Deserializer::DBus)?,
-            // `Format` can carry a `GVariant` variant even though zbus has no GVariant support:
-            // another crate in the dependency graph (e.g. `zgvariant` 2.0) can enable
-            // `zbus_utils/gvariant`, and Cargo feature unification then adds the variant to this
-            // build. zbus can't detect that with a `#[cfg]`, so the variant can't be named
-            // explicitly here without breaking the common case where it doesn't exist at all.
-            // Fall back to a wildcard instead.
-            #[allow(unreachable_patterns)]
-            _ => {
-                return Err(Error::Failure(
-                    "GVariant support has moved to the `zgvariant` crate".to_owned(),
-                ));
+            #[cfg(not(unix))]
+            {
+                crate::wire::dbus::Deserializer::<()>::new(self.bytes(), &signature, self.context)
             }
-        };
+        }
+        .map(Deserializer::DBus)?;
 
         T::deserialize(&mut de).map(|t| match de {
             Deserializer::DBus(de) => (t, de.0.pos),
@@ -304,35 +280,22 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
 
         #[cfg(unix)]
         let fds = &self.inner.fds;
-        let mut de = match self.context.format() {
-            Format::DBus => {
-                #[cfg(unix)]
-                {
-                    crate::wire::dbus::Deserializer::new(
-                        self.bytes(),
-                        Some(fds),
-                        &signature,
-                        self.context,
-                    )
-                }
-                #[cfg(not(unix))]
-                {
-                    crate::wire::dbus::Deserializer::<()>::new(
-                        self.bytes(),
-                        &signature,
-                        self.context,
-                    )
-                }
+        let mut de = {
+            #[cfg(unix)]
+            {
+                crate::wire::dbus::Deserializer::new(
+                    self.bytes(),
+                    Some(fds),
+                    &signature,
+                    self.context,
+                )
             }
-            .map(Deserializer::DBus)?,
-            // See the comment on the equivalent arm in `deserialize_for_signature` above.
-            #[allow(unreachable_patterns)]
-            _ => {
-                return Err(Error::Failure(
-                    "GVariant support has moved to the `zgvariant` crate".to_owned(),
-                ));
+            #[cfg(not(unix))]
+            {
+                crate::wire::dbus::Deserializer::<()>::new(self.bytes(), &signature, self.context)
             }
-        };
+        }
+        .map(Deserializer::DBus)?;
 
         seed.deserialize(&mut de).map(|t| match de {
             Deserializer::DBus(de) => (t, de.0.pos),

@@ -4,7 +4,7 @@ use zbus::wire::{BE, LE, OwnedValue, Value, serialized::Context, to_bytes};
 
 #[test]
 fn value_value() {
-    let ctxt = Context::new_dbus(BE, 0);
+    let ctxt = Context::new(BE, 0);
     let encoded = to_bytes(ctxt, &0xABBA_ABBA_ABBA_ABBA_u64).unwrap();
     assert_eq!(encoded.len(), 8);
     assert_eq!(LE.read_u64(&encoded), 0xBAAB_BAAB_BAAB_BAAB_u64);
@@ -12,12 +12,12 @@ fn value_value() {
     assert_eq!(decoded, 0xABBA_ABBA_ABBA_ABBA);
 
     // Lie about there being bytes before
-    let ctxt = Context::new_dbus(LE, 2);
+    let ctxt = Context::new(LE, 2);
     let encoded = to_bytes(ctxt, &0xABBA_ABBA_ABBA_ABBA_u64).unwrap();
     assert_eq!(encoded.len(), 14);
     let decoded: u64 = encoded.deserialize().unwrap().0;
     assert_eq!(decoded, 0xABBA_ABBA_ABBA_ABBA_u64);
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
 
     // As Value
     let v: Value<'_> = 0xFEFE_u64.into();

@@ -17,7 +17,7 @@ fn derive() {
         field2: 0xFF_FF_FF_FF_FF_FF,
         field3: "hello",
     };
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &s).unwrap();
     assert_eq!(encoded.len(), 26);
     let decoded: Struct<'_> = encoded.deserialize().unwrap().0;

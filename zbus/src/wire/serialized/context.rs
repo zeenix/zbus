@@ -1,4 +1,4 @@
-use crate::wire::{Endian, serialized::Format};
+use crate::wire::Endian;
 
 /// The encoding context to use with the [serialization] and [deserialization] API.
 ///
@@ -15,7 +15,7 @@ use crate::wire::{Endian, serialized::Format};
 /// use zbus::wire::to_bytes;
 ///
 /// let str_vec = vec!["Hello", "World"];
-/// let ctxt = Context::new_dbus(Endian::Little, 0);
+/// let ctxt = Context::new(Endian::Little, 0);
 /// let encoded = to_bytes(ctxt, &str_vec).unwrap();
 ///
 /// // Let's decode the 2nd element of the array only
@@ -29,31 +29,26 @@ use crate::wire::{Endian, serialized::Format};
 /// [specify]: Context::new
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct Context {
-    format: Format,
     position: usize,
     endian: Endian,
 }
 
 impl Context {
     /// Create a new encoding context.
-    pub fn new(format: Format, endian: Endian, position: usize) -> Self {
-        Self {
-            format,
-            position,
-            endian,
-        }
+    pub fn new(endian: Endian, position: usize) -> Self {
+        Self { position, endian }
     }
 
-    /// Convenient wrapper for [`new`] to create a context for D-Bus format.
+    /// Deprecated alias of [`Context::new`].
     ///
-    /// [`new`]: #method.new
+    /// The wire format is always D-Bus, so this says nothing [`Context::new`] does not. It is
+    /// removed in zbus 7.0.
+    #[deprecated(
+        since = "6.0.0",
+        note = "the wire format is always D-Bus; use `Context::new` instead. Removed in 7.0."
+    )]
     pub fn new_dbus(endian: Endian, position: usize) -> Self {
-        Self::new(Format::DBus, endian, position)
-    }
-
-    /// The [`Format`] of this context.
-    pub fn format(self) -> Format {
-        self.format
+        Self::new(endian, position)
     }
 
     /// The [`Endian`] of this context.

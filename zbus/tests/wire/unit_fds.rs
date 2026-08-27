@@ -3,7 +3,7 @@
 fn unit_fds() {
     use zbus::wire::{BE, serialized::Context, to_bytes};
 
-    let ctxt = Context::new_dbus(BE, 0);
+    let ctxt = Context::new(BE, 0);
     let encoded = to_bytes(ctxt, &()).unwrap();
     assert_eq!(encoded.len(), 0, "invalid encoding using `to_bytes`");
     let _: () = encoded

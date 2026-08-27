@@ -16,7 +16,7 @@ fn struct_with_hashmap() {
     let foo = Foo { hmap };
     assert_eq!(Foo::SIGNATURE, "(a{ss})");
 
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &(&foo, 1)).unwrap();
     let f: Foo = encoded.deserialize().unwrap().0;
     assert_eq!(f, foo);

@@ -13,7 +13,7 @@ macro_rules! benchmark {
         let de_function_name = format!("{}_de", $func_prefix);
 
         // Let's try with DBus format first
-        let ctxt = Context::new_dbus(LE, 0);
+        let ctxt = Context::new(LE, 0);
         let mut group = $c.benchmark_group("dbus");
         group.measurement_time(std::time::Duration::from_secs(30));
         group.bench_function(&ser_function_name, |b| {

@@ -10,7 +10,7 @@ use crate::{
         Basic, DynamicType, Signature,
         container_depths::ContainerDepths,
         dbus::Serializer as DBusSerializer,
-        serialized::{Context, Data, Format, Size, Written},
+        serialized::{Context, Data, Size, Written},
         utils::*,
     },
 };
@@ -40,7 +40,7 @@ impl Seek for NullWriteSeek {
 /// ```
 /// use zbus::wire::{serialized::Context, serialized_size, LE};
 ///
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let len = serialized_size(ctxt, "hello world").unwrap();
 /// assert_eq!(*len, 16);
 ///
@@ -56,31 +56,15 @@ where
     #[cfg(unix)]
     let mut fds = FdList::Number(0);
 
-    let len = match ctxt.format() {
-        Format::DBus => {
-            let mut ser = DBusSerializer::<NullWriteSeek>::new(
-                &signature,
-                &mut null,
-                #[cfg(unix)]
-                &mut fds,
-                ctxt,
-            )?;
-            value.serialize(&mut ser)?;
-            ser.0.bytes_written
-        }
-        // `Format` can carry a `GVariant` variant even though zbus has no GVariant support:
-        // another crate in the dependency graph (e.g. `zgvariant` 2.0) can enable
-        // `zbus_utils/gvariant`, and Cargo feature unification then adds the variant to
-        // this build. zbus can't detect that with a `#[cfg]`, so the variant can't be named
-        // explicitly here without breaking the common case where it doesn't exist at all.
-        // Fall back to a wildcard instead.
-        #[allow(unreachable_patterns)]
-        _ => {
-            return Err(Error::Failure(
-                "GVariant support has moved to the `zgvariant` crate".to_owned(),
-            ));
-        }
-    };
+    let mut ser = DBusSerializer::<NullWriteSeek>::new(
+        &signature,
+        &mut null,
+        #[cfg(unix)]
+        &mut fds,
+        ctxt,
+    )?;
+    value.serialize(&mut ser)?;
+    let len = ser.0.bytes_written;
 
     let size = Size::new(len, ctxt);
     #[cfg(unix)]
@@ -99,7 +83,7 @@ where
 /// ```
 /// use zbus::wire::{serialized::{Context, Data}, to_writer, LE};
 ///
-/// let ctxt = Context::new_dbus(LE, 0);
+/// let ctxt = Context::new(LE, 0);
 /// let mut cursor = std::io::Cursor::new(vec![]);
 /// // SAFETY: No FDs are being serialized here so its completely safe.
 /// unsafe { to_writer(&mut cursor, ctxt, &42u32) }.unwrap();
@@ -172,26 +156,15 @@ where
     #[cfg(unix)]
     let mut fds = FdList::Fds(vec![]);
 
-    let len = match ctxt.format() {
-        Format::DBus => {
-            let mut ser = DBusSerializer::<W>::new(
-                &signature,
-                writer,
-                #[cfg(unix)]
-                &mut fds,
-                ctxt,
-            )?;
-            value.serialize(&mut ser)?;
-            ser.0.bytes_written
-        }
-        // See the comment on the equivalent arm in `serialized_size` above.
-        #[allow(unreachable_patterns)]
-        _ => {
-            return Err(Error::Failure(
-                "GVariant support has moved to the `zgvariant` crate".to_owned(),
-            ));
-        }
-    };
+    let mut ser = DBusSerializer::<W>::new(
+        &signature,
+        writer,
+        #[cfg(unix)]
+        &mut fds,
+        ctxt,
+    )?;
+    value.serialize(&mut ser)?;
+    let len = ser.0.bytes_written;
 
     let written = Written::new(len, ctxt);
     #[cfg(unix)]
@@ -297,7 +270,7 @@ where
     where
         T: Basic,
     {
-        self.add_padding(T::alignment(self.ctxt.format()))?;
+        self.add_padding(T::alignment())?;
 
         Ok(())
     }

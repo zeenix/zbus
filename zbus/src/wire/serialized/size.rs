@@ -4,7 +4,7 @@ use crate::wire::serialized::Context;
 
 /// Represents the return value of [`crate::wire::serialized_size`] function.
 ///
-/// It mainly contains the size of serialized bytes in a specific format.
+/// It mainly contains the size of the serialized bytes.
 ///
 /// On Unix platforms, it also contains the number of file descriptors, whose indexes are included
 /// in the serialized bytes.

@@ -5,7 +5,7 @@ fn serde_bytes() {
     use serde_bytes::*;
     use zbus::wire::{LE, Type, serialized::Context, to_bytes};
 
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let ay = Bytes::new(&[77u8; 1_000_000]);
     let encoded = to_bytes(ctxt, &ay).unwrap();
     assert_eq!(encoded.len(), 1_000_004);

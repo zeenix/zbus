@@ -1,4 +1,4 @@
-use crate::wire::{Signature, Type, impl_type_with_repr, serialized::Format};
+use crate::wire::{Signature, Type, impl_type_with_repr};
 
 /// Trait for basic types.
 ///
@@ -12,12 +12,12 @@ pub trait Basic: Type {
     /// The type signature, as a string.
     const SIGNATURE_STR: &'static str;
 
-    /// The required padding alignment for the given format.
+    /// The required padding alignment.
     ///
     /// The default implementation covers all possible cases so you should never need to override
     /// it.
-    fn alignment(format: Format) -> usize {
-        Self::SIGNATURE.alignment(format)
+    fn alignment() -> usize {
+        Self::SIGNATURE.alignment_dbus()
     }
 }
 

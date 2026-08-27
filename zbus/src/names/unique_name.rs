@@ -90,7 +90,7 @@ mod tests {
     fn optional_name_wire_round_trip() {
         use crate::wire::{LE, Optional, serialized::Context, to_bytes};
 
-        let ctxt = Context::new_dbus(LE, 0);
+        let ctxt = Context::new(LE, 0);
 
         // `NameOwnerChanged`-style: empty string on the wire means "no name".
         let encoded = to_bytes(ctxt, &Optional::<UniqueName<'_>>::default()).unwrap();

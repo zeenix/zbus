@@ -10,7 +10,7 @@ use crate::{
     wire::{
         Basic, ObjectPath, Signature,
         de::{DeserializerCommon, ValueParseStage},
-        serialized::{Context, Format},
+        serialized::Context,
         utils::*,
     },
 };
@@ -30,7 +30,6 @@ impl<'de, 'sig, 'f, F> Deserializer<'de, 'sig, 'f, F> {
         signature: &'sig Signature,
         ctxt: Context,
     ) -> Result<Self> {
-        assert_eq!(ctxt.format(), Format::DBus);
         super::reject_maybe(signature)?;
 
         Ok(Self(DeserializerCommon {
@@ -160,7 +159,7 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
         let v = match &self.0.signature {
             #[cfg(unix)]
             Signature::Fd => {
-                let alignment = u32::alignment(Format::DBus);
+                let alignment = u32::alignment();
                 self.0.parse_padding(alignment)?;
                 let idx = self.0.ctxt.endian().read_u32(self.0.next_slice(alignment)?);
                 self.0.get_fd(idx)?
@@ -213,7 +212,7 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
                 len_slice[0] as usize
             }
             Signature::Str | Signature::ObjectPath => {
-                let alignment = u32::alignment(Format::DBus);
+                let alignment = u32::alignment();
                 self.0.parse_padding(alignment)?;
                 let len_slice = self.0.next_slice(alignment)?;
 
@@ -301,7 +300,7 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
     where
         V: Visitor<'de>,
     {
-        let alignment = self.0.signature.alignment(Format::DBus);
+        let alignment = self.0.signature.alignment_dbus();
         self.0.parse_padding(alignment)?;
 
         match self.0.signature {
@@ -342,7 +341,7 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
     where
         V: Visitor<'de>,
     {
-        let alignment = self.0.signature.alignment(self.0.ctxt.format());
+        let alignment = self.0.signature.alignment_dbus();
         self.0.parse_padding(alignment)?;
 
         visitor.visit_enum(crate::wire::de::Enum {
@@ -414,7 +413,7 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
         // D-Bus expects us to add padding for the first element even when there is no first
         // element (i-e empty array) so we parse padding already.
         let (element_alignment, child_signature) = match de.0.signature {
-            Signature::Array(child) => (child.alignment(de.0.ctxt.format()), child.signature()),
+            Signature::Array(child) => (child.alignment_dbus(), child.signature()),
             Signature::Dict { key, .. } => (DICT_ENTRY_ALIGNMENT_DBUS, key.signature()),
             _ => {
                 return Err(Error::SignatureMismatch(
@@ -693,7 +692,6 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
                 super::reject_maybe(&signature)?;
 
                 let ctxt = Context::new(
-                    Format::DBus,
                     self.de.0.ctxt.endian(),
                     self.de.0.ctxt.position() + value_start,
                 );

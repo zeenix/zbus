@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn serde() -> Result<(), Box<dyn Error>> {
-        let ec = Context::new_dbus(LE, 0);
+        let ec = Context::new(LE, 0);
         let ov: OwnedValue = Value::from("hi!").try_into()?;
         let ser = to_bytes(ec, &ov)?;
         let (de, parsed): (Value<'_>, _) = ser.deserialize()?;

@@ -6,7 +6,7 @@ fn struct_value() {
     // Struct->Value
     let s: Value<'_> = ("a", "b", (1, 2)).into();
 
-    let ctxt = Context::new_dbus(LE, 0);
+    let ctxt = Context::new(LE, 0);
     let encoded = to_bytes(ctxt, &s).unwrap();
     assert_eq!(dbg!(encoded.len()), 40);
     let decoded: Value<'_> = encoded.deserialize().unwrap().0;

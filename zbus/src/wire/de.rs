@@ -81,7 +81,7 @@ impl<'de, F> DeserializerCommon<'de, '_, '_, F> {
     where
         T: Basic,
     {
-        self.parse_padding(T::alignment(self.ctxt.format()))?;
+        self.parse_padding(T::alignment())?;
 
         Ok(())
     }
@@ -106,7 +106,7 @@ impl<'de, F> DeserializerCommon<'de, '_, '_, F> {
     {
         self.prep_deserialize_basic::<T>()?;
 
-        self.next_slice(T::alignment(self.ctxt.format()))
+        self.next_slice(T::alignment())
     }
 
     pub fn abs_pos(&self) -> usize {

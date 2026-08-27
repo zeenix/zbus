@@ -141,7 +141,7 @@ impl PrimaryHeader {
 
     pub(crate) fn read(buf: &[u8]) -> Result<(PrimaryHeader, u32), Error> {
         let endian = Endian::from(EndianSig::try_from(buf[0])?);
-        let ctx = Context::new_dbus(endian, 0);
+        let ctx = Context::new(endian, 0);
         let data = serialized::Data::new(buf, ctx);
 
         Self::read_from_data(&data)

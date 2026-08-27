@@ -10,7 +10,7 @@ use crate::wire::{Signature, Type};
 /// ```
 /// # use zbus::wire::{to_bytes, serialized::Context, as_value::Serialize, LE};
 /// #
-/// # let ctxt = Context::new_dbus(LE, 0);
+/// # let ctxt = Context::new(LE, 0);
 /// let _ = to_bytes(ctxt, &Serialize(&[0, 1, 2])).unwrap();
 /// ```
 pub struct Serialize<'a, T: Type + serde::Serialize>(pub &'a T);
