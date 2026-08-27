@@ -13,7 +13,7 @@ use syn::{
     spanned::Spanned,
     token::{Async, Comma},
 };
-use zvariant_utils::{case, def_attrs, names};
+use zbus_utils::{case, def_attrs, names};
 
 use crate::utils::*;
 

@@ -14,7 +14,7 @@ macro_rules! impl_str_basic {
 /// # Parameters
 /// - `$name`: The name of the borrowed type (e.g., `InterfaceName`).
 /// - `$owned_name`: The name of the owned type (e.g., `OwnedInterfaceName`).
-/// - `$validate_fn`: The `zvariant_utils::names` validator to use.
+/// - `$validate_fn`: The `zbus_utils::names` validator to use.
 macro_rules! define_name_type_impls {
     (
         name: $name:ident,
@@ -48,7 +48,7 @@ macro_rules! define_name_type_impls {
 
             /// Same as `try_from`, except it takes a `&'static str`.
             pub fn from_static_str(name: &'static str) -> crate::Result<Self> {
-                zvariant_utils::names::$validate_fn(name.as_bytes())
+                zbus_utils::names::$validate_fn(name.as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(crate::wire::Str::from_static(name)))
             }
@@ -162,7 +162,7 @@ macro_rules! define_name_type_impls {
 
             fn try_from(value: &'s str) -> crate::Result<Self> {
                 let value = crate::wire::Str::from(value);
-                zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
+                zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
             }
@@ -181,7 +181,7 @@ macro_rules! define_name_type_impls {
 
             fn try_from(value: String) -> crate::Result<Self> {
                 let value = crate::wire::Str::from(value);
-                zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
+                zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
             }
@@ -200,7 +200,7 @@ macro_rules! define_name_type_impls {
 
             fn try_from(value: std::sync::Arc<str>) -> crate::Result<Self> {
                 let value = crate::wire::Str::from(value);
-                zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
+                zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
             }
@@ -219,7 +219,7 @@ macro_rules! define_name_type_impls {
 
             fn try_from(value: std::borrow::Cow<'s, str>) -> crate::Result<Self> {
                 let value = crate::wire::Str::from(value);
-                zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
+                zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
             }
@@ -237,7 +237,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::Error;
 
             fn try_from(value: crate::wire::Str<'s>) -> crate::Result<Self> {
-                zvariant_utils::names::$validate_fn(value.as_str().as_bytes())
+                zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
             }

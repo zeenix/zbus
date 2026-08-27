@@ -113,9 +113,12 @@ jobs:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Test zbus with zvariant_utils/gvariant enabled (zgvariant coexistence)
+      - name: Test zbus with zbus_utils/gvariant enabled (zgvariant coexistence)
         run: |
-          cargo --locked test -p zbus --no-default-features --features zvariant_utils/gvariant
+          # Simulates the graph a zgvariant 2.0 dependency creates: it turns the shared crate's
+          # `gvariant` feature on, and Cargo unification hands zbus the extra signature and
+          # format variants it must keep rejecting.
+          cargo --locked test -p zbus --no-default-features --features zbus_utils/gvariant
       - name: Build and Test
         run: |
           dbus-run-session --config-file /tmp/dbus-session-abstract.conf -- cargo --locked test --release --verbose -- basic_connection

@@ -19,11 +19,13 @@ The project is divided into the following subcrates:
   and the wire-format derives. `zbus` re-exports all of them, so you rarely depend on it directly.
 * [`zbus_xml`]: API to handle D-Bus introspection description XML.
 * [`zbus_xmlgen`]: A developer tool to generate Rust code from D-Bus interface description XML.
-* [`zvariant_utils`]: The D-Bus signature parser, name validators and derive-macro plumbing
-  shared by `zbus_macros` and the [zgvariant] project.
+* [`zbus_utils`]: The D-Bus signature parser, name validators and derive-macro plumbing
+  shared by `zbus` and `zbus_macros`.
 
 [zgvariant] is a sibling project. It implements [GVariant], the format zbus itself dropped in
-6.0, on top of the same signature type.
+6.0. From its 2.0 release it builds on `zbus_utils` too, so its signature type is the same one
+zbus uses; zgvariant 1.x depends on `zvariant_utils` 4.x — this crate under its old name — and its
+signature type is a distinct one.
 
 ## Getting Started
 
@@ -145,7 +147,7 @@ There are many other D-Bus crates out there with various levels of maturity and 
 [`zbus_macros`]: zbus_macros/README.md
 [`zbus_xml`]: zbus_xml/README.md
 [`zbus_xmlgen`]: zbus_xmlgen/README.md
-[`zvariant_utils`]: zvariant_utils/README.md
+[`zbus_utils`]: zbus_utils/README.md
 [wf]: https://docs.rs/zbus/latest/zbus/wire/index.html
 [bn]: https://docs.rs/zbus/latest/zbus/names/index.html
 [zgvariant]: https://github.com/z-galaxy/zgvariant

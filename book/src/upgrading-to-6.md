@@ -360,9 +360,9 @@ the empty string, and the sentinel now maps to `None` without being converted at
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated
-`Type` and `Value` types (`Signature` is not one of them: both zvariant 5.14+ and zbus 6
-re-export it from `zvariant_utils`, which Cargo unifies), and the resulting errors ("expected
-`zbus::wire::Value`, found `zvariant::Value`") are confusing. Find the culprit with:
+`Type`, `Value` and `Signature` types, and the resulting errors ("expected `zbus::wire::Value`,
+found `zvariant::Value`") are confusing. `Signature` is duplicated like the other two: zbus 6
+re-exports it from `zbus_utils`, which no zvariant 5 release uses. Find the culprit with:
 
 ```bash
 cargo tree -i zvariant
@@ -384,8 +384,12 @@ zgvariant = "1"
 
 zgvariant only speaks GVariant, so it has no format to choose: what was
 `zvariant::serialized::Context::new_gvariant(LE, 0)` is `zgvariant::serialized::Context::new(LE, 0)`
-there. The rest reads the same. zgvariant and zbus share their `Signature` type — both re-export
-it from `zvariant_utils` — so a signature parsed by one is the same value in the other.
+there. The rest reads the same.
+
+zgvariant 2.0 and later share their `Signature` type with zbus 6 — both re-export it from
+`zbus_utils` — so a signature parsed by one is the same value in the other. zgvariant 1.x
+re-exports it from `zvariant_utils` instead, which makes it a second, unrelated type in a zbus 6
+build; move a signature across that boundary through its string form.
 
 [breaks]: #what-warns-what-is-silent-what-breaks
 [`zbus::wire`]: https://docs.rs/zbus/latest/zbus/wire/index.html

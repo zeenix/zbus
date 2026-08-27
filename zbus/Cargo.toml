@@ -78,7 +78,7 @@ async-fs = []
 zbus_macros = { path = "../zbus_macros", version = "6.0.0", default-features = false }
 zcheapstr.workspace = true
 endi.workspace = true
-zvariant_utils = { path = "../zvariant_utils", version = "4.3.0" }
+zbus_utils = { path = "../zbus_utils", version = "6.0.0" }
 
 serde.workspace = true
 serde_repr = { workspace = true, optional = true }

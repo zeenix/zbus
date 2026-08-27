@@ -1,6 +1,6 @@
 use crate::wire::{Basic, Type};
 
-pub use zvariant_utils::signature::*;
+pub use zbus_utils::signature::*;
 
 impl Type for Signature {
     const SIGNATURE: &'static Signature = &Signature::Signature;

@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "zbus",
-    "zvariant_utils",
+    "zbus_utils",
     "zbus_macros",
     "zbus_xml",
     "zbus_xmlgen",
@@ -24,7 +24,7 @@ strip = "none"
 
 [workspace.dependencies]
 # Local dependencies
-zvariant_utils = { path = "./zvariant_utils" }
+zbus_utils = { path = "./zbus_utils" }
 zbus_macros = { path = "./zbus_macros" }
 zbus_xml = { path = "./zbus_xml" }
 zbus = { path = "./zbus" }

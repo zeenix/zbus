@@ -13,7 +13,7 @@ use crate::{
     wire::{NoneValue, OwnedValue, Str, Type, Value},
 };
 use serde::{Deserialize, Serialize, de};
-use zvariant_utils::names::BusNameKind;
+use zbus_utils::names::BusNameKind;
 
 /// String that identifies a [bus name].
 ///
@@ -214,9 +214,7 @@ impl<'s> TryFrom<Str<'s>> for BusName<'s> {
     type Error = Error;
 
     fn try_from(value: Str<'s>) -> Result<Self> {
-        match zvariant_utils::names::validate_bus_name(value.as_bytes())
-            .map_err(Error::InvalidName)?
-        {
+        match zbus_utils::names::validate_bus_name(value.as_bytes()).map_err(Error::InvalidName)? {
             BusNameKind::Unique => Ok(BusName::Unique(UniqueName(value))),
             BusNameKind::WellKnown => Ok(BusName::WellKnown(WellKnownName(value))),
         }
