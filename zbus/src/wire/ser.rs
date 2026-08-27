@@ -297,7 +297,7 @@ where
     where
         T: Basic,
     {
-        self.add_padding(T::alignment(self.ctxt.format()))?;
+        self.add_padding(T::alignment())?;
 
         Ok(())
     }

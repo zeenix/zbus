@@ -14,8 +14,6 @@ use std::{
     str::FromStr,
 };
 
-use crate::serialized::Format;
-
 /// A D-Bus signature in parsed form.
 ///
 /// This is the type that zbus re-exports as [`zbus::wire::Signature`] and zgvariant as
@@ -252,15 +250,6 @@ impl Signature {
         Signature::Maybe(Child::Static { child })
     }
 
-    /// The required padding alignment for the given format.
-    pub fn alignment(&self, format: Format) -> usize {
-        match format {
-            Format::DBus => self.alignment_dbus(),
-            #[cfg(feature = "gvariant")]
-            Format::GVariant => self.alignment_gvariant(),
-        }
-    }
-
     /// Whether a maybe (`m`) type appears anywhere within this signature.
     ///
     /// The maybe type is GVariant-specific and has no representation in the D-Bus wire format, so
@@ -277,7 +266,13 @@ impl Signature {
         }
     }
 
-    fn alignment_dbus(&self) -> usize {
+    /// The required padding alignment, following the D-Bus marshaling rules.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a maybe (`m`) type, which the D-Bus format cannot express. Reject such a
+    /// signature with [`Signature::contains_maybe`] before encoding it.
+    pub fn alignment_dbus(&self) -> usize {
         match self {
             Signature::U8 | Signature::Variant | Signature::Signature => 1,
             Signature::I16 | Signature::U16 => 2,
@@ -300,8 +295,9 @@ impl Signature {
         }
     }
 
+    /// The required padding alignment, following the GVariant marshaling rules.
     #[cfg(feature = "gvariant")]
-    fn alignment_gvariant(&self) -> usize {
+    pub fn alignment_gvariant(&self) -> usize {
         use std::cmp::max;
 
         match self {

@@ -86,7 +86,7 @@ where
         match &self.0.signature {
             #[cfg(unix)]
             Signature::Fd => {
-                self.0.add_padding(u32::alignment(Format::DBus))?;
+                self.0.add_padding(u32::alignment())?;
                 let idx = self.0.add_fd(v)?;
                 self.0
                     .write_u32(self.0.ctxt.endian(), idx)
@@ -122,8 +122,7 @@ where
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
-        self.0
-            .add_padding(self.0.signature.alignment(Format::DBus))?;
+        self.0.add_padding(self.0.signature.alignment_dbus())?;
 
         let signature = self.0.signature;
         // A `g` or `v` value carries a signature; a maybe type in it is not valid D-Bus.
@@ -267,7 +266,7 @@ where
         // D-Bus expects us to add padding for the first element even when there is no first
         // element (i-e empty array) so we add padding already.
         let (alignment, child_signature) = match self.0.signature {
-            Signature::Array(child) => (child.alignment(self.0.ctxt.format()), child.signature()),
+            Signature::Array(child) => (child.alignment_dbus(), child.signature()),
             Signature::Dict { key, .. } => (DICT_ENTRY_ALIGNMENT_DBUS, key.signature()),
             _ => {
                 return Err(Error::SignatureMismatch(
@@ -338,8 +337,7 @@ where
     }
 
     fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        self.0
-            .add_padding(self.0.signature.alignment(self.0.ctxt.format()))?;
+        self.0.add_padding(self.0.signature.alignment_dbus())?;
         match &self.0.signature {
             Signature::Variant => StructSerializer::variant(self).map(StructSeqSerializer::Struct),
             Signature::Array(_) => self.serialize_seq(Some(len)).map(StructSeqSerializer::Seq),
