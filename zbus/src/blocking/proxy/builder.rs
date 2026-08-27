@@ -1,6 +1,6 @@
 use crate::{
     names::{BusName, InterfaceName},
-    zvariant::ObjectPath,
+    wire::ObjectPath,
 };
 
 use crate::{Error, Result, blocking::Connection, proxy::CacheProperties, utils::block_on};

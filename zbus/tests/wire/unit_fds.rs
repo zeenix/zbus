@@ -1,7 +1,7 @@
 #[test]
 #[cfg(unix)]
 fn unit_fds() {
-    use zbus::zvariant::{BE, serialized::Context, to_bytes};
+    use zbus::wire::{BE, serialized::Context, to_bytes};
 
     let ctxt = Context::new_dbus(BE, 0);
     let encoded = to_bytes(ctxt, &()).unwrap();

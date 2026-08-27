@@ -1,4 +1,4 @@
-use zbus::zvariant::{BE, LE};
+use zbus::wire::{BE, LE};
 
 #[test]
 fn i16_value() {

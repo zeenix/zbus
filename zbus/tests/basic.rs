@@ -8,7 +8,7 @@ use zbus::block_on;
 
 use zbus::{
     names::UniqueName,
-    zvariant::{OwnedValue, Type},
+    wire::{OwnedValue, Type},
 };
 
 use zbus::{
@@ -99,7 +99,7 @@ fn fdpass_systemd() {
 #[cfg(all(unix, not(target_os = "macos")))]
 async fn fdpass_systemd_async() {
     use std::{fs::File, os::unix::io::AsRawFd};
-    use zbus::zvariant::OwnedFd;
+    use zbus::wire::OwnedFd;
 
     let connection = Connection::system().await.unwrap();
 

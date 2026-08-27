@@ -1,4 +1,4 @@
-use zbus::zvariant::{
+use zbus::wire::{
     Basic, LE, NATIVE_ENDIAN, Value,
     serialized::{Context, Format},
     to_bytes,
@@ -15,11 +15,11 @@ fn f64_type_test(
     value: f64,
     expected_len: usize,
     expected_value_len: usize,
-) -> zbus::zvariant::serialized::Data<'static, 'static> {
+) -> zbus::wire::serialized::Data<'static, 'static> {
     // Lie that we're starting at byte 1 in the overall message to test padding
     let ctxt = Context::new(format, NATIVE_ENDIAN, 1);
     let encoded = to_bytes(ctxt, &value).unwrap();
-    let padding = zbus::zvariant::padding_for_n_bytes(1, 8);
+    let padding = zbus::wire::padding_for_n_bytes(1, 8);
     assert_eq!(
         encoded.len(),
         expected_len + padding,

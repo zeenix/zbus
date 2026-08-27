@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zbus::zvariant::{
+use zbus::wire::{
     LE, OwnedValue, Signature, Type, Value,
     as_value::{self, optional},
     serialized::{Context, Format},
@@ -62,7 +62,7 @@ fn derive_dict() {
     };
 
     let ctxt = Context::new(Format::DBus, LE, 0);
-    let serialized = zbus::zvariant::to_bytes(ctxt, &test).unwrap();
+    let serialized = zbus::wire::to_bytes(ctxt, &test).unwrap();
     let deserialized: HashMap<String, OwnedValue> = serialized.deserialize().unwrap().0;
 
     assert_eq!(
@@ -78,7 +78,7 @@ fn derive_dict() {
         Value::from(&[1u8, 2, 3][..]).try_into().unwrap()
     );
 
-    let serialized = zbus::zvariant::to_bytes(ctxt, &deserialized).unwrap();
+    let serialized = zbus::wire::to_bytes(ctxt, &deserialized).unwrap();
     let deserialized: Test = serialized.deserialize().unwrap().0;
 
     assert_eq!(deserialized.field_a, Some(1u32));
@@ -130,7 +130,7 @@ fn derive_with_crate_attr() {
     // Test that the `crate` attribute works for custom crate paths.
     // This is useful when zvariant is re-exported or renamed in Cargo.toml.
     #[derive(Type)]
-    #[zvariant(crate = "zbus::zvariant")]
+    #[zvariant(crate = "zbus::wire")]
     struct TestCrateAttr {
         name: String,
         value: u32,
@@ -141,7 +141,7 @@ fn derive_with_crate_attr() {
     // Also test on enums
     #[repr(u8)]
     #[derive(Type)]
-    #[zvariant(crate = "zbus::zvariant")]
+    #[zvariant(crate = "zbus::wire")]
     enum TestCrateAttrEnum {
         A = 1,
         B = 2,
@@ -152,7 +152,7 @@ fn derive_with_crate_attr() {
 
 #[test]
 fn signature_macro_uses_detected_crate_path() {
-    use zbus::zvariant::signature;
+    use zbus::wire::signature;
 
     const DICT: Signature = signature!("a{sv}");
 

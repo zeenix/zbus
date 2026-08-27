@@ -1,4 +1,4 @@
-use zbus::zvariant::{serialized::Context, to_bytes_for_signature};
+use zbus::wire::{serialized::Context, to_bytes_for_signature};
 
 #[test]
 fn enums() {
@@ -12,11 +12,11 @@ fn enums() {
     }
 
     let ctxts_n_expected_lens = [[
-        (Context::new_dbus(zbus::zvariant::BE, 0), 4usize),
-        (Context::new_dbus(zbus::zvariant::BE, 1), 7),
-        (Context::new_dbus(zbus::zvariant::BE, 2), 6),
-        (Context::new_dbus(zbus::zvariant::BE, 3), 5),
-        (Context::new_dbus(zbus::zvariant::BE, 4), 4),
+        (Context::new_dbus(zbus::wire::BE, 0), 4usize),
+        (Context::new_dbus(zbus::wire::BE, 1), 7),
+        (Context::new_dbus(zbus::wire::BE, 2), 6),
+        (Context::new_dbus(zbus::wire::BE, 3), 5),
+        (Context::new_dbus(zbus::wire::BE, 4), 4),
     ]];
     for ctxts_n_expected_len in ctxts_n_expected_lens {
         for (ctxt, expected_len) in ctxts_n_expected_len {
@@ -35,11 +35,11 @@ fn enums() {
     }
 
     let ctxts_n_expected_lens = [[
-        (Context::new_dbus(zbus::zvariant::BE, 0), 14usize),
-        (Context::new_dbus(zbus::zvariant::BE, 1), 21),
-        (Context::new_dbus(zbus::zvariant::BE, 2), 20),
-        (Context::new_dbus(zbus::zvariant::BE, 3), 19),
-        (Context::new_dbus(zbus::zvariant::BE, 4), 18),
+        (Context::new_dbus(zbus::wire::BE, 0), 14usize),
+        (Context::new_dbus(zbus::wire::BE, 1), 21),
+        (Context::new_dbus(zbus::wire::BE, 2), 20),
+        (Context::new_dbus(zbus::wire::BE, 3), 19),
+        (Context::new_dbus(zbus::wire::BE, 4), 18),
     ]];
     for ctxts_n_expected_len in ctxts_n_expected_lens {
         for (ctxt, expected_len) in ctxts_n_expected_len {
@@ -58,11 +58,11 @@ fn enums() {
     }
 
     let ctxts_n_expected_lens = [[
-        (Context::new_dbus(zbus::zvariant::BE, 0), 16usize),
-        (Context::new_dbus(zbus::zvariant::BE, 1), 23),
-        (Context::new_dbus(zbus::zvariant::BE, 2), 22),
-        (Context::new_dbus(zbus::zvariant::BE, 3), 21),
-        (Context::new_dbus(zbus::zvariant::BE, 4), 20),
+        (Context::new_dbus(zbus::wire::BE, 0), 16usize),
+        (Context::new_dbus(zbus::wire::BE, 1), 23),
+        (Context::new_dbus(zbus::wire::BE, 2), 22),
+        (Context::new_dbus(zbus::wire::BE, 3), 21),
+        (Context::new_dbus(zbus::wire::BE, 4), 20),
     ]];
     // TODO: Provide convenience API to create complex signatures
     let signature = "(u(yu))";

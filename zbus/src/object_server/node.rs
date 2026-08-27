@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     names::InterfaceName,
-    zvariant::{ObjectPath, OwnedObjectPath, OwnedValue},
+    wire::{ObjectPath, OwnedObjectPath, OwnedValue},
 };
 
 use crate::{

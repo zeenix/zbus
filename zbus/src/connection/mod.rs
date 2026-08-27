@@ -1,7 +1,7 @@
 //! Connection API.
 use crate::{
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
-    zvariant::ObjectPath,
+    wire::ObjectPath,
 };
 use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
@@ -254,7 +254,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let method = self
             .call_method_raw(
@@ -308,7 +308,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -360,7 +360,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -382,7 +382,7 @@ impl Connection {
     /// given `body`.
     pub async fn reply<B>(&self, call: &zbus::message::Header<'_>, body: &B) -> Result<()>
     where
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -405,7 +405,7 @@ impl Connection {
         body: &B,
     ) -> Result<()>
     where
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {
@@ -1557,7 +1557,7 @@ mod tests {
 #[cfg(feature = "p2p")]
 #[cfg(test)]
 mod p2p_tests {
-    use crate::zvariant::{Endian, NATIVE_ENDIAN};
+    use crate::wire::{Endian, NATIVE_ENDIAN};
     use event_listener::Event;
     use futures_util::TryStreamExt;
     use ntest::timeout;

@@ -1,6 +1,6 @@
 use crate::names::{BusName, InterfaceName, MemberName};
 
-use crate::{Connection, Error, Result, zvariant::ObjectPath};
+use crate::{Connection, Error, Result, wire::ObjectPath};
 
 /// A signal emitter.
 ///
@@ -47,7 +47,7 @@ impl<'s> SignalEmitter<'s> {
         I::Error: Into<Error>,
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         self.conn
             .emit_signal(

@@ -14,7 +14,7 @@ use std::{
 
 use crate::{
     names::{InterfaceName, MemberName},
-    zvariant::{OwnedValue, Value},
+    wire::{OwnedValue, Value},
 };
 use async_trait::async_trait;
 

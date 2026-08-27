@@ -4,10 +4,10 @@ mod utils;
 libfuzzer_sys::fuzz_target!(|data: &[u8]| {
     utils::fuzz_for_context(
         data,
-        zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::LE, 0),
+        zbus::wire::serialized::Context::new_dbus(zbus::wire::LE, 0),
     );
     utils::fuzz_for_context(
         data,
-        zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::BE, 0),
+        zbus::wire::serialized::Context::new_dbus(zbus::wire::BE, 0),
     );
 });

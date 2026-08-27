@@ -1,4 +1,4 @@
-use zbus::zvariant::{
+use zbus::wire::{
     serialized::{Context, Data},
     to_bytes, Value,
 };

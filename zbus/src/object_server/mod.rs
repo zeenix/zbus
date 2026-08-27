@@ -5,7 +5,7 @@ use tracing::{Instrument, debug, instrument, trace, trace_span};
 
 use crate::{
     names::InterfaceName,
-    zvariant::{ObjectPath, Value},
+    wire::{ObjectPath, Value},
 };
 
 use crate::{

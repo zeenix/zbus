@@ -25,7 +25,7 @@ mod param {
 mod test {
     use zbus::{
         fdo,
-        zvariant::{OwnedStructure, Structure},
+        wire::{OwnedStructure, Structure},
     };
 
     #[zbus_macros::proxy(
@@ -37,7 +37,7 @@ mod test {
         /// comment for a_test()
         fn a_test(&self, val: &str) -> zbus::Result<u32>;
 
-        /// The generated proxies implement both `zbus::zvariant::Type` and `serde::ser::Serialize`
+        /// The generated proxies implement both `zbus::wire::Type` and `serde::ser::Serialize`
         /// which is useful to pass in a proxy as a param. It serializes it as an `ObjectPath`.
         fn some_method<T>(&self, object_path: &T) -> zbus::Result<()>;
 
@@ -134,7 +134,7 @@ fn test_interface() {
     use serde::{Deserialize, Serialize};
     use zbus::{
         object_server::Interface,
-        zvariant::{Type, Value},
+        wire::{Type, Value},
     };
 
     // Test write-only property
@@ -169,7 +169,7 @@ fn test_interface() {
     #[interface(name = "org.freedesktop.zbus.Test", spawn = false)]
     impl<T: 'static> Test<T>
     where
-        T: serde::ser::Serialize + zbus::zvariant::Type + Send + Sync,
+        T: serde::ser::Serialize + zbus::wire::Type + Send + Sync,
     {
         /// Testing `no_arg` documentation is reflected in XML.
         fn no_arg(&self) {
@@ -439,7 +439,7 @@ mod signal_from_message {
 fn test_proxy_object_list() {
     #[derive(Clone)]
     struct ObjectList {
-        paths: [zbus::zvariant::ObjectPath<'static>; 2],
+        paths: [zbus::wire::ObjectPath<'static>; 2],
     }
 
     #[zbus_macros::interface(
@@ -448,22 +448,22 @@ fn test_proxy_object_list() {
     )]
     impl ObjectList {
         #[zbus(proxy(object = "ObjectList", object_vec))]
-        async fn get_test_objects(&self) -> Vec<zbus::zvariant::ObjectPath<'static>> {
+        async fn get_test_objects(&self) -> Vec<zbus::wire::ObjectPath<'static>> {
             self.paths.to_vec()
         }
 
         #[zbus(property, proxy(object = "ObjectList", object_vec))]
-        fn objects(&self) -> Vec<zbus::zvariant::ObjectPath<'static>> {
+        fn objects(&self) -> Vec<zbus::wire::ObjectPath<'static>> {
             self.paths.to_vec()
         }
     }
 
     static OBJECT_LIST: ObjectList = ObjectList {
         paths: [
-            zbus::zvariant::ObjectPath::from_static_str_unchecked(
+            zbus::wire::ObjectPath::from_static_str_unchecked(
                 "/org/freedesktop/zbus_macros/object_list/0",
             ),
-            zbus::zvariant::ObjectPath::from_static_str_unchecked(
+            zbus::wire::ObjectPath::from_static_str_unchecked(
                 "/org/freedesktop/zbus_macros/object_list/1",
             ),
         ],
@@ -499,7 +499,7 @@ fn test_proxy_object_list() {
 // through the `zbus` re-export.
 #[test]
 fn signature_macro_resolves_zvariant_through_zbus() {
-    use zbus::zvariant::{Signature, signature};
+    use zbus::wire::{Signature, signature};
 
     const DICT: Signature = signature!("a{sv}");
 
@@ -509,7 +509,7 @@ fn signature_macro_resolves_zvariant_through_zbus() {
 
 #[test]
 fn interface_property_setter_with_crate_attr() {
-    use mybus::{object_server::Interface, zvariant::Value};
+    use mybus::{object_server::Interface, wire::Value};
 
     struct CrateAttrProperties;
 

@@ -17,7 +17,7 @@ use tracing::{Instrument, debug, info_span, instrument, trace, warn};
 
 use crate::{
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    zvariant::{ObjectPath, OwnedValue, Str, Value},
+    wire::{ObjectPath, OwnedValue, Str, Value},
 };
 
 use crate::{
@@ -192,7 +192,7 @@ impl<T> PropertyChanged<'_, T> {
 
 impl<T> PropertyChanged<'_, T>
 where
-    T: TryFrom<crate::zvariant::OwnedValue>,
+    T: TryFrom<crate::wire::OwnedValue>,
     T::Error: Into<crate::Error>,
 {
     /// Get the value of the property that changed.
@@ -269,7 +269,7 @@ impl PropertiesCache {
         proxy: PropertiesProxy<'static>,
         interface: InterfaceName<'static>,
         executor: &Executor<'_>,
-        uncached_properties: HashSet<crate::zvariant::Str<'static>>,
+        uncached_properties: HashSet<crate::wire::Str<'static>>,
     ) -> (Arc<Self>, Task<()>) {
         let cache = Arc::new(PropertiesCache {
             values: Default::default(),
@@ -330,11 +330,11 @@ impl PropertiesCache {
         &self,
         proxy: PropertiesProxy<'static>,
         interface: InterfaceName<'static>,
-        uncached_properties: HashSet<crate::zvariant::Str<'static>>,
+        uncached_properties: HashSet<crate::wire::Str<'static>>,
     ) -> Result<(
         PropertiesChangedStream,
         InterfaceName<'static>,
-        HashSet<crate::zvariant::Str<'static>>,
+        HashSet<crate::wire::Str<'static>>,
     )> {
         use ordered_stream::OrderedStreamExt;
 
@@ -398,7 +398,7 @@ impl PropertiesCache {
         &self,
         mut prop_changes: PropertiesChangedStream,
         interface: InterfaceName<'static>,
-        uncached_properties: HashSet<crate::zvariant::Str<'static>>,
+        uncached_properties: HashSet<crate::wire::Str<'static>>,
     ) -> Result<()> {
         use futures_lite::StreamExt;
 
@@ -693,7 +693,7 @@ impl<'a> Proxy<'a> {
         let (cache, _) = &cache.get_or_init(|| {
             let proxy = self.owned_properties_proxy();
             let interface = self.interface().to_owned();
-            let uncached_properties: HashSet<crate::zvariant::Str<'static>> = self
+            let uncached_properties: HashSet<crate::wire::Str<'static>> = self
                 .inner
                 .uncached_properties
                 .iter()
@@ -821,7 +821,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         self.inner
             .inner_without_borrows
@@ -845,8 +845,8 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
-        R: for<'d> crate::zvariant::DynamicDeserialize<'d>,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
+        R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
         let reply = self.call_method(method_name, body).await?;
 
@@ -871,8 +871,8 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
-        R: for<'d> crate::zvariant::DynamicDeserialize<'d>,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
+        R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
         let flags = flags.iter().map(Flags::from).collect::<BitFlags<_>>();
         match self
@@ -901,7 +901,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::zvariant::DynamicType,
+        B: serde::ser::Serialize + crate::wire::DynamicType,
     {
         self.call_with_flags::<_, _, ()>(method_name, MethodFlags::NoReplyExpected.into(), body)
             .await?;

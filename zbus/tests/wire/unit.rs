@@ -1,4 +1,4 @@
-use zbus::zvariant::{BE, serialized::Context, to_bytes};
+use zbus::wire::{BE, serialized::Context, to_bytes};
 
 #[test]
 fn unit() {

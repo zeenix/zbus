@@ -1,4 +1,4 @@
-use zbus::zvariant::{LE, Signature, Value, signature};
+use zbus::wire::{LE, Signature, Value, signature};
 
 #[test]
 fn signature() {

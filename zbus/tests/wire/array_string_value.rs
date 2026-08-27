@@ -3,7 +3,7 @@
 fn array_string_value() {
     use arrayvec::ArrayString;
     use std::str::FromStr;
-    use zbus::zvariant::{LE, serialized::Context, to_bytes};
+    use zbus::wire::{LE, serialized::Context, to_bytes};
 
     let s = ArrayString::<32>::from_str("hello world!").unwrap();
     let ctxt = Context::new_dbus(LE, 0);

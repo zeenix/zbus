@@ -1,6 +1,6 @@
 use crate::{
     names::{BusName, InterfaceName},
-    zvariant::ObjectPath,
+    wire::ObjectPath,
 };
 
 /// Trait for the default associated values of a proxy.

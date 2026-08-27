@@ -1,6 +1,6 @@
 use crate::{
     names::utils::define_name_type_impls,
-    zvariant::{Str, Type},
+    wire::{Str, Type},
 };
 use serde::Serialize;
 

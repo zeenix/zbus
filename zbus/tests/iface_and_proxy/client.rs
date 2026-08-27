@@ -7,7 +7,7 @@ use zbus::{
     fdo::{ObjectManagerProxy, PropertiesProxy},
     message,
     proxy::CacheProperties,
-    zvariant::Value,
+    wire::Value,
 };
 
 use super::{

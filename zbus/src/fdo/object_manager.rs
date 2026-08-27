@@ -5,7 +5,7 @@
 
 use crate::{
     names::{InterfaceName, OwnedInterfaceName},
-    zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
+    wire::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
 };
 use std::{
     borrow::Cow,

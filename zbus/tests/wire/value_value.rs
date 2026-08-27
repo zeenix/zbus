@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use zbus::zvariant::{BE, LE, OwnedValue, Value, serialized::Context, to_bytes};
+use zbus::wire::{BE, LE, OwnedValue, Value, serialized::Context, to_bytes};
 
 #[test]
 fn value_value() {
@@ -51,11 +51,11 @@ fn value_value() {
         inner: OwnedValue,
     }
 
-    let value = zbus::zvariant::Value::new("variant-value");
-    let inner = zbus::zvariant::StructureBuilder::new()
+    let value = zbus::wire::Value::new("variant-value");
+    let inner = zbus::wire::StructureBuilder::new()
         .add_field("value1".to_string())
         .add_field("value2")
-        .append_field(zbus::zvariant::Value::new(value)) // let's try to get a variant
+        .append_field(zbus::wire::Value::new(value)) // let's try to get a variant
         .build()
         .unwrap()
         .try_into()

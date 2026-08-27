@@ -30,7 +30,7 @@ use crate::{
         header::{MAX_MESSAGE_SIZE, MIN_MESSAGE_SIZE},
     },
     padding_for_8_bytes,
-    zvariant::{
+    wire::{
         Endian,
         serialized::{self, Context},
     },

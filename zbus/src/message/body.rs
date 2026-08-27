@@ -1,4 +1,4 @@
-use crate::zvariant::{
+use crate::wire::{
     Signature, Type,
     serialized::{self, Data},
 };
@@ -22,7 +22,7 @@ impl Body {
     /// Deserialize the body using the contained signature.
     pub fn deserialize<'s, B>(&'s self) -> Result<B>
     where
-        B: crate::zvariant::DynamicDeserialize<'s>,
+        B: crate::wire::DynamicDeserialize<'s>,
     {
         let body_sig = self.signature();
 

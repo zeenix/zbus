@@ -23,7 +23,7 @@ fn issue_813() {
     use std::{os::fd::AsFd, vec};
     #[cfg(feature = "tokio")]
     use tokio::net::UnixStream;
-    use zbus::{conn::socket::WriteHalf, connection::Builder, zvariant::Fd};
+    use zbus::{conn::socket::WriteHalf, connection::Builder, wire::Fd};
 
     #[derive(Debug)]
     struct Issue813Iface {

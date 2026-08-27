@@ -1,4 +1,4 @@
-use zbus::zvariant::{Dict, Type, Value};
+use zbus::wire::{Dict, Type, Value};
 
 #[test]
 fn dict_compare() {

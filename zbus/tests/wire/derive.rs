@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use zbus::zvariant::{Error, LE, OwnedValue, Type, Value, serialized::Context, to_bytes};
+use zbus::wire::{Error, LE, OwnedValue, Type, Value, serialized::Context, to_bytes};
 
 #[test]
 fn derive() {

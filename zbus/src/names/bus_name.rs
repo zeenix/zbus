@@ -10,7 +10,7 @@ use crate::{
         Error, OwnedUniqueName, OwnedWellKnownName, Result, UniqueName, WellKnownName,
         utils::impl_str_basic,
     },
-    zvariant::{NoneValue, OwnedValue, Str, Type, Value},
+    wire::{NoneValue, OwnedValue, Str, Type, Value},
 };
 use serde::{Deserialize, Serialize, de};
 use zvariant_utils::names::BusNameKind;
@@ -195,7 +195,7 @@ impl<'de: 'name, 'name> Deserialize<'de> for BusName<'name> {
 }
 
 impl Type for BusName<'_> {
-    const SIGNATURE: &'static crate::zvariant::Signature = &crate::zvariant::Signature::Str;
+    const SIGNATURE: &'static crate::wire::Signature = &crate::wire::Signature::Str;
 }
 
 impl<'name> From<UniqueName<'name>> for BusName<'name> {

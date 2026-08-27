@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use zbus::zvariant::{
+use zbus::wire::{
     DeserializeDict, Dict, LE, SerializeDict, Type, Value, serialized::Context, to_bytes,
 };
 

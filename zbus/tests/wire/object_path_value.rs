@@ -1,4 +1,4 @@
-use zbus::zvariant::{LE, ObjectPath, Value};
+use zbus::wire::{LE, ObjectPath, Value};
 
 #[test]
 fn object_path_value() {

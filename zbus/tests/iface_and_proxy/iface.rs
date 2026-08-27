@@ -6,7 +6,7 @@ use zbus::{
     interface,
     message::{self, Header},
     object_server::{ObjectServer, ResponseDispatchNotifier, SignalEmitter},
-    zvariant::{Optional, OwnedValue, Value},
+    wire::{Optional, OwnedValue, Value},
 };
 
 use super::types::{ArgStructTest, IP4Adress, MyIfaceError, NextAction, RefType};

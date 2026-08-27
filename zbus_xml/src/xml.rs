@@ -660,11 +660,11 @@ impl SignatureAttr {
     fn parse(value: Option<&str>) -> Self {
         match value {
             None => SignatureAttr::Missing,
-            Some(value) => match zbus::zvariant::Signature::try_from(value.as_bytes()) {
+            Some(value) => match zbus::wire::Signature::try_from(value.as_bytes()) {
                 // The empty signature parses as `Unit`, which is only valid as a top-level
                 // signature — inside a composed signature (`Struct`/`Mapping::signature`) it
                 // produces invalid signatures.
-                Ok(zbus::zvariant::Signature::Unit) | Err(_) => SignatureAttr::Invalid,
+                Ok(zbus::wire::Signature::Unit) | Err(_) => SignatureAttr::Invalid,
                 Ok(signature) => SignatureAttr::Value(Signature(signature)),
             },
         }
@@ -1058,9 +1058,9 @@ impl<'i> Attrs<'i> {
 
     /// The required `type` attribute, parsed as a signature.
     fn signature(&self) -> PResult<Signature> {
-        zbus::zvariant::Signature::try_from(self.required("type")?.as_bytes())
+        zbus::wire::Signature::try_from(self.required("type")?.as_bytes())
             .map(Signature)
-            .map_err(|e| ParseError::domain(zbus::zvariant::Error::from(e).into()))
+            .map_err(|e| ParseError::domain(zbus::wire::Error::from(e).into()))
     }
 
     /// The value of the Telepathy `tp:type` attribute, if present.

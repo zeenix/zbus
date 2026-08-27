@@ -1,6 +1,6 @@
 use crate::{
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
-    zvariant::{ObjectPath, Signature, Type, Value},
+    wire::{ObjectPath, Signature, Type, Value},
 };
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,

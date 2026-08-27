@@ -4,11 +4,11 @@
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(crate = "zbus::zvariant")]
+#[zvariant(crate = "zbus::wire")]
 pub struct PlayList {
     pub name: String,
 }
@@ -21,11 +21,11 @@ pub struct PlayList {
     Eq,
     serde_repr::Deserialize_repr,
     serde_repr::Serialize_repr,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(crate = "zbus::zvariant")]
+#[zvariant(crate = "zbus::wire")]
 #[repr(i32)]
 pub enum OddValues {
     Plus = 7,
@@ -40,11 +40,11 @@ pub enum OddValues {
     Eq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::zvariant::Type,
-    zbus::zvariant::Value,
-    zbus::zvariant::OwnedValue,
+    zbus::wire::Type,
+    zbus::wire::Value,
+    zbus::wire::OwnedValue,
 )]
-#[zvariant(signature = "s", crate = "zbus::zvariant")]
+#[zvariant(signature = "s", crate = "zbus::wire")]
 pub enum Status {
     Ok,
 }

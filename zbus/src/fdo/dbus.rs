@@ -4,12 +4,12 @@
 //! be useful across various D-Bus applications. This module provides their proxy.
 
 #[cfg(unix)]
-use crate::zvariant::OwnedFd;
+use crate::wire::OwnedFd;
 use crate::{
     names::{
         BusName, OwnedBusName, OwnedInterfaceName, OwnedUniqueName, UniqueName, WellKnownName,
     },
-    zvariant::{DeserializeDict, Optional, SerializeDict, Type},
+    wire::{DeserializeDict, Optional, SerializeDict, Type},
 };
 use enumflags2::{BitFlags, bitflags};
 use serde::{Deserialize, Serialize};

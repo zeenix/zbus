@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use endi::NATIVE_ENDIAN;
-use zbus::zvariant::{
+use zbus::wire::{
     DeserializeDict, Dict, OwnedObjectPath, SerializeDict, Str, Type, Value,
     as_value::{Serialize, optional},
     serialized::Context,
@@ -302,7 +302,7 @@ fn nested_dict_value() {
     // `a{sv}` (so the value type is `v`) where one variant value is itself an `a{sv}`. Unlike
     // `Interfaces` above, the outer value type here is `v`, so each field is wrapped in a
     // variant on the wire.
-    use zbus::zvariant::OwnedValue;
+    use zbus::wire::OwnedValue;
 
     #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default)]
     #[zvariant(signature = "a{sv}", rename_all = "kebab-case")]

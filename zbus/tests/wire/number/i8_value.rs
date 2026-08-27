@@ -1,4 +1,4 @@
-use zbus::zvariant::LE;
+use zbus::wire::LE;
 
 #[test]
 fn i8_value() {

@@ -4,7 +4,7 @@
 use ::serde::{Deserialize, Serialize};
 use ::zvariant_derive::Type;
 
-use ::zbus::zvariant::as_value::{self, optional};
+use ::zbus::wire::as_value::{self, optional};
 
 #[derive(Type)]
 struct FooF(f64);

@@ -3,7 +3,7 @@ use crate::{
     match_rule::PathSpec,
     message::Type,
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    zvariant::{ObjectPath, Str},
+    wire::{ObjectPath, Str},
 };
 
 const MAX_ARGS: u8 = 64;

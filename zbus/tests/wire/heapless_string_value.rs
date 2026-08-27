@@ -2,7 +2,7 @@
 #[cfg(feature = "heapless")]
 fn heapless_string_value() {
     use heapless::String;
-    use zbus::zvariant::{LE, serialized::Context, to_bytes};
+    use zbus::wire::{LE, serialized::Context, to_bytes};
 
     let s = String::<32>::try_from("hello world!").unwrap();
     let ctxt = Context::new_dbus(LE, 0);

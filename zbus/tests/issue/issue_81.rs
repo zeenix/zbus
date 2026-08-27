@@ -1,13 +1,13 @@
 use test_log::test;
 
-use zbus::zvariant::OwnedObjectPath;
+use zbus::wire::OwnedObjectPath;
 
 #[test]
 #[ignore]
 fn issue_81() {
     use zbus::{
         proxy,
-        zvariant::{OwnedValue, Type},
+        wire::{OwnedValue, Type},
     };
 
     #[derive(

@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn signature_to_tokens_with_crate_uses_custom_path() {
-        let custom_path = quote! { ::zbus::zvariant };
+        let custom_path = quote! { ::zbus::wire };
         let sig = Signature::Str;
 
         let tokens = signature_to_tokens_with_crate(&sig, &custom_path).to_string();
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn signature_to_tokens_with_crate_uses_custom_path_for_complex_types() {
-        let custom_path = quote! { ::zbus::zvariant };
+        let custom_path = quote! { ::zbus::wire };
 
         // Dict signature - has multiple path references
         let dict_sig = Signature::from_str("a{sv}").unwrap();
@@ -133,12 +133,12 @@ mod tests {
 
         // All occurrences should use the custom path
         assert!(
-            !tokens.contains(":: zvariant ::") || tokens.contains(":: zbus :: zvariant ::"),
-            "Found bare ::zvariant without ::zbus prefix: {}",
+            !tokens.contains(":: wire ::") || tokens.contains(":: zbus :: wire ::"),
+            "Found bare ::wire without ::zbus prefix: {}",
             tokens
         );
         assert!(
-            tokens.contains(":: zbus :: zvariant ::"),
+            tokens.contains(":: zbus :: wire ::"),
             "Expected custom path in struct output: {}",
             tokens
         );

@@ -3,7 +3,7 @@
 use event_listener::{Event, EventListener};
 use serde::{Deserialize, Serialize};
 
-use crate::zvariant::{Signature, Type};
+use crate::wire::{Signature, Type};
 
 /// A response wrapper that notifies after the response has been sent.
 ///

@@ -1,4 +1,4 @@
-use zbus::zvariant::{LE, serialized::Context, to_bytes};
+use zbus::wire::{LE, serialized::Context, to_bytes};
 
 #[test]
 fn issue_1145() {

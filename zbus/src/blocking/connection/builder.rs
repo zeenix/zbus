@@ -17,7 +17,7 @@ use std::os::unix::net::UnixStream as AsyncIoUnixStream;
 #[cfg(all(windows, feature = "async-io"))]
 use uds_windows::UnixStream as AsyncIoUnixStream;
 
-use crate::zvariant::ObjectPath;
+use crate::wire::ObjectPath;
 
 #[cfg(feature = "p2p")]
 use crate::Guid;

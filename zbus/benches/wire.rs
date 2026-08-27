@@ -5,7 +5,7 @@ use std::{collections::HashMap, hint::black_box, vec};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
-use zbus::zvariant::{LE, Type, Value, serialized::Context, to_bytes};
+use zbus::wire::{LE, Type, Value, serialized::Context, to_bytes};
 
 macro_rules! benchmark {
     ($c:ident, $data:ident, $data_type:ty, $func_prefix:literal) => {
@@ -119,7 +119,7 @@ fn signature_parse(c: &mut Criterion) {
 
     c.bench_function("signature_parse", |b| {
         b.iter(|| {
-            zbus::zvariant::Signature::try_from(black_box(signature_str.as_str())).unwrap();
+            zbus::wire::Signature::try_from(black_box(signature_str.as_str())).unwrap();
         })
     });
 }
@@ -130,7 +130,7 @@ fn object_path_parse(c: &mut Criterion) {
 
     c.bench_function("object_path_parse", |b| {
         b.iter(|| {
-            zbus::zvariant::ObjectPath::try_from(black_box(PATH)).unwrap();
+            zbus::wire::ObjectPath::try_from(black_box(PATH)).unwrap();
         })
     });
 }

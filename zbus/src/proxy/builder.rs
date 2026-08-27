@@ -2,7 +2,7 @@ use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 
 use crate::{
     names::{BusName, InterfaceName},
-    zvariant::{ObjectPath, Str},
+    wire::{ObjectPath, Str},
 };
 
 use crate::{Connection, Error, Proxy, Result, proxy::ProxyInner};

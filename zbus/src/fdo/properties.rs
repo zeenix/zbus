@@ -5,7 +5,7 @@
 
 use crate::{
     names::InterfaceName,
-    zvariant::{OwnedValue, Value},
+    wire::{OwnedValue, Value},
 };
 use std::{borrow::Cow, collections::HashMap};
 

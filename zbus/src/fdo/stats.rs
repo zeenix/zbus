@@ -5,7 +5,7 @@
 
 use crate::{
     names::{BusName, OwnedUniqueName},
-    zvariant::{OwnedValue, Type, as_value::optional},
+    wire::{OwnedValue, Type, as_value::optional},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

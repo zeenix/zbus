@@ -1,6 +1,6 @@
 use crate::{
     names::{Error as NamesError, InterfaceName, OwnedErrorName},
-    zvariant::{Error as VariantError, ObjectPath},
+    wire::{Error as VariantError, ObjectPath},
 };
 use std::{convert::Infallible, error, fmt, io, sync::Arc};
 
@@ -237,9 +237,9 @@ impl From<VariantError> for Error {
     }
 }
 
-impl From<crate::zvariant::signature::Error> for Error {
-    fn from(e: crate::zvariant::signature::Error) -> Self {
-        crate::zvariant::Error::from(e).into()
+impl From<crate::wire::signature::Error> for Error {
+    fn from(e: crate::wire::signature::Error) -> Self {
+        crate::wire::Error::from(e).into()
     }
 }
 

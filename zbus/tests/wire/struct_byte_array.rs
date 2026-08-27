@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use zbus::zvariant::{Value, serialized::Context};
+use zbus::wire::{Value, serialized::Context};
 
 #[test]
 fn struct_byte_array() {
-    let ctxt = Context::new_dbus(zbus::zvariant::LE, 0);
+    let ctxt = Context::new_dbus(zbus::wire::LE, 0);
     let value: (Vec<u8>, HashMap<String, Value<'_>>) = (Vec::new(), HashMap::new());
-    let value = zbus::zvariant::to_bytes(ctxt, &value).unwrap();
+    let value = zbus::wire::to_bytes(ctxt, &value).unwrap();
     #[cfg(feature = "serde_bytes")]
     let (bytes, map): (&serde_bytes::Bytes, HashMap<&str, Value<'_>>) = value
         .deserialize()

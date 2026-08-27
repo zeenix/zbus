@@ -3,13 +3,13 @@
 macro_rules! basic_type_test {
     ($endian:expr, $format:ident, $test_value:expr, $expected_len:expr, $expected_ty:ty, $align:literal) => {{
         // Lie that we're starting at byte 1 in the overall message to test padding
-        let ctxt = zbus::zvariant::serialized::Context::new(
-            zbus::zvariant::serialized::Format::$format,
+        let ctxt = zbus::wire::serialized::Context::new(
+            zbus::wire::serialized::Format::$format,
             $endian,
             1,
         );
-        let encoded = zbus::zvariant::to_bytes(ctxt, &$test_value).unwrap();
-        let padding = zbus::zvariant::padding_for_n_bytes(1, $align);
+        let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
+        let padding = zbus::wire::padding_for_n_bytes(1, $align);
 
         assert_eq!(
             encoded.len(),
@@ -21,12 +21,12 @@ macro_rules! basic_type_test {
         assert!(parsed == encoded.len(), "invalid parsing");
 
         // Now encode w/o padding
-        let ctxt = zbus::zvariant::serialized::Context::new(
-            zbus::zvariant::serialized::Format::$format,
+        let ctxt = zbus::wire::serialized::Context::new(
+            zbus::wire::serialized::Format::$format,
             $endian,
             0,
         );
-        let encoded = zbus::zvariant::to_bytes(ctxt, &$test_value).unwrap();
+        let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         assert_eq!(
             encoded.len(),
             $expected_len,
@@ -46,12 +46,12 @@ macro_rules! basic_type_test {
         );
 
         // As Value
-        let v: zbus::zvariant::Value<'_> = $test_value.into();
+        let v: zbus::wire::Value<'_> = $test_value.into();
         assert_eq!(
             v.value_signature(),
-            <$expected_ty as zbus::zvariant::Basic>::SIGNATURE_STR
+            <$expected_ty as zbus::wire::Basic>::SIGNATURE_STR
         );
-        assert_eq!(v, zbus::zvariant::Value::$kind($test_value));
+        assert_eq!(v, zbus::wire::Value::$kind($test_value));
         value_test!($endian, $format, v, $expected_value_len);
 
         let v: $expected_ty = v.try_into().unwrap();
@@ -64,18 +64,18 @@ macro_rules! basic_type_test {
 #[macro_export]
 macro_rules! value_test {
     ($endian:expr, $format:ident, $test_value:expr, $expected_len:expr) => {{
-        let ctxt = zbus::zvariant::serialized::Context::new(
-            zbus::zvariant::serialized::Format::$format,
+        let ctxt = zbus::wire::serialized::Context::new(
+            zbus::wire::serialized::Format::$format,
             $endian,
             0,
         );
-        let encoded = zbus::zvariant::to_bytes(ctxt, &$test_value).unwrap();
+        let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         assert_eq!(
             encoded.len(),
             $expected_len,
             "invalid encoding using `to_bytes`"
         );
-        let (decoded, parsed): (zbus::zvariant::Value<'_>, _) = encoded.deserialize().unwrap();
+        let (decoded, parsed): (zbus::wire::Value<'_>, _) = encoded.deserialize().unwrap();
         assert!(decoded == $test_value, "invalid decoding");
         assert!(parsed == encoded.len(), "invalid parsing");
 
@@ -90,32 +90,32 @@ macro_rules! fd_value_test {
         use std::os::fd::AsFd;
 
         // Lie that we're starting at byte 1 in the overall message to test padding
-        let ctxt = zbus::zvariant::serialized::Context::new(
-            zbus::zvariant::serialized::Format::$format,
+        let ctxt = zbus::wire::serialized::Context::new(
+            zbus::wire::serialized::Format::$format,
             $endian,
             1,
         );
-        let encoded = zbus::zvariant::to_bytes(ctxt, &$test_value).unwrap();
-        let padding = zbus::zvariant::padding_for_n_bytes(1, $align);
+        let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
+        let padding = zbus::wire::padding_for_n_bytes(1, $align);
         assert_eq!(
             encoded.len(),
             $expected_len + padding,
             "invalid encoding using `to_bytes`"
         );
         #[cfg(unix)]
-        let (_, parsed): (zbus::zvariant::Fd<'_>, _) = encoded.deserialize().unwrap();
+        let (_, parsed): (zbus::wire::Fd<'_>, _) = encoded.deserialize().unwrap();
         assert!(
             parsed == encoded.len(),
             "invalid parsing using `from_slice`"
         );
 
         // Now encode w/o padding
-        let ctxt = zbus::zvariant::serialized::Context::new(
-            zbus::zvariant::serialized::Format::$format,
+        let ctxt = zbus::wire::serialized::Context::new(
+            zbus::wire::serialized::Format::$format,
             $endian,
             0,
         );
-        let encoded = zbus::zvariant::to_bytes(ctxt, &$test_value).unwrap();
+        let encoded = zbus::wire::to_bytes(ctxt, &$test_value).unwrap();
         assert_eq!(
             encoded.len(),
             $expected_len,
@@ -123,25 +123,25 @@ macro_rules! fd_value_test {
         );
 
         // As Value
-        let v: zbus::zvariant::Value<'_> = $test_value.into();
-        assert_eq!(v.value_signature(), zbus::zvariant::Fd::SIGNATURE_STR);
-        assert_eq!(v, zbus::zvariant::Value::Fd($test_value));
-        let encoded = zbus::zvariant::to_bytes(ctxt, &v).unwrap();
+        let v: zbus::wire::Value<'_> = $test_value.into();
+        assert_eq!(v.value_signature(), zbus::wire::Fd::SIGNATURE_STR);
+        assert_eq!(v, zbus::wire::Value::Fd($test_value));
+        let encoded = zbus::wire::to_bytes(ctxt, &v).unwrap();
         assert_eq!(encoded.fds().len(), 1, "invalid encoding using `to_bytes`");
         assert_eq!(
             encoded.len(),
             $expected_value_len,
             "invalid encoding using `to_bytes`"
         );
-        let (decoded, parsed): (zbus::zvariant::Value<'_>, _) = encoded.deserialize().unwrap();
+        let (decoded, parsed): (zbus::wire::Value<'_>, _) = encoded.deserialize().unwrap();
         assert_eq!(
             decoded,
-            zbus::zvariant::Fd::from(encoded.fds()[0].as_fd()).into(),
+            zbus::wire::Fd::from(encoded.fds()[0].as_fd()).into(),
             "invalid decoding using `from_slice`"
         );
         assert_eq!(parsed, encoded.len(), "invalid parsing using `from_slice`");
 
-        let v: zbus::zvariant::Fd<'_> = v.try_into().unwrap();
+        let v: zbus::wire::Fd<'_> = v.try_into().unwrap();
         assert_eq!(v, $test_value);
     }};
 }

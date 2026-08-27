@@ -10,7 +10,7 @@ macros for your convenience so you do not need to use this crate directly.
 ## Example code
 
 ```rust
-use zbus::zvariant::{serialized::Context, to_bytes, Type, LE};
+use zbus::wire::{serialized::Context, to_bytes, Type, LE};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]

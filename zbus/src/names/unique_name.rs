@@ -1,6 +1,6 @@
 use crate::{
     names::utils::define_name_type_impls,
-    zvariant::{Str, Type},
+    wire::{Str, Type},
 };
 use serde::Serialize;
 
@@ -43,19 +43,19 @@ define_name_type_impls! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zvariant::{OwnedValue, Value};
+    use crate::wire::{OwnedValue, Value};
 
     #[test]
     fn value_conversion_rejects_empty_name() {
         let value = Value::from("");
         UniqueName::try_from(value).unwrap_err();
         OwnedUniqueName::try_from(Value::from("")).unwrap_err();
-        OwnedUniqueName::try_from(OwnedValue::from(crate::zvariant::Str::from(""))).unwrap_err();
+        OwnedUniqueName::try_from(OwnedValue::from(crate::wire::Str::from(""))).unwrap_err();
     }
 
     #[test]
     fn optional_value_conversion_maps_empty_name_to_none() {
-        use crate::zvariant::Optional;
+        use crate::wire::Optional;
 
         // An empty string is the D-Bus sentinel for "no name" and must map to `None`
         // rather than fail validation.
@@ -71,14 +71,14 @@ mod tests {
 
     #[test]
     fn optional_owned_value_conversion_maps_empty_name_to_none() {
-        use crate::zvariant::Optional;
+        use crate::wire::Optional;
 
         // The path proxy property getters take: `TryFrom<OwnedValue>` on an owned type.
-        let owned = OwnedValue::from(crate::zvariant::Str::from(""));
+        let owned = OwnedValue::from(crate::wire::Str::from(""));
         let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
         assert!(Option::<OwnedUniqueName>::from(opt).is_none());
 
-        let owned = OwnedValue::from(crate::zvariant::Str::from(":1.23"));
+        let owned = OwnedValue::from(crate::wire::Str::from(":1.23"));
         let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
         assert_eq!(
             Option::<OwnedUniqueName>::from(opt).unwrap().as_str(),
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn optional_name_wire_round_trip() {
-        use crate::zvariant::{LE, Optional, serialized::Context, to_bytes};
+        use crate::wire::{LE, Optional, serialized::Context, to_bytes};
 
         let ctxt = Context::new_dbus(LE, 0);
 

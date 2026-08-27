@@ -1,6 +1,6 @@
 //! The object server API.
 
-use crate::zvariant::ObjectPath;
+use crate::wire::ObjectPath;
 
 use crate::{
     Error, Result,

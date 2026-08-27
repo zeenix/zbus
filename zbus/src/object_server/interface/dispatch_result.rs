@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use crate::zvariant::DynamicType;
+use crate::wire::DynamicType;
 use zbus::message::Flags;
 
 use crate::{Connection, Result, fdo, message::Message};

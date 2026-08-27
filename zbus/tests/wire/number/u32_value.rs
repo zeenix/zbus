@@ -1,4 +1,4 @@
-use zbus::zvariant::BE;
+use zbus::wire::BE;
 
 #[test]
 fn u32_value() {

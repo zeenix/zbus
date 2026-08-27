@@ -1,7 +1,7 @@
-use zbus::zvariant::{LE, serialized::Context, serialized_size};
+use zbus::wire::{LE, serialized::Context, serialized_size};
 
 #[cfg(unix)]
-use zbus::zvariant::Fd;
+use zbus::wire::Fd;
 
 #[test]
 fn test_serialized_size() {

@@ -9,7 +9,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
-    zvariant::{
+    wire::{
         Endian, ObjectPath, Signature, Type as VariantType,
         serialized::{self, Context},
     },
@@ -322,7 +322,7 @@ mod tests {
 
     use crate::{
         names::{InterfaceName, MemberName},
-        zvariant::{ObjectPath, Signature, signature},
+        wire::{ObjectPath, Signature, signature},
     };
     use std::{borrow::Cow, error::Error};
     use test_log::test;
