@@ -1,4 +1,4 @@
-use zbus_names::{BusName, InterfaceName, MemberName};
+use crate::names::{BusName, InterfaceName, MemberName};
 
 use crate::{Connection, Error, Result, zvariant::ObjectPath};
 

@@ -7,8 +7,8 @@ use std::{
 #[cfg(unix)]
 use zvariant::OwnedFd;
 
+use crate::names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
 use enumflags2::BitFlags;
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName};
 use zvariant::{Endian, Signature, serialized};
 
 use crate::{

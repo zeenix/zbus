@@ -1,9 +1,9 @@
 //! Blocking connection API.
 
+use crate::names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
 use enumflags2::BitFlags;
 use event_listener::EventListener;
 use std::{io, ops::Deref, sync::Arc};
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
 use zvariant::ObjectPath;
 
 use crate::{

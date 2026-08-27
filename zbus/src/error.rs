@@ -1,5 +1,5 @@
+use crate::names::{Error as NamesError, InterfaceName, OwnedErrorName};
 use std::{convert::Infallible, error, fmt, io, sync::Arc};
-use zbus_names::{Error as NamesError, InterfaceName, OwnedErrorName};
 use zvariant::{Error as VariantError, ObjectPath};
 
 use crate::{

@@ -5,7 +5,7 @@ use std::{
     fmt::Write,
 };
 
-use zbus_names::InterfaceName;
+use crate::names::InterfaceName;
 use zvariant::{ObjectPath, OwnedObjectPath, OwnedValue};
 
 use crate::{

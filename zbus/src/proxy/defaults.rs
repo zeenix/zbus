@@ -1,4 +1,4 @@
-use zbus_names::{BusName, InterfaceName};
+use crate::names::{BusName, InterfaceName};
 use zvariant::ObjectPath;
 
 /// Trait for the default associated values of a proxy.

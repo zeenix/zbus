@@ -12,8 +12,8 @@ use std::{
     sync::Arc,
 };
 
+use crate::names::{InterfaceName, MemberName};
 use async_trait::async_trait;
-use zbus_names::{InterfaceName, MemberName};
 use zvariant::{OwnedValue, Value};
 
 use crate::{

@@ -1,9 +1,9 @@
 //! The client-side proxy API.
 
+use crate::names::{BusName, InterfaceName, MemberName, UniqueName};
 use enumflags2::BitFlags;
 use futures_lite::StreamExt;
 use std::{fmt, ops::Deref};
-use zbus_names::{BusName, InterfaceName, MemberName, UniqueName};
 use zvariant::{ObjectPath, OwnedValue, Value};
 
 use crate::{

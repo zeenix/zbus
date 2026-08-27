@@ -5,11 +5,11 @@ mod common;
 #[cfg(feature = "p2p")]
 mod server;
 
+use crate::names::OwnedUniqueName;
 use async_trait::async_trait;
 #[cfg(unix)]
 use rustix::process::geteuid;
 use std::fmt::Debug;
-use zbus_names::OwnedUniqueName;
 
 #[cfg(windows)]
 use crate::win32;

@@ -6,7 +6,7 @@ use test_log::test;
 use tracing::{debug, instrument};
 use zbus::block_on;
 
-use zbus_names::UniqueName;
+use zbus::names::UniqueName;
 use zvariant::{OwnedValue, Type};
 
 use zbus::{

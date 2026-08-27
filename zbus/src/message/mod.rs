@@ -1,7 +1,7 @@
 //! D-Bus Message.
 use std::{borrow::Cow, fmt, sync::Arc};
 
-use zbus_names::{ErrorName, InterfaceName, MemberName};
+use crate::names::{ErrorName, InterfaceName, MemberName};
 use zvariant::{Endian, serialized};
 
 use crate::{Error, Result, utils::padding_for_8_bytes, zvariant::ObjectPath};

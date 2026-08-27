@@ -15,7 +15,7 @@ use std::{
 };
 use tracing::{Instrument, debug, info_span, instrument, trace, warn};
 
-use zbus_names::{BusName, InterfaceName, MemberName, UniqueName};
+use crate::names::{BusName, InterfaceName, MemberName, UniqueName};
 use zvariant::{ObjectPath, OwnedValue, Str, Value};
 
 use crate::{

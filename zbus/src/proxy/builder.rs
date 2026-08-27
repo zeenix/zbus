@@ -1,6 +1,6 @@
 use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 
-use zbus_names::{BusName, InterfaceName};
+use crate::names::{BusName, InterfaceName};
 use zvariant::{ObjectPath, Str};
 
 use crate::{Connection, Error, Proxy, Result, proxy::ProxyInner};

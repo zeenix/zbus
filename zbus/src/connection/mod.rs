@@ -1,4 +1,5 @@
 //! Connection API.
+use crate::names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
 use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
 use event_listener::{Event, EventListener};
@@ -13,7 +14,6 @@ use std::{
     time::Duration,
 };
 use tracing::{Instrument, debug, info_span, instrument, trace, trace_span, warn};
-use zbus_names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName};
 use zvariant::ObjectPath;
 
 use futures_lite::StreamExt;
