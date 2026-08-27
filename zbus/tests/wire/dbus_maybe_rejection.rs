@@ -1,5 +1,5 @@
 //! A GVariant maybe (`m`) type is not valid in the D-Bus wire format. When the maybe type is
-//! available (i.e. `zvariant_utils/gvariant` is enabled elsewhere in the graph, e.g. by
+//! available (i.e. `zbus_utils/gvariant` is enabled elsewhere in the graph, e.g. by
 //! `zgvariant`), such a signature can still be parsed, so the D-Bus serializer and
 //! deserializer must reject it with an error rather than panicking or emitting invalid data.
 //! A maybe can enter as the codec's layout signature, or dynamically as the content of a `g`
@@ -82,7 +82,7 @@ fn dbus_deserialize_rejects_variant_carrying_maybe() {
     assert_maybe_rejected(res, "deserialize variant carrying maybe");
 }
 
-// The maybe type is unavailable when `zvariant_utils/gvariant` is not in the graph: `m` does
+// The maybe type is unavailable when `zbus_utils/gvariant` is not in the graph: `m` does
 // not parse, so the hazard cannot arise and there is nothing to assert.
 fn maybe_supported() -> bool {
     Signature::try_from("mi").is_ok()

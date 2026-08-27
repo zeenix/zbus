@@ -1,6 +1,6 @@
-# zvariant_utils
+# zbus_utils
 
-[![](https://docs.rs/zvariant_utils/badge.svg)](https://docs.rs/zvariant_utils/) [![](https://img.shields.io/crates/v/zvariant_utils)](https://crates.io/crates/zvariant_utils)
+[![](https://docs.rs/zbus_utils/badge.svg)](https://docs.rs/zbus_utils/) [![](https://img.shields.io/crates/v/zbus_utils)](https://crates.io/crates/zbus_utils)
 
 This crate provides the D-Bus signature parser, the D-Bus name validators and the derive-macro
 plumbing shared by [`zbus`] and [`zgvariant`].

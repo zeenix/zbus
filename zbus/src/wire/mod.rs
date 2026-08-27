@@ -249,7 +249,7 @@ pub use optional::*;
 mod value;
 pub use value::*;
 
-// The shared derive codegen in zvariant_utils emits `<path>::Error` and `<path>::Result` where
+// The shared derive codegen in zbus_utils emits `<path>::Error` and `<path>::Result` where
 // `<path>` is whatever module holds the wire types, and a glob import of this module must bring
 // the error types along with them. The spelling users should write is `zbus::Error`.
 #[doc(hidden)]

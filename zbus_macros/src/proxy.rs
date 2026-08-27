@@ -5,7 +5,7 @@ use syn::{
     Error, FnArg, Ident, ItemTrait, Meta, Path, ReturnType, Token, TraitItemFn, Visibility,
     fold::Fold, parse_quote, parse_str, punctuated::Punctuated, spanned::Spanned,
 };
-use zvariant_utils::{case, def_attrs, names, object_path};
+use zbus_utils::{case, def_attrs, names, object_path};
 
 def_attrs! {
     crate zbus;

@@ -149,7 +149,7 @@ pub fn iter_meta_lists(
 /// The expected input looks as follows:
 ///
 /// ```
-/// # use zvariant_utils::def_attrs;
+/// # use zbus_utils::def_attrs;
 /// def_attrs! {
 ///     crate zvariant;
 ///
@@ -202,7 +202,7 @@ pub fn iter_meta_lists(
 /// It is possible to create nested lists for specific attributes. This is done as follows:
 ///
 /// ```
-/// # use zvariant_utils::def_attrs;
+/// # use zbus_utils::def_attrs;
 /// def_attrs! {
 ///     crate zvariant;
 ///
@@ -226,7 +226,7 @@ pub fn iter_meta_lists(
 /// It is possible to use multiple different "crate" names as follows:
 ///
 /// ```
-/// # use zvariant_utils::def_attrs;
+/// # use zbus_utils::def_attrs;
 /// def_attrs! {
 ///     crate zvariant, zbus;
 ///
@@ -249,7 +249,7 @@ pub fn iter_meta_lists(
 /// `zgvariant` in their Cargo.toml). Example:
 ///
 /// ```
-/// # use zvariant_utils::def_attrs;
+/// # use zbus_utils::def_attrs;
 /// def_attrs! {
 ///     crate zvariant;
 ///

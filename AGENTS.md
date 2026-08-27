@@ -76,7 +76,7 @@ cargo fuzz run --fuzz-dir zbus/fuzz dbus
   types) are always compiled
 - **zbus_macros**: Procedural macros: `#[interface]`, `#[proxy]`, `#[derive(DBusError)]` and the
   wire derives (`Type`, `Value`, `OwnedValue`, `SerializeDict`, `DeserializeDict`, `signature!`)
-- **zvariant_utils**: Signature parser, D-Bus name validators and the derive codegen shared by
+- **zbus_utils**: Signature parser, D-Bus name validators and the derive codegen shared by
   zbus_macros and the sibling zgvariant project
 - **zbus_xml**: D-Bus introspection XML handling
 - **zbus_xmlgen**: Code generation from D-Bus interface XML

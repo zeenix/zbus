@@ -9,7 +9,7 @@ use crate::{
     Error, Result,
     wire::{Basic, Str, Type},
 };
-use zvariant_utils::object_path;
+use zbus_utils::object_path;
 
 /// String that identifies objects at a given destination on the D-Bus bus.
 ///

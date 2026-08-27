@@ -614,7 +614,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Type, attributes(zbus, zvariant))]
 pub fn type_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    zvariant_utils::derive::expand_type_derive(ast, &utils::derive_config())
+    zbus_utils::derive::expand_type_derive(ast, &utils::derive_config())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -716,7 +716,7 @@ pub fn type_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(SerializeDict, attributes(zbus, zvariant))]
 pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
-    zvariant_utils::derive::expand_serialize_dict_derive(input, &utils::derive_config())
+    zbus_utils::derive::expand_serialize_dict_derive(input, &utils::derive_config())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -795,7 +795,7 @@ pub fn serialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(DeserializeDict, attributes(zbus, zvariant))]
 pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
-    zvariant_utils::derive::expand_deserialize_dict_derive(input, &utils::derive_config())
+    zbus_utils::derive::expand_deserialize_dict_derive(input, &utils::derive_config())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -994,9 +994,9 @@ pub fn deserialize_dict_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Value, attributes(zbus, zvariant))]
 pub fn value_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    zvariant_utils::derive::expand_value_derive(
+    zbus_utils::derive::expand_value_derive(
         ast,
-        zvariant_utils::derive::ValueType::Value,
+        zbus_utils::derive::ValueType::Value,
         &utils::derive_config(),
     )
     .unwrap_or_else(|err| err.to_compile_error())
@@ -1013,9 +1013,9 @@ pub fn value_macro_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(OwnedValue, attributes(zbus, zvariant))]
 pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    zvariant_utils::derive::expand_value_derive(
+    zbus_utils::derive::expand_value_derive(
         ast,
-        zvariant_utils::derive::ValueType::OwnedValue,
+        zbus_utils::derive::ValueType::OwnedValue,
         &utils::derive_config(),
     )
     .unwrap_or_else(|err| err.to_compile_error())
@@ -1101,7 +1101,7 @@ pub fn owned_value_macro_derive(input: TokenStream) -> TokenStream {
 /// [`Signature`]: https://docs.rs/zbus/latest/zbus/wire/enum.Signature.html
 #[proc_macro]
 pub fn signature(input: TokenStream) -> TokenStream {
-    zvariant_utils::derive::expand_signature_macro(input.into(), &utils::wire_path())
+    zbus_utils::derive::expand_signature_macro(input.into(), &utils::wire_path())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }

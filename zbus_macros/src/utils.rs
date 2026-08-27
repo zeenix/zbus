@@ -34,8 +34,8 @@ pub fn zbus_path(crate_path: Option<&syn::Path>) -> TokenStream {
 ///
 /// `#[zvariant(...)]` stays accepted next to `#[zbus(...)]`: code written against zvariant 5
 /// keeps compiling unchanged.
-pub fn derive_config() -> zvariant_utils::derive::Config {
-    zvariant_utils::derive::Config {
+pub fn derive_config() -> zbus_utils::derive::Config {
+    zbus_utils::derive::Config {
         attr_lists: &["zbus", "zvariant"],
         default_path: wire_path(),
     }

@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{Data, DeriveInput, Error, Fields, Ident, Variant, spanned::Spanned};
-use zvariant_utils::def_attrs;
+use zbus_utils::def_attrs;
 
 def_attrs! {
     crate zbus;

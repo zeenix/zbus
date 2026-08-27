@@ -257,7 +257,7 @@ impl<'bytes, 'fds> Data<'bytes, 'fds> {
             .map(Deserializer::DBus)?,
             // `Format` can carry a `GVariant` variant even though zbus has no GVariant
             // support: another crate in the dependency graph (e.g. `zgvariant`) can enable
-            // `zvariant_utils/gvariant`, and Cargo feature unification then adds the variant
+            // `zbus_utils/gvariant`, and Cargo feature unification then adds the variant
             // to this build. zbus can't detect that with a `#[cfg]`, so the variant can't be
             // named explicitly here without breaking the common case where it doesn't exist
             // at all. Fall back to a wildcard instead.

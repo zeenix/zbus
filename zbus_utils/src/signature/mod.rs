@@ -29,7 +29,7 @@ use crate::serialized::Format;
 ///
 /// ```
 /// use std::str::FromStr;
-/// use zvariant_utils::signature::Signature;
+/// use zbus_utils::signature::Signature;
 ///
 /// let sig = Signature::from_str("a{sv}").unwrap();
 /// assert_eq!(sig.to_string(), "a{sv}");
@@ -44,7 +44,7 @@ use crate::serialized::Format;
 /// required:
 ///
 /// ```
-/// use zvariant_utils::signature::{Child, Signature};
+/// use zbus_utils::signature::{Child, Signature};
 ///
 /// const SIGNATURE: Signature = Signature::Array(Child::Static { child: &Signature::Variant });
 /// assert_eq!(SIGNATURE.to_string(), "av");
