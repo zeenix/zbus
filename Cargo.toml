@@ -5,6 +5,8 @@ members = [
     "zbus_macros",
     "zbus_xml",
     "zbus_xmlgen",
+    "test_fixtures/renamed_zbus",
+    "test_fixtures/zbus_only",
 ]
 resolver = "3"
 

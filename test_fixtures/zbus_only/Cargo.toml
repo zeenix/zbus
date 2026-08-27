@@ -1,0 +1,16 @@
+[package]
+name = "zbus_only_fixture"
+version = "0.0.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+
+description = "Compile-only fixture: downstream crate using the wire derives through zbus"
+
+[dependencies]
+# The derives are used through the `zbus::wire` re-export, like the book examples do.
+zbus = { path = "../../zbus" }
+serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true
