@@ -20,10 +20,12 @@ The project is divided into the following subcrates:
 * [`zbus_xml`]: API to handle D-Bus introspection description XML.
 * [`zbus_xmlgen`]: A developer tool to generate Rust code from D-Bus interface description XML.
 * [`zbus_utils`]: The D-Bus signature parser, name validators and derive-macro plumbing
-  shared by `zbus_macros` and the [zgvariant] project.
+  shared by `zbus` and `zbus_macros`.
 
 [zgvariant] is a sibling project. It implements [GVariant], the format zbus itself dropped in
-6.0, on top of the same signature type.
+6.0. From its 2.0 release it builds on `zbus_utils` too, so its signature type is the same one
+zbus uses; zgvariant 1.x depends on `zvariant_utils` 4.x — this crate under its old name — and its
+signature type is a distinct one.
 
 ## Getting Started
 

@@ -1,6 +1,6 @@
 //! A GVariant maybe (`m`) type is not valid in the D-Bus wire format. When the maybe type is
 //! available (i.e. `zbus_utils/gvariant` is enabled elsewhere in the graph, e.g. by
-//! `zgvariant`), such a signature can still be parsed, so the D-Bus serializer and
+//! `zgvariant` 2.0), such a signature can still be parsed, so the D-Bus serializer and
 //! deserializer must reject it with an error rather than panicking or emitting invalid data.
 //! A maybe can enter as the codec's layout signature, or dynamically as the content of a `g`
 //! (signature) or `v` (variant) value.

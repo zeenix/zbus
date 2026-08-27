@@ -10,7 +10,7 @@ use crate::{Error, Result, wire::Signature};
 /// The maybe type has no D-Bus wire representation, so a signature containing one (whether given
 /// statically or read from a variant on the wire) is invalid input rather than an internal
 /// invariant. It becomes reachable when `zbus_utils/gvariant` is enabled — including
-/// transitively via a co-located `zgvariant` — so this must return an error, not panic.
+/// transitively via a co-located `zgvariant` 2.0 — so this must return an error, not panic.
 pub(crate) fn reject_maybe(signature: &Signature) -> Result<()> {
     if signature.contains_maybe() {
         return Err(maybe_not_in_dbus());
