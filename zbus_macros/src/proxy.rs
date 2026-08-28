@@ -534,30 +534,30 @@ fn gen_proxy_method_call(
         method_attrs.allow_interactive_auth,
     ) {
         (true, false, false) => Some(quote!(::std::convert::Into::into(
-            zbus::proxy::MethodFlags::NoReplyExpected
+            #zbus::proxy::MethodFlags::NoReplyExpected
         ))),
         (false, true, false) => Some(quote!(::std::convert::Into::into(
-            zbus::proxy::MethodFlags::NoAutoStart
+            #zbus::proxy::MethodFlags::NoAutoStart
         ))),
         (false, false, true) => Some(quote!(::std::convert::Into::into(
-            zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::AllowInteractiveAuth
         ))),
 
         (true, true, false) => Some(quote!(
-            zbus::proxy::MethodFlags::NoReplyExpected | zbus::proxy::MethodFlags::NoAutoStart
+            #zbus::proxy::MethodFlags::NoReplyExpected | #zbus::proxy::MethodFlags::NoAutoStart
         )),
         (true, false, true) => Some(quote!(
-            zbus::proxy::MethodFlags::NoReplyExpected
-                | zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::NoReplyExpected
+                | #zbus::proxy::MethodFlags::AllowInteractiveAuth
         )),
         (false, true, true) => Some(quote!(
-            zbus::proxy::MethodFlags::NoAutoStart | zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::NoAutoStart | #zbus::proxy::MethodFlags::AllowInteractiveAuth
         )),
 
         (true, true, true) => Some(quote!(
-            zbus::proxy::MethodFlags::NoReplyExpected
-                | zbus::proxy::MethodFlags::NoAutoStart
-                | zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::NoReplyExpected
+                | #zbus::proxy::MethodFlags::NoAutoStart
+                | #zbus::proxy::MethodFlags::AllowInteractiveAuth
         )),
         _ => None,
     };

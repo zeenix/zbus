@@ -31,7 +31,6 @@ proc-macro = true
 proc-macro2.workspace = true
 syn = { workspace = true, features = ["extra-traits", "full"] }
 quote.workspace = true
-proc-macro-crate.workspace = true
 
 zbus_utils = { path = "../zbus_utils", version = "6.0.0" }
 

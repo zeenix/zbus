@@ -1,0 +1,16 @@
+[package]
+name = "renamed_zbus_fixture"
+version = "0.0.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+
+description = "Compile-only fixture: downstream crate with a renamed `zbus` dependency"
+
+[dependencies]
+# The whole point of this fixture: `zbus` is not available under its default name, so all the
+# macros must resolve it through the `crate` attribute.
+my_zbus = { package = "zbus", path = "../../zbus" }
+
+[lints]
+workspace = true

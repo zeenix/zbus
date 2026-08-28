@@ -337,9 +337,10 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
         }
     };
     let with_spawn = impl_attrs.spawn.unwrap_or(true);
+    let crate_attr = impl_attrs.crate_path.clone();
     let mut proxy = impl_attrs
         .proxy
-        .map(|p| Proxy::new(ty, &iface_name, p, &zbus));
+        .map(|p| Proxy::new(ty, &iface_name, p, &zbus, crate_attr));
     let introspect_docs = impl_attrs.introspection_docs.unwrap_or(true);
 
     // Store parsed information about each method
@@ -816,7 +817,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             #args_from_msg
                             let reply = self.#ident(#args_names)#method_await;
                             let hdr = __zbus__message.header();
-                            if hdr.primary().flags().contains(zbus::message::Flags::NoReplyExpected) {
+                            if hdr.primary().flags().contains(#zbus::message::Flags::NoReplyExpected) {
                                 Ok(())
                             } else {
                                 #reply
@@ -1532,6 +1533,8 @@ struct Proxy {
     iface_name: String,
     // The zbus crate
     zbus: TokenStream,
+    // The value of the `crate` attribute, to forward to the generated proxy macro invocation.
+    crate_path: Option<String>,
 
     // Input
     attrs: ProxyAttributes,
@@ -1541,11 +1544,18 @@ struct Proxy {
 }
 
 impl Proxy {
-    fn new(ty: &Ident, iface_name: &str, attrs: ProxyAttributes, zbus: &TokenStream) -> Self {
+    fn new(
+        ty: &Ident,
+        iface_name: &str,
+        attrs: ProxyAttributes,
+        zbus: &TokenStream,
+        crate_path: Option<String>,
+    ) -> Self {
         Self {
             iface_name: iface_name.to_string(),
             ty: ty.clone(),
             zbus: zbus.clone(),
+            crate_path,
             attrs,
             methods: quote!(),
         }
@@ -1698,11 +1708,16 @@ impl Proxy {
             None => Visibility::Public(Token![pub](ty.span())),
         };
         let zbus = &self.zbus;
+        let crate_path = self
+            .crate_path
+            .as_ref()
+            .map(|value| quote! { crate = #value, });
         let proxy_doc = format!("Proxy for the `{iface_name}` interface.");
         Ok(quote! {
             #[doc = #proxy_doc]
             #[#zbus::proxy(
                 name = #iface_name,
+                #crate_path
                 #assume_defaults
                 #default_path
                 #default_service
