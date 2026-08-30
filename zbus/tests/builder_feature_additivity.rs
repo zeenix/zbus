@@ -25,3 +25,22 @@ fn unix_stream_builder_signatures_are_additive() {
             zbus::blocking::connection::Builder::tokio_unix_stream;
     }
 }
+
+#[test]
+fn tcp_stream_builder_signatures_are_additive() {
+    #[cfg(feature = "async-io")]
+    {
+        let _: fn(std::net::TcpStream) -> Builder<'static> = Builder::async_io_tcp_stream;
+        #[cfg(feature = "blocking-api")]
+        let _: fn(std::net::TcpStream) -> zbus::blocking::connection::Builder<'static> =
+            zbus::blocking::connection::Builder::async_io_tcp_stream;
+    }
+
+    #[cfg(feature = "tokio")]
+    {
+        let _: fn(tokio::net::TcpStream) -> Builder<'static> = Builder::tokio_tcp_stream;
+        #[cfg(feature = "blocking-api")]
+        let _: fn(tokio::net::TcpStream) -> zbus::blocking::connection::Builder<'static> =
+            zbus::blocking::connection::Builder::tokio_tcp_stream;
+    }
+}
