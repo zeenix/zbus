@@ -1693,12 +1693,12 @@ mod p2p_tests {
             let p0 = listener.accept().await.unwrap().0;
 
             (
-                Builder::tcp_stream(p0)
+                Builder::tokio_tcp_stream(p0)
                     .server(guid)
                     .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
-                Builder::tcp_stream(p1).p2p(),
+                Builder::tokio_tcp_stream(p1).p2p(),
             )
         };
 
@@ -1739,7 +1739,10 @@ mod p2p_tests {
             Builder::async_io_unix_stream(p0),
         );
         #[cfg(feature = "tokio")]
-        let (b1, b0) = (Builder::unix_stream(p1), Builder::unix_stream(p0));
+        let (b1, b0) = (
+            Builder::tokio_unix_stream(p1),
+            Builder::tokio_unix_stream(p0),
+        );
 
         futures_util::try_join!(b1.p2p().build(), b0.server(guid).unwrap().p2p().build(),)
     }
@@ -1752,10 +1755,32 @@ mod p2p_tests {
     #[test]
     #[timeout(15000)]
     fn unix_p2p_async_io_backend() {
+        use futures_lite::FutureExt;
+        use std::time::Duration;
+
         async_io::block_on(async {
             let (server1, client1) = async_io_unix_p2p_pipe().await.unwrap();
             assert!(server1.executor().needs_internal_driver());
             assert!(client1.executor().needs_internal_driver());
+
+            server1
+                .executor()
+                .spawn(
+                    async {
+                        assert!(
+                            tokio::runtime::Handle::try_current().is_err(),
+                            "async-io executor task unexpectedly entered a tokio runtime",
+                        );
+                    },
+                    "verify async-io runtime",
+                )
+                .or(async {
+                    async_io::Timer::after(Duration::from_secs(5)).await;
+                    panic!("async-io executor task did not run");
+                })
+                .await
+                .unwrap();
+
             let (server2, client2) = async_io_unix_p2p_pipe().await.unwrap();
 
             test_p2p(server1, client1, server2, client2).await.unwrap();
@@ -1807,7 +1832,11 @@ mod p2p_tests {
                 crate::Task::spawn_blocking(move || listener.incoming().next(), "").await?;
             #[cfg(feature = "tokio-vsock")]
             let server = listener.incoming().next().await;
-            Builder::vsock_stream(server.unwrap()?)
+            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
+            let builder = Builder::async_io_vsock_stream(server.unwrap()?);
+            #[cfg(feature = "tokio-vsock")]
+            let builder = Builder::tokio_vsock_stream(server.unwrap()?);
+            builder
                 .server(guid)?
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
@@ -1848,13 +1877,13 @@ mod p2p_tests {
         let server = listener.incoming().next().unwrap().unwrap();
 
         futures_util::try_join!(
-            Builder::vsock_stream(server)
+            Builder::async_io_vsock_stream(server)
                 .server(guid)
                 .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
-            Builder::vsock_stream(client).p2p().build(),
+            Builder::async_io_vsock_stream(client).p2p().build(),
         )
     }
 
@@ -1871,13 +1900,13 @@ mod p2p_tests {
         let server = listener.incoming().next().await.unwrap().unwrap();
 
         futures_util::try_join!(
-            Builder::vsock_stream(server)
+            Builder::tokio_vsock_stream(server)
                 .server(guid)
                 .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
-            Builder::vsock_stream(client).p2p().build(),
+            Builder::tokio_vsock_stream(client).p2p().build(),
         )
     }
 

@@ -7,48 +7,70 @@
 
 #![cfg(all(unix, feature = "bus-impl"))]
 
-use std::os::unix::net::UnixStream;
-
 use futures_util::StreamExt;
 use ntest::timeout;
 use test_log::test;
-use zbus::{Connection, Guid, block_on, connection::Builder};
+use zbus::{Connection, Guid, connection::Builder};
 
 /// Simulates the busd race: a bus client pipelines Hello during SASL auth, before the server
 /// has started polling. `build_message_stream` must still deliver it.
-#[allow(deprecated)] // exercises the deprecated `unix_stream`, which must keep working
+#[cfg(feature = "async-io")]
 #[test]
 #[timeout(15000)]
-fn build_message_stream_does_not_drop_pipelined_hello() {
-    block_on(async {
-        let (s0, s1) = UnixStream::pair().unwrap();
+fn build_message_stream_does_not_drop_pipelined_hello_async_io() {
+    async_io::block_on(async {
+        let (s0, s1) = std::os::unix::net::UnixStream::pair().unwrap();
         let guid = Guid::generate();
 
-        // Server: SASL auth, set up stream, receive Hello, reply to it.
-        let server = async {
-            let mut stream = Builder::unix_stream(s0)
+        build_message_stream_does_not_drop_pipelined_hello(
+            Builder::async_io_unix_stream(s0)
                 .server(guid)
                 .unwrap()
-                .p2p()
-                .build_message_stream()
-                .await
-                .unwrap();
-
-            let hello = stream
-                .next()
-                .await
-                .expect("stream terminated unexpectedly")
-                .unwrap();
-            assert_eq!(hello.header().member().unwrap().as_str(), "Hello");
-
-            // Reply so the client's build() can complete.
-            let conn = Connection::from(stream);
-            conn.reply(&hello.header(), &(":1.1",)).await.unwrap();
-        };
-
-        // Run both concurrently so the SASL handshake completes cooperatively.
-        // The client is a bus connection whose build() pipelines Hello during SASL auth.
-        let ((), client) = futures_util::join!(server, Builder::unix_stream(s1).build());
-        let _client_conn = client.unwrap();
+                .p2p(),
+            Builder::async_io_unix_stream(s1),
+        )
+        .await;
     });
+}
+
+#[cfg(feature = "tokio")]
+#[test]
+#[timeout(15000)]
+fn build_message_stream_does_not_drop_pipelined_hello_tokio() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let (s0, s1) = tokio::net::UnixStream::pair().unwrap();
+        let guid = Guid::generate();
+
+        build_message_stream_does_not_drop_pipelined_hello(
+            Builder::tokio_unix_stream(s0).server(guid).unwrap().p2p(),
+            Builder::tokio_unix_stream(s1),
+        )
+        .await;
+    });
+}
+
+async fn build_message_stream_does_not_drop_pipelined_hello(
+    server_builder: Builder<'_>,
+    client_builder: Builder<'_>,
+) {
+    // Server: SASL auth, set up stream, receive Hello, reply to it.
+    let server = async {
+        let mut stream = server_builder.build_message_stream().await.unwrap();
+
+        let hello = stream
+            .next()
+            .await
+            .expect("stream terminated unexpectedly")
+            .unwrap();
+        assert_eq!(hello.header().member().unwrap().as_str(), "Hello");
+
+        // Reply so the client's build() can complete.
+        let conn = Connection::from(stream);
+        conn.reply(&hello.header(), &(":1.1",)).await.unwrap();
+    };
+
+    // Run both concurrently so the SASL handshake completes cooperatively.
+    // The client is a bus connection whose build() pipelines Hello during SASL auth.
+    let ((), client) = futures_util::join!(server, client_builder.build());
+    let _client_conn = client.unwrap();
 }

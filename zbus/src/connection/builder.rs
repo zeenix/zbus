@@ -3,24 +3,10 @@ use async_broadcast::Receiver as ActiveReceiver;
 use async_io::Async;
 use enumflags2::BitFlags;
 use event_listener::Event;
-#[cfg(not(feature = "tokio"))]
-use std::net::TcpStream;
-#[cfg(all(unix, not(feature = "tokio")))]
-use std::os::unix::net::UnixStream;
 use std::{
     collections::{HashMap, HashSet},
     mem, vec,
 };
-#[cfg(feature = "tokio")]
-use tokio::net::TcpStream;
-#[cfg(all(unix, feature = "tokio"))]
-use tokio::net::UnixStream;
-#[cfg(feature = "tokio-vsock")]
-use tokio_vsock::VsockStream;
-#[cfg(all(windows, not(feature = "tokio")))]
-use uds_windows::UnixStream;
-#[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
-use vsock::VsockStream;
 
 // Feature-independent stream types for the `async_io_*_stream` builders: these always take the
 // blocking/`async-io` stream, so enabling `tokio` elsewhere can't change what they accept.
@@ -60,8 +46,10 @@ enum Target {
     TokioTcpStream(tokio::net::TcpStream),
     #[cfg(feature = "async-io")]
     AsyncIoTcpStream(AsyncIoTcpStream),
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
-    VsockStream(VsockStream),
+    #[cfg(feature = "vsock")]
+    AsyncIoVsockStream(vsock::VsockStream),
+    #[cfg(feature = "tokio-vsock")]
+    TokioVsockStream(tokio_vsock::VsockStream),
     Address(Address),
     Socket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
     AuthenticatedSocket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
@@ -197,88 +185,81 @@ impl<'a> Builder<'a> {
         )))
     }
 
-    /// Create a builder for a connection that will use the given unix stream.
+    /// Create a builder for a connection that will use the given unix stream with `async-io`.
     ///
     /// The stream is a [`std::os::unix::net::UnixStream`] (or [`uds_windows::UnixStream`] on
-    /// Windows).
+    /// Windows). Enabling the `tokio` feature does not change the stream type accepted by this
+    /// method. To use a [Tokio Unix stream][tokio-unix] instead, see `tokio_unix_stream`.
     ///
     /// [`uds_windows::UnixStream`]: https://docs.rs/uds_windows/latest/uds_windows/struct.UnixStream.html
+    /// [tokio-unix]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html
     #[cfg(all(any(unix, windows), feature = "async-io"))]
     pub fn async_io_unix_stream(stream: AsyncIoUnixStream) -> Self {
         Self::new(Target::AsyncIoUnixStream(stream))
     }
 
-    /// Create a builder for a connection that will use the given unix stream.
+    /// Create a builder for a connection that will use the given unix stream with Tokio.
     ///
-    /// This method expects a
-    /// [`tokio::net::UnixStream`](https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html).
-    /// Without the `tokio` feature it accepts a [`std::os::unix::net::UnixStream`] instead, but
-    /// that form is deprecated in favor of
-    /// [`async_io_unix_stream`](Self::async_io_unix_stream).
+    /// The stream is a [`tokio::net::UnixStream`]. To use a
+    /// [`std::os::unix::net::UnixStream`] instead, see `async_io_unix_stream`.
     ///
-    /// Since tokio currently [does not support Unix domain sockets][tuds] on Windows, this method
-    /// is not available when the `tokio` feature is enabled and building for Windows target.
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    ///
+    /// This method is not available on Windows because Tokio does not currently [support Unix
+    /// domain sockets there][tuds].
     ///
     /// [tuds]: https://github.com/tokio-rs/tokio/issues/2201
-    #[cfg_attr(
-        not(feature = "tokio"),
-        deprecated(
-            since = "5.19.0",
-            note = "Use `async_io_unix_stream` to avoid a build failure if the `tokio` feature gets enabled"
-        )
-    )]
-    #[cfg(any(unix, not(feature = "tokio")))]
-    pub fn unix_stream(stream: UnixStream) -> Self {
-        #[cfg(not(feature = "tokio"))]
-        {
-            Self::new(Target::AsyncIoUnixStream(stream))
-        }
-        #[cfg(feature = "tokio")]
-        {
-            Self::new(Target::TokioUnixStream(stream))
-        }
+    #[cfg(all(unix, feature = "tokio"))]
+    pub fn tokio_unix_stream(stream: tokio::net::UnixStream) -> Self {
+        Self::new(Target::TokioUnixStream(stream))
     }
 
-    /// Create a builder for a connection that will use the given TCP stream.
+    /// Create a builder for a connection that will use the given TCP stream with `async-io`.
     ///
-    /// The stream is a [`std::net::TcpStream`].
+    /// The stream is a [`std::net::TcpStream`]. Enabling the `tokio` feature does not change the
+    /// stream type accepted by this method. To use a [Tokio TCP stream][tokio-tcp] instead, see
+    /// `tokio_tcp_stream`.
+    ///
+    /// [tokio-tcp]: https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html
     #[cfg(feature = "async-io")]
     pub fn async_io_tcp_stream(stream: AsyncIoTcpStream) -> Self {
         Self::new(Target::AsyncIoTcpStream(stream))
     }
 
-    /// Create a builder for a connection that will use the given TCP stream.
+    /// Create a builder for a connection that will use the given TCP stream with Tokio.
     ///
-    /// This method expects a
-    /// [`tokio::net::TcpStream`](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html).
-    /// Without the `tokio` feature it accepts a [`std::net::TcpStream`] instead, but that form is
-    /// deprecated in favor of [`async_io_tcp_stream`](Self::async_io_tcp_stream).
-    #[cfg_attr(
-        not(feature = "tokio"),
-        deprecated(
-            since = "5.19.0",
-            note = "Use `async_io_tcp_stream` to avoid a build failure if the `tokio` feature gets enabled"
-        )
-    )]
-    pub fn tcp_stream(stream: TcpStream) -> Self {
-        #[cfg(not(feature = "tokio"))]
-        {
-            Self::new(Target::AsyncIoTcpStream(stream))
-        }
-        #[cfg(feature = "tokio")]
-        {
-            Self::new(Target::TokioTcpStream(stream))
-        }
+    /// The stream is a [`tokio::net::TcpStream`]. To use a [`std::net::TcpStream`] instead, see
+    /// `async_io_tcp_stream`.
+    ///
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    #[cfg(feature = "tokio")]
+    pub fn tokio_tcp_stream(stream: tokio::net::TcpStream) -> Self {
+        Self::new(Target::TokioTcpStream(stream))
     }
 
-    /// Create a builder for a connection that will use the given VSOCK stream.
+    /// Create a builder for a connection that will use the given VSOCK stream with `async-io`.
     ///
-    /// This method is only available when either `vsock` or `tokio-vsock` feature is enabled. The
-    /// type of `stream` is `vsock::VsockStream` with `vsock` feature and `tokio_vsock::VsockStream`
-    /// with `tokio-vsock` feature.
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
-    pub fn vsock_stream(stream: VsockStream) -> Self {
-        Self::new(Target::VsockStream(stream))
+    /// The stream is a [`vsock::VsockStream`]. Enabling the `tokio-vsock` feature does not change
+    /// the stream type accepted by this method. To use a [Tokio VSOCK stream][tokio-vsock]
+    /// instead, see `tokio_vsock_stream`.
+    ///
+    /// [tokio-vsock]: https://docs.rs/tokio-vsock/latest/tokio_vsock/struct.VsockStream.html
+    #[cfg(feature = "vsock")]
+    pub fn async_io_vsock_stream(stream: vsock::VsockStream) -> Self {
+        Self::new(Target::AsyncIoVsockStream(stream))
+    }
+
+    /// Create a builder for a connection that will use the given VSOCK stream with Tokio.
+    ///
+    /// The stream is a [`tokio_vsock::VsockStream`]. To use a [native VSOCK stream][vsock] instead,
+    /// see `async_io_vsock_stream`.
+    ///
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    ///
+    /// [vsock]: https://docs.rs/vsock/latest/vsock/struct.VsockStream.html
+    #[cfg(feature = "tokio-vsock")]
+    pub fn tokio_vsock_stream(stream: tokio_vsock::VsockStream) -> Self {
+        Self::new(Target::TokioVsockStream(stream))
     }
 
     /// Create a builder for a connection that will use the given socket.
@@ -748,10 +729,10 @@ impl<'a> Builder<'a> {
             Target::TokioTcpStream(stream) => stream.into(),
             #[cfg(feature = "async-io")]
             Target::AsyncIoTcpStream(stream) => Async::new(stream)?.into(),
-            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
-            Target::VsockStream(stream) => Async::new(stream)?.into(),
+            #[cfg(feature = "vsock")]
+            Target::AsyncIoVsockStream(stream) => Async::new(stream)?.into(),
             #[cfg(feature = "tokio-vsock")]
-            Target::VsockStream(stream) => stream.into(),
+            Target::TokioVsockStream(stream) => stream.into(),
             Target::Address(address) => {
                 guid = address.guid().map(|g| g.to_owned().into());
                 match address.connect().await? {
@@ -788,7 +769,9 @@ fn start_internal_executor(executor: &Executor<'static>, internal_executor: bool
         std::thread::Builder::new()
             .name("zbus::Connection executor".into())
             .spawn(move || {
-                crate::utils::block_on(async move {
+                // `utils::block_on` selects tokio when both backends are enabled, which would make
+                // tasks on this async-io executor unexpectedly observe a tokio runtime.
+                async_io::block_on(async move {
                     // Run as long as there is a task to run.
                     while !executor.is_empty() {
                         executor.tick().await;

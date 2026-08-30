@@ -34,7 +34,6 @@ fn iface_and_proxy_unix_p2p() {
     block_on(iface_and_proxy_(true));
 }
 
-#[allow(deprecated)] // exercises the deprecated `unix_stream`, which must keep working
 #[instrument]
 async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     let event = event_listener::Event::new();
@@ -62,13 +61,24 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
         {
             let (p0, p1) = UnixStream::pair().unwrap();
 
-            (
-                connection::Builder::unix_stream(p0)
+            #[cfg(not(feature = "tokio"))]
+            let builders = (
+                connection::Builder::async_io_unix_stream(p0)
                     .server(guid)
                     .unwrap()
                     .p2p(),
-                connection::Builder::unix_stream(p1).p2p(),
-            )
+                connection::Builder::async_io_unix_stream(p1).p2p(),
+            );
+            #[cfg(feature = "tokio")]
+            let builders = (
+                connection::Builder::tokio_unix_stream(p0)
+                    .server(guid)
+                    .unwrap()
+                    .p2p(),
+                connection::Builder::tokio_unix_stream(p1).p2p(),
+            );
+
+            builders
         }
 
         #[cfg(windows)]
@@ -81,11 +91,11 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
                 let p0 = listener.incoming().next().unwrap().unwrap();
 
                 (
-                    connection::Builder::tcp_stream(p0)
+                    connection::Builder::async_io_tcp_stream(p0)
                         .server(guid)
                         .unwrap()
                         .p2p(),
-                    connection::Builder::tcp_stream(p1).p2p(),
+                    connection::Builder::async_io_tcp_stream(p1).p2p(),
                 )
             }
 
@@ -97,11 +107,11 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
                 let p0 = listener.accept().await.unwrap().0;
 
                 (
-                    connection::Builder::tcp_stream(p0)
+                    connection::Builder::tokio_tcp_stream(p0)
                         .server(guid)
                         .unwrap()
                         .p2p(),
-                    connection::Builder::tcp_stream(p1).p2p(),
+                    connection::Builder::tokio_tcp_stream(p1).p2p(),
                 )
             }
         }

@@ -10,7 +10,6 @@ use zbus::{AuthMechanism, Guid, block_on, connection::Builder};
 
 const UID: u32 = 0;
 
-#[allow(deprecated)] // exercises the deprecated `unix_stream`, which must keep working
 #[test]
 #[timeout(15000)]
 #[instrument]
@@ -26,15 +25,23 @@ fn issue_1003() {
 
         let (p0, p1) = UnixStream::pair().unwrap();
 
+        #[cfg(not(feature = "tokio"))]
         let (service_conn_builder, client_conn_builder) = (
-            Builder::unix_stream(p0)
-                .auth_mechanism(AuthMechanism::External)
-                .server(guid)
-                .unwrap()
-                .p2p()
-                .user_id(UID),
-            Builder::unix_stream(p1).p2p().user_id(UID),
+            Builder::async_io_unix_stream(p0),
+            Builder::async_io_unix_stream(p1),
         );
+        #[cfg(feature = "tokio")]
+        let (service_conn_builder, client_conn_builder) = (
+            Builder::tokio_unix_stream(p0),
+            Builder::tokio_unix_stream(p1),
+        );
+        let service_conn_builder = service_conn_builder
+            .auth_mechanism(AuthMechanism::External)
+            .server(guid)
+            .unwrap()
+            .p2p()
+            .user_id(UID);
+        let client_conn_builder = client_conn_builder.p2p().user_id(UID);
 
         let (service_conn, client_conn) = futures_util::try_join!(
             service_conn_builder.build(),

@@ -342,9 +342,6 @@ mod tests {
         blocking::{MessageIterator, connection::Builder},
     };
 
-    // Exercises the deprecated `unix_stream` (which must keep working); the `async_io_unix_stream`
-    // replacement just forwards to the async builder covered elsewhere.
-    #[allow(deprecated)]
     #[test]
     #[timeout(15000)]
     fn unix_p2p() {
@@ -355,12 +352,11 @@ mod tests {
 
         let (tx, rx) = std::sync::mpsc::channel();
         let server_thread = thread::spawn(move || {
-            let c = Builder::unix_stream(p0)
-                .server(guid)
-                .unwrap()
-                .p2p()
-                .build()
-                .unwrap();
+            #[cfg(not(feature = "tokio"))]
+            let builder = Builder::async_io_unix_stream(p0);
+            #[cfg(feature = "tokio")]
+            let builder = Builder::tokio_unix_stream(p0);
+            let c = builder.server(guid).unwrap().p2p().build().unwrap();
             rx.recv().unwrap();
             let reply = c
                 .call_method(None::<()>, "/", Some("org.zbus.p2p"), "Test", &())
@@ -370,7 +366,11 @@ mod tests {
             val
         });
 
-        let c = Builder::unix_stream(p1).p2p().build().unwrap();
+        #[cfg(not(feature = "tokio"))]
+        let builder = Builder::async_io_unix_stream(p1);
+        #[cfg(feature = "tokio")]
+        let builder = Builder::tokio_unix_stream(p1);
+        let c = builder.p2p().build().unwrap();
 
         let listener = c.monitor_activity();
 
