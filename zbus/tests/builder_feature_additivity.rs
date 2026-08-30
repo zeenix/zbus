@@ -44,3 +44,12 @@ fn tcp_stream_builder_signatures_are_additive() {
             zbus::blocking::connection::Builder::tokio_tcp_stream;
     }
 }
+
+#[test]
+fn vsock_stream_builder_signatures_are_additive() {
+    #[cfg(feature = "vsock")]
+    let _: fn(vsock::VsockStream) -> Builder<'static> = Builder::async_io_vsock_stream;
+
+    #[cfg(feature = "tokio-vsock")]
+    let _: fn(tokio_vsock::VsockStream) -> Builder<'static> = Builder::tokio_vsock_stream;
+}
