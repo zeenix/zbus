@@ -239,6 +239,22 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Create a builder for a connection that will use the given unix stream with Tokio.
+    ///
+    /// The stream is a [`tokio::net::UnixStream`]. To use a
+    /// [`std::os::unix::net::UnixStream`] instead, see `async_io_unix_stream`.
+    ///
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    ///
+    /// This method is not available on Windows because Tokio does not currently [support Unix
+    /// domain sockets there][tuds].
+    ///
+    /// [tuds]: https://github.com/tokio-rs/tokio/issues/2201
+    #[cfg(all(unix, feature = "tokio"))]
+    pub fn tokio_unix_stream(stream: tokio::net::UnixStream) -> Self {
+        Self::new(Target::TokioUnixStream(stream))
+    }
+
     /// Create a builder for a connection that will use the given TCP stream.
     ///
     /// The stream is a [`std::net::TcpStream`].
