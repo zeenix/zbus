@@ -1,8 +1,7 @@
 use snakecase::ascii::to_snakecase;
 use std::{
     collections::{HashMap, HashSet},
-    error::Error,
-    fmt::{Display, Formatter, Write},
+    fmt::Write,
     process::{Command, Stdio},
 };
 
@@ -14,31 +13,6 @@ use zbus_xml::{
     Arg, ArgDirection, Interface, Property,
     telepathy::{self, TypeDef},
 };
-
-#[deprecated(since = "5.4.0", note = "use `CodeGenerator::file_code` instead")]
-pub fn write_interfaces(
-    interfaces: &[Interface<'_>],
-    standard_interfaces: &[Interface<'_>],
-    service: Option<BusName<'_>>,
-    path: Option<ObjectPath<'_>>,
-    input_src: &str,
-    cargo_bin_name: &str,
-    cargo_bin_version: &str,
-) -> Result<String, Box<dyn Error + 'static>> {
-    let code = CodeGenerator::new()
-        .with_service(service.as_ref())
-        .with_path(path.as_ref())
-        .with_format(true)
-        .file_code(
-            interfaces,
-            standard_interfaces,
-            input_src,
-            cargo_bin_name,
-            cargo_bin_version,
-        )?;
-
-    Ok(code)
-}
 
 /// Write a doc header, listing the included Interfaces and how the
 /// code was generated.
@@ -137,27 +111,6 @@ fn write_doc_header<W: std::fmt::Write>(
     )?;
 
     Ok(())
-}
-
-#[deprecated(since = "5.4.0", note = "use `CodeGenerator` instead")]
-pub struct GenTrait<'i> {
-    pub interface: &'i Interface<'i>,
-    pub service: Option<&'i BusName<'i>>,
-    pub path: Option<&'i ObjectPath<'i>>,
-    pub format: bool,
-}
-
-#[allow(deprecated)]
-impl Display for GenTrait<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let code = CodeGenerator::new()
-            .with_service(self.service)
-            .with_path(self.path)
-            .with_format(self.format)
-            .interface_code(self.interface)?;
-
-        write!(f, "{code}")
-    }
 }
 
 /// Generates Rust code from D-Bus introspection data.

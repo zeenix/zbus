@@ -102,13 +102,6 @@ pub use connection as conn;
 #[cfg(feature = "comms")]
 pub use connection::Connection;
 #[cfg(feature = "comms")]
-#[deprecated(
-    since = "5.0.0",
-    note = "Please use `connection::AuthMechanism` instead"
-)]
-pub use connection::handshake::AuthMechanism;
-
-#[cfg(feature = "comms")]
 mod message_stream;
 #[cfg(feature = "comms")]
 pub use message_stream::*;

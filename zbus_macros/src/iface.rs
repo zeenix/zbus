@@ -70,7 +70,6 @@ def_attrs! {
         object_server none,
         connection none,
         header none,
-        signal_context none,
         signal_emitter none
     };
 }
@@ -572,11 +571,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                         .iter()
                         .find(|input| {
                             let a = ArgAttributes::parse(&input.attrs).unwrap();
-                            !a.object_server
-                                && !a.connection
-                                && !a.header
-                                && !a.signal_context
-                                && !a.signal_emitter
+                            !a.object_server && !a.connection && !a.header && !a.signal_emitter
                         })
                         .ok_or_else(|| Error::new_spanned(inputs, "Expected a value argument"))?;
 
@@ -1066,7 +1061,6 @@ fn get_args_from_inputs(
                 connection,
                 header,
                 signal_emitter,
-                signal_context,
             } = ArgAttributes::parse(&input.attrs)?;
 
             if object_server {
@@ -1108,22 +1102,22 @@ fn get_args_from_inputs(
                     }),
                     _ => Some(quote! { let #header_arg = __zbus__message.header(); }),
                 };
-            } else if signal_context || signal_emitter {
+            } else if signal_emitter {
                 if signal_emitter_arg_decl.is_some() {
                     return Err(Error::new_spanned(
                         input,
-                        "There can only be one `signal_emitter` or `signal_context` argument",
+                        "There can only be one `signal_emitter` argument",
                     ));
                 }
 
-                let signal_context_arg = &input.pat;
+                let signal_emitter_arg = &input.pat;
 
                 signal_emitter_arg_decl = match method_type {
                     MethodType::Property(_) => Some(
-                        quote! { let #signal_context_arg = ::std::clone::Clone::clone(__zbus__signal_emitter); },
+                        quote! { let #signal_emitter_arg = ::std::clone::Clone::clone(__zbus__signal_emitter); },
                     ),
                     _ => Some(quote! {
-                        let #signal_context_arg = match hdr.path() {
+                        let #signal_emitter_arg = match hdr.path() {
                             ::std::option::Option::Some(p) => {
                                 #zbus::object_server::SignalEmitter::new(__zbus__connection, p).expect("Infallible conversion failed")
                             }
@@ -1295,7 +1289,6 @@ fn is_special_arg(attrs: &[Attribute]) -> bool {
                 if path.is_ident("object_server") ||
                     path.is_ident("connection") ||
                     path.is_ident("header") ||
-                    path.is_ident("signal_context") ||
                     path.is_ident("signal_emitter")
             )
         })
@@ -1571,11 +1564,7 @@ impl Proxy {
             .iter()
             .filter(|input| {
                 let a = ArgAttributes::parse(&input.attrs).unwrap();
-                !a.object_server
-                    && !a.connection
-                    && !a.header
-                    && !a.signal_context
-                    && !a.signal_emitter
+                !a.object_server && !a.connection && !a.header && !a.signal_emitter
             })
             .cloned()
             .collect();

@@ -98,11 +98,6 @@ where
     pub fn signal_emitter(&self) -> &SignalEmitter<'static> {
         &self.emitter
     }
-
-    #[deprecated(since = "0.5.0", note = "Please use `signal_emitter` instead.")]
-    pub fn signal_context(&self) -> &SignalEmitter<'static> {
-        &self.emitter
-    }
 }
 
 impl<I> Clone for InterfaceRef<I> {

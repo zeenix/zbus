@@ -41,11 +41,11 @@ pub use crate::wire::{
 // The remaining derives and `signature!` come straight from the macro crate so that they land
 // only in the macro namespace and leave the type namespace to the aliases below.
 pub use zbus_macros::{DeserializeDict, OwnedValue, SerializeDict, Value, signature};
-// Submodules, the two `unsafe` writer functions, the `Type` helper macros and the
-// already-deprecated leftovers, all silent.
+// Submodules, the two `unsafe` writer functions and the `Type` helper macros, all silent.
 pub use crate::wire::{
-    DeserializeValue, SerializeValue, as_value, dbus, export, impl_type_with_repr, static_str_type,
-    to_writer, to_writer_for_signature, vec_to_cstr,
+    as_value,
+    as_value::{Deserialize as DeserializeValue, Serialize as SerializeValue},
+    dbus, export, impl_type_with_repr, static_str_type, to_writer, to_writer_for_signature,
 };
 
 /// Deprecated alias of [`crate::wire::Array`].

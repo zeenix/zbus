@@ -16,14 +16,10 @@ use crate::{
 
 mod interface;
 pub(crate) use interface::ArcInterface;
-#[allow(deprecated)]
-pub use interface::DispatchResult;
 pub use interface::{DispatchResult2, Interface, InterfaceDeref, InterfaceDerefMut, InterfaceRef};
 
 mod signal_emitter;
 pub use signal_emitter::SignalEmitter;
-#[deprecated(since = "5.0.0", note = "Please use `SignalEmitter` instead.")]
-pub type SignalContext<'s> = SignalEmitter<'s>;
 
 mod dispatch_notifier;
 pub use dispatch_notifier::ResponseDispatchNotifier;

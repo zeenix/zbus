@@ -272,10 +272,6 @@ pub use owned_value::*;
 mod container_depths;
 
 pub mod as_value;
-#[deprecated(since = "5.5.0", note = "Use `as_value::Deserialize` instead.")]
-pub use as_value::Deserialize as DeserializeValue;
-#[deprecated(since = "5.5.0", note = "Use `as_value::Serialize` instead.")]
-pub use as_value::Serialize as SerializeValue;
 
 pub use zbus_macros::{DeserializeDict, OwnedValue, SerializeDict, Type, Value, signature};
 

@@ -94,26 +94,3 @@ fn shared_node_types_in_one_file() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-#[test]
-#[allow(deprecated)]
-fn deprecated_gen_trait() -> Result<(), Box<dyn Error>> {
-    // The deprecated `GenTrait` still works, matching `CodeGenerator` sans node-level types.
-    let input = include_str!("data/sample_object0.xml");
-    let node = Node::from_reader(input.as_bytes())?;
-    let interface = &node.interfaces()[0];
-
-    let gen_trait = zbus_xmlgen::GenTrait {
-        interface,
-        path: None,
-        service: None,
-        format: true,
-    }
-    .to_string();
-    let code = CodeGenerator::new()
-        .with_format(true)
-        .interface_code(interface)?;
-    assert_eq!(gen_trait, code);
-
-    Ok(())
-}
