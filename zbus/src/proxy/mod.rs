@@ -20,7 +20,7 @@ use crate::{
     fdo::{self, IntrospectableProxy, NameOwnerChanged, PropertiesChangedStream, PropertiesProxy},
     message::{Flags, Message, Sequence, Type},
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, OwnedValue, Str, Value},
+    wire::{ObjectPath, OwnedValue, Str, Value, as_value},
 };
 
 mod builder;
@@ -189,8 +189,7 @@ impl<T> PropertyChanged<'_, T> {
 
 impl<T> PropertyChanged<'_, T>
 where
-    T: TryFrom<crate::wire::OwnedValue>,
-    T::Error: Into<crate::Error>,
+    T: serde::de::DeserializeOwned + crate::wire::Type,
 {
     /// Get the value of the property that changed.
     ///
@@ -200,7 +199,7 @@ where
     pub async fn get(&self) -> Result<T> {
         self.get_raw()
             .await
-            .and_then(|v| T::try_from(OwnedValue::try_from(&*v)?).map_err(Into::into))
+            .and_then(|value| deserialize_value(&value))
     }
 }
 
@@ -712,12 +711,11 @@ impl<'a> Proxy<'a> {
     /// the peer.
     pub fn cached_property<T>(&self, property_name: &str) -> Result<Option<T>>
     where
-        T: TryFrom<OwnedValue>,
-        T::Error: Into<Error>,
+        T: serde::de::DeserializeOwned + crate::wire::Type,
     {
         self.cached_property_raw(property_name)
             .as_deref()
-            .map(|v| T::try_from(OwnedValue::try_from(v)?).map_err(Into::into))
+            .map(deserialize_value)
             .transpose()
     }
 
@@ -781,8 +779,7 @@ impl<'a> Proxy<'a> {
     /// `Get` method of the `org.freedesktop.DBus.Properties` interface.
     pub async fn get_property<T>(&self, property_name: &str) -> Result<T>
     where
-        T: TryFrom<OwnedValue>,
-        T::Error: Into<Error>,
+        T: serde::de::DeserializeOwned + crate::wire::Type,
     {
         if let Some(cache) = self.get_property_cache() {
             cache.ready().await?;
@@ -792,19 +789,29 @@ impl<'a> Proxy<'a> {
         }
 
         let value = self.get_proxy_property(property_name).await?;
-        value.try_into().map_err(Into::into)
+        deserialize_value(&value)
     }
 
     /// Set the property `property_name`.
     ///
     /// Effectively, call the `Set` method of the `org.freedesktop.DBus.Properties` interface.
-    pub async fn set_property<'t, T>(&self, property_name: &str, value: T) -> fdo::Result<()>
+    pub async fn set_property<T>(&self, property_name: &str, value: T) -> fdo::Result<()>
     where
-        T: 't + Into<Value<'t>>,
+        T: serde::Serialize + crate::wire::Type,
     {
         self.properties_proxy()
-            .set(self.inner.interface.as_ref(), property_name, &value.into())
-            .await
+            .inner()
+            .call::<_, _, ()>(
+                "Set",
+                &crate::wire::DynamicTuple((
+                    self.inner.interface.as_ref(),
+                    property_name,
+                    as_value::Serialize(&value),
+                )),
+            )
+            .await?;
+
+        Ok(())
     }
 
     /// Call a method and return the reply.
@@ -1360,6 +1367,16 @@ where
 
     /// The reference to the underlying `zbus::Proxy`.
     fn inner(&self) -> &Proxy<'c>;
+}
+
+fn deserialize_value<T>(value: &Value<'_>) -> Result<T>
+where
+    T: serde::de::DeserializeOwned + crate::wire::Type,
+{
+    let data = as_value::serialized_for_property(value, T::SIGNATURE)?;
+    let value: as_value::Deserialize<'_, T> = data.deserialize()?.0;
+
+    Ok(value.0)
 }
 
 enum Either<L, R> {

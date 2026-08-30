@@ -361,14 +361,6 @@ impl MyIface {
 
     #[instrument]
     #[zbus(property)]
-    fn ref_prop(&self) -> RefType<'_> {
-        RefType {
-            field1: "Hello".into(),
-        }
-    }
-
-    #[instrument]
-    #[zbus(property)]
     fn set_ref_prop(&self, ref_type: RefType<'_>) {
         debug!("`SetRefType` called with {:?}", ref_type);
     }
