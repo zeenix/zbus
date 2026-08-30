@@ -1832,7 +1832,11 @@ mod p2p_tests {
                 crate::Task::spawn_blocking(move || listener.incoming().next(), "").await?;
             #[cfg(feature = "tokio-vsock")]
             let server = listener.incoming().next().await;
-            Builder::vsock_stream(server.unwrap()?)
+            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
+            let builder = Builder::async_io_vsock_stream(server.unwrap()?);
+            #[cfg(feature = "tokio-vsock")]
+            let builder = Builder::tokio_vsock_stream(server.unwrap()?);
+            builder
                 .server(guid)?
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
@@ -1873,13 +1877,13 @@ mod p2p_tests {
         let server = listener.incoming().next().unwrap().unwrap();
 
         futures_util::try_join!(
-            Builder::vsock_stream(server)
+            Builder::async_io_vsock_stream(server)
                 .server(guid)
                 .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
-            Builder::vsock_stream(client).p2p().build(),
+            Builder::async_io_vsock_stream(client).p2p().build(),
         )
     }
 
@@ -1896,13 +1900,13 @@ mod p2p_tests {
         let server = listener.incoming().next().await.unwrap().unwrap();
 
         futures_util::try_join!(
-            Builder::vsock_stream(server)
+            Builder::tokio_vsock_stream(server)
                 .server(guid)
                 .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
-            Builder::vsock_stream(client).p2p().build(),
+            Builder::tokio_vsock_stream(client).p2p().build(),
         )
     }
 
