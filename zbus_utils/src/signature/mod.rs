@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use core::fmt;
 use std::{
+    borrow::Cow,
     fmt::{Display, Formatter},
     hash::Hash,
     str::FromStr,
@@ -823,8 +824,8 @@ impl Serialize for Signature {
 
 impl<'de> Deserialize<'de> for Signature {
     fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        <&str>::deserialize(deserializer).and_then(|s| {
-            Signature::from_str(s).map_err(|e| serde::de::Error::custom(e.to_string()))
+        Cow::<str>::deserialize(deserializer).and_then(|s| {
+            Signature::from_str(s.as_ref()).map_err(|e| serde::de::Error::custom(e.to_string()))
         })
     }
 }

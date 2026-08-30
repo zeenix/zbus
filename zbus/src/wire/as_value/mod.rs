@@ -10,6 +10,10 @@ mod deserialize;
 pub use deserialize::{Deserialize, deserialize};
 mod serialize;
 pub use serialize::{Serialize, serialize};
+mod property;
+pub use property::deserialize_for_property;
+mod value_serializer;
+pub use value_serializer::to_owned_value;
 
 /// Utilities to (de)serialize an optional value as a [`enum@zbus::wire::Value`].
 pub mod optional {
