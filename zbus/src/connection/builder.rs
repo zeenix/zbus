@@ -201,12 +201,14 @@ impl<'a> Builder<'a> {
         )))
     }
 
-    /// Create a builder for a connection that will use the given unix stream.
+    /// Create a builder for a connection that will use the given unix stream with `async-io`.
     ///
     /// The stream is a [`std::os::unix::net::UnixStream`] (or [`uds_windows::UnixStream`] on
-    /// Windows).
+    /// Windows). Enabling the `tokio` feature does not change the stream type accepted by this
+    /// method. To use a [Tokio Unix stream][tokio-unix] instead, see `tokio_unix_stream`.
     ///
     /// [`uds_windows::UnixStream`]: https://docs.rs/uds_windows/latest/uds_windows/struct.UnixStream.html
+    /// [tokio-unix]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html
     #[cfg(all(any(unix, windows), feature = "async-io"))]
     pub fn async_io_unix_stream(stream: AsyncIoUnixStream) -> Self {
         Self::new(Target::AsyncIoUnixStream(stream))
