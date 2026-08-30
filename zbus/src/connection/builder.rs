@@ -62,6 +62,8 @@ enum Target {
     AsyncIoTcpStream(AsyncIoTcpStream),
     #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     VsockStream(VsockStream),
+    #[cfg(feature = "vsock")]
+    AsyncIoVsockStream(vsock::VsockStream),
     Address(Address),
     Socket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
     AuthenticatedSocket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
@@ -306,6 +308,18 @@ impl<'a> Builder<'a> {
     #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     pub fn vsock_stream(stream: VsockStream) -> Self {
         Self::new(Target::VsockStream(stream))
+    }
+
+    /// Create a builder for a connection that will use the given VSOCK stream with `async-io`.
+    ///
+    /// The stream is a [`vsock::VsockStream`]. Enabling the `tokio-vsock` feature does not change
+    /// the stream type accepted by this method. To use a [Tokio VSOCK stream][tokio-vsock]
+    /// instead, see `tokio_vsock_stream`.
+    ///
+    /// [tokio-vsock]: https://docs.rs/tokio-vsock/latest/tokio_vsock/struct.VsockStream.html
+    #[cfg(feature = "vsock")]
+    pub fn async_io_vsock_stream(stream: vsock::VsockStream) -> Self {
+        Self::new(Target::AsyncIoVsockStream(stream))
     }
 
     /// Create a builder for a connection that will use the given socket.
@@ -779,6 +793,8 @@ impl<'a> Builder<'a> {
             Target::VsockStream(stream) => Async::new(stream)?.into(),
             #[cfg(feature = "tokio-vsock")]
             Target::VsockStream(stream) => stream.into(),
+            #[cfg(feature = "vsock")]
+            Target::AsyncIoVsockStream(stream) => Async::new(stream)?.into(),
             Target::Address(address) => {
                 guid = address.guid().map(|g| g.to_owned().into());
                 match address.connect().await? {
