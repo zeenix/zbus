@@ -129,9 +129,10 @@ jobs:
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --all-features \
               -- --skip fdpass_systemd
-          # All features except tokio.
+          # Test the full zbus suite with async-io but without Tokio.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose --features uuid,url,time,chrono,option-as-array,vsock,bus-impl \
+            cargo --locked test --release --verbose -p zbus \
+              --features uuid,url,time,chrono,option-as-array,vsock,bus-impl \
               -- --skip fdpass_systemd
           # Test tokio support.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
