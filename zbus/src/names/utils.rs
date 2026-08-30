@@ -398,10 +398,10 @@ macro_rules! define_name_type_impls {
         }
 
         impl crate::wire::NoneValue for $owned_name {
-            type NoneType = <$name<'static> as crate::wire::NoneValue>::NoneType;
+            type NoneType = String;
 
             fn null_value() -> Self::NoneType {
-                $name::null_value()
+                String::new()
             }
         }
 
