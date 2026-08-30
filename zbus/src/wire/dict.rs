@@ -278,7 +278,7 @@ macro_rules! to_dict {
     ($ty:ident <K $(: $kbound1:ident $(+ $kbound2:ident)*)*, V $(, $typaram:ident)*>) => {
         impl<'k, 'v, K, V $(, $typaram)*> From<$ty<K, V $(, $typaram)*>> for Dict<'k, 'v>
         where
-            K: Type + Into<Value<'k>>,
+            K: Basic + Into<Value<'k>>,
             V: Type + Into<Value<'v>>,
             $($typaram: BuildHasher,)*
         {

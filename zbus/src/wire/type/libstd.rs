@@ -1,4 +1,4 @@
-use crate::wire::{Signature, Type, impl_type_with_repr};
+use crate::wire::{Basic, Signature, Type, impl_type_with_repr};
 use std::{
     cell::{Cell, RefCell},
     cmp::Reverse,
@@ -187,7 +187,7 @@ macro_rules! map_impl {
     ($ty:ident < K $(: $kbound1:ident $(+ $kbound2:ident)*)*, V $(, $typaram:ident : $bound:ident)* >) => {
         impl<K, V $(, $typaram)*> Type for $ty<K, V $(, $typaram)*>
         where
-            K: Type $(+ $kbound1 $(+ $kbound2)*)*,
+            K: Basic $(+ $kbound1 $(+ $kbound2)*)*,
             V: Type,
             $($typaram: $bound,)*
         {
@@ -267,3 +267,61 @@ impl_type_with_repr! {
 // https://github.com/serde-rs/serde/issues/2685
 
 // TODO: Blanket implementation for more types: https://github.com/serde-rs/serde/blob/master/serde/src/ser/impls.rs
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+    use super::*;
+    use crate::wire::{Dict, OwnedValue, Value};
+
+    type BasicHashMap = HashMap<String, u8>;
+    type NonBasicHashMap = HashMap<Vec<u8>, u8>;
+    type BasicBTreeMap = BTreeMap<String, u8>;
+    type NonBasicBTreeMap = BTreeMap<Vec<u8>, u8>;
+    type PathHashMap = HashMap<std::path::PathBuf, u8>;
+    type EmptyArrayHashMap = HashMap<[u8; 0], u8>;
+    type OptionalHashMap = HashMap<crate::wire::Optional<u8>, u8>;
+
+    assert_impl_all!(
+        BasicHashMap: Type,
+        Into<Value<'static>>,
+        Into<OwnedValue>,
+        Into<Dict<'static, 'static>>
+    );
+    assert_impl_all!(
+        BasicBTreeMap: Type,
+        Into<Value<'static>>,
+        Into<OwnedValue>,
+        Into<Dict<'static, 'static>>
+    );
+    assert_not_impl_any!(
+        NonBasicHashMap: Type,
+        Into<Value<'static>>,
+        Into<OwnedValue>,
+        Into<Dict<'static, 'static>>
+    );
+    assert_not_impl_any!(
+        NonBasicBTreeMap: Type,
+        Into<Value<'static>>,
+        Into<OwnedValue>,
+        Into<Dict<'static, 'static>>
+    );
+    assert_impl_all!(PathHashMap: Type);
+    assert_impl_all!(EmptyArrayHashMap: Type);
+    assert_impl_all!(
+        OptionalHashMap: Type,
+        Into<Value<'static>>,
+        Into<OwnedValue>,
+        Into<Dict<'static, 'static>>
+    );
+
+    #[cfg(feature = "comms")]
+    assert_impl_all!(
+        HashMap<enumflags2::BitFlags<crate::fdo::RequestNameFlags>, u8>:
+            Type,
+            Into<Value<'static>>,
+            Into<OwnedValue>,
+            Into<Dict<'static, 'static>>
+    );
+}
