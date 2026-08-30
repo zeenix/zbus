@@ -139,9 +139,13 @@ impl<'a> Builder<'a> {
         Self(crate::connection::Builder::tokio_unix_stream(stream))
     }
 
-    /// Create a builder for a connection that will use the given TCP stream.
+    /// Create a builder for a connection that will use the given TCP stream with `async-io`.
     ///
-    /// The stream is a [`std::net::TcpStream`].
+    /// The stream is a [`std::net::TcpStream`]. Enabling the `tokio` feature does not change the
+    /// stream type accepted by this method. To use a [Tokio TCP stream][tokio-tcp] instead, see
+    /// `tokio_tcp_stream`.
+    ///
+    /// [tokio-tcp]: https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html
     #[cfg(feature = "async-io")]
     pub fn async_io_tcp_stream(stream: AsyncIoTcpStream) -> Self {
         Self(crate::connection::Builder::async_io_tcp_stream(stream))
