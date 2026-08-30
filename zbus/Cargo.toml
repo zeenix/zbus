@@ -212,6 +212,10 @@ name = "basic"
 required-features = ["comms"]
 
 [[test]]
+name = "builder_feature_additivity"
+required-features = ["comms"]
+
+[[test]]
 name = "builder_message_stream"
 required-features = ["comms"]
 
