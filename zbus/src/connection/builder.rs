@@ -7,10 +7,6 @@ use std::{
     collections::{HashMap, HashSet},
     mem, vec,
 };
-#[cfg(feature = "tokio-vsock")]
-use tokio_vsock::VsockStream;
-#[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
-use vsock::VsockStream;
 
 // Feature-independent stream types for the `async_io_*_stream` builders: these always take the
 // blocking/`async-io` stream, so enabling `tokio` elsewhere can't change what they accept.
@@ -50,8 +46,6 @@ enum Target {
     TokioTcpStream(tokio::net::TcpStream),
     #[cfg(feature = "async-io")]
     AsyncIoTcpStream(AsyncIoTcpStream),
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
-    VsockStream(VsockStream),
     #[cfg(feature = "vsock")]
     AsyncIoVsockStream(vsock::VsockStream),
     #[cfg(feature = "tokio-vsock")]
@@ -241,16 +235,6 @@ impl<'a> Builder<'a> {
     #[cfg(feature = "tokio")]
     pub fn tokio_tcp_stream(stream: tokio::net::TcpStream) -> Self {
         Self::new(Target::TokioTcpStream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given VSOCK stream.
-    ///
-    /// This method is only available when either `vsock` or `tokio-vsock` feature is enabled. The
-    /// type of `stream` is `vsock::VsockStream` with `vsock` feature and `tokio_vsock::VsockStream`
-    /// with `tokio-vsock` feature.
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
-    pub fn vsock_stream(stream: VsockStream) -> Self {
-        Self::new(Target::VsockStream(stream))
     }
 
     /// Create a builder for a connection that will use the given VSOCK stream with `async-io`.
@@ -745,10 +729,6 @@ impl<'a> Builder<'a> {
             Target::TokioTcpStream(stream) => stream.into(),
             #[cfg(feature = "async-io")]
             Target::AsyncIoTcpStream(stream) => Async::new(stream)?.into(),
-            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
-            Target::VsockStream(stream) => Async::new(stream)?.into(),
-            #[cfg(feature = "tokio-vsock")]
-            Target::VsockStream(stream) => stream.into(),
             #[cfg(feature = "vsock")]
             Target::AsyncIoVsockStream(stream) => Async::new(stream)?.into(),
             #[cfg(feature = "tokio-vsock")]
