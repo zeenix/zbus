@@ -1,3 +1,5 @@
+#![cfg(feature = "comms")]
+
 use ntest::timeout;
 use test_log::test;
 use zbus::block_on;

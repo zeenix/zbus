@@ -207,38 +207,6 @@ workspace = true
 [lib]
 bench = false
 
-[[test]]
-name = "basic"
-required-features = ["comms"]
-
-[[test]]
-name = "builder_feature_additivity"
-required-features = ["comms"]
-
-[[test]]
-name = "builder_message_stream"
-required-features = ["comms"]
-
-[[test]]
-name = "connection_closed"
-required-features = ["comms"]
-
-[[test]]
-name = "e2e"
-required-features = ["comms"]
-
-[[test]]
-name = "issues"
-required-features = ["comms"]
-
-[[test]]
-name = "uncached_propert"
-required-features = ["comms"]
-
-[[test]]
-name = "unixexec"
-required-features = ["comms"]
-
 [[bench]]
 name = "benchmarks"
 harness = false

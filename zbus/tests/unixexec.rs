@@ -1,3 +1,4 @@
+#![cfg(feature = "comms")]
 #![cfg(not(target_os = "windows"))]
 
 use ntest::timeout;
