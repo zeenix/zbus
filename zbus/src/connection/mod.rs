@@ -1693,12 +1693,12 @@ mod p2p_tests {
             let p0 = listener.accept().await.unwrap().0;
 
             (
-                Builder::tcp_stream(p0)
+                Builder::tokio_tcp_stream(p0)
                     .server(guid)
                     .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
-                Builder::tcp_stream(p1).p2p(),
+                Builder::tokio_tcp_stream(p1).p2p(),
             )
         };
 

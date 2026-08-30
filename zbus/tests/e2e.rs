@@ -91,11 +91,11 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
                 let p0 = listener.incoming().next().unwrap().unwrap();
 
                 (
-                    connection::Builder::tcp_stream(p0)
+                    connection::Builder::async_io_tcp_stream(p0)
                         .server(guid)
                         .unwrap()
                         .p2p(),
-                    connection::Builder::tcp_stream(p1).p2p(),
+                    connection::Builder::async_io_tcp_stream(p1).p2p(),
                 )
             }
 
@@ -107,11 +107,11 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
                 let p0 = listener.accept().await.unwrap().0;
 
                 (
-                    connection::Builder::tcp_stream(p0)
+                    connection::Builder::tokio_tcp_stream(p0)
                         .server(guid)
                         .unwrap()
                         .p2p(),
-                    connection::Builder::tcp_stream(p1).p2p(),
+                    connection::Builder::tokio_tcp_stream(p1).p2p(),
                 )
             }
         }
