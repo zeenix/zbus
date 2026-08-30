@@ -64,6 +64,8 @@ enum Target {
     VsockStream(VsockStream),
     #[cfg(feature = "vsock")]
     AsyncIoVsockStream(vsock::VsockStream),
+    #[cfg(feature = "tokio-vsock")]
+    TokioVsockStream(tokio_vsock::VsockStream),
     Address(Address),
     Socket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
     AuthenticatedSocket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
@@ -320,6 +322,19 @@ impl<'a> Builder<'a> {
     #[cfg(feature = "vsock")]
     pub fn async_io_vsock_stream(stream: vsock::VsockStream) -> Self {
         Self::new(Target::AsyncIoVsockStream(stream))
+    }
+
+    /// Create a builder for a connection that will use the given VSOCK stream with Tokio.
+    ///
+    /// The stream is a [`tokio_vsock::VsockStream`]. To use a [native VSOCK stream][vsock] instead,
+    /// see `async_io_vsock_stream`.
+    ///
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    ///
+    /// [vsock]: https://docs.rs/vsock/latest/vsock/struct.VsockStream.html
+    #[cfg(feature = "tokio-vsock")]
+    pub fn tokio_vsock_stream(stream: tokio_vsock::VsockStream) -> Self {
+        Self::new(Target::TokioVsockStream(stream))
     }
 
     /// Create a builder for a connection that will use the given socket.
@@ -795,6 +810,8 @@ impl<'a> Builder<'a> {
             Target::VsockStream(stream) => stream.into(),
             #[cfg(feature = "vsock")]
             Target::AsyncIoVsockStream(stream) => Async::new(stream)?.into(),
+            #[cfg(feature = "tokio-vsock")]
+            Target::TokioVsockStream(stream) => stream.into(),
             Target::Address(address) => {
                 guid = address.guid().map(|g| g.to_owned().into());
                 match address.connect().await? {
