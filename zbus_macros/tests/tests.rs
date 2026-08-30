@@ -7,7 +7,7 @@ use zbus::{block_on, fdo, object_server::SignalEmitter, proxy::CacheProperties};
 use zbus_macros::{DBusError, interface, proxy};
 
 // `::mybus` only resolves because of this alias; the test below exercises the `crate` attribute
-// on a `Value`-taking property setter.
+// on property setters.
 extern crate zbus as mybus;
 
 mod param {
@@ -132,10 +132,7 @@ fn test_derive_error() {
 #[test]
 fn test_interface() {
     use serde::{Deserialize, Serialize};
-    use zbus::{
-        object_server::Interface,
-        wire::{Type, Value},
-    };
+    use zbus::{object_server::Interface, wire::Type};
 
     // Test write-only property
     struct TestWriteOnlyProperty;
@@ -163,7 +160,7 @@ fn test_interface() {
         generic: T,
     }
 
-    #[derive(Serialize, Deserialize, Type, Value)]
+    #[derive(Serialize, Deserialize, Type)]
     struct MyCustomPropertyType(u32);
 
     #[interface(name = "org.freedesktop.zbus.Test", spawn = false)]
@@ -528,36 +525,13 @@ fn interface_property_setter_with_crate_attr() {
     );
 }
 
-// The generated setter reports the value-conversion failure through `Into`, so an error type
-// that only implements `Into<zbus::Error>` — without the `From` impl the blanket conversion
-// would need — is enough.
 #[test]
-fn interface_property_setter_with_into_only_error() {
-    use zbus::{
-        object_server::Interface,
-        wire::{Type, Value},
-    };
+fn interface_property_setter_with_serde() {
+    use serde::{Deserialize, Serialize};
+    use zbus::{object_server::Interface, wire::Type};
 
-    struct ConversionError;
-
-    // `Into` rather than `From` is the point of this test.
-    #[allow(clippy::from_over_into)]
-    impl Into<zbus::Error> for ConversionError {
-        fn into(self) -> zbus::Error {
-            zbus::Error::Failure("not a Fahrenheit reading".to_string())
-        }
-    }
-
-    #[derive(Type)]
+    #[derive(Deserialize, Serialize, Type)]
     struct Fahrenheit(u32);
-
-    impl TryFrom<Value<'_>> for Fahrenheit {
-        type Error = ConversionError;
-
-        fn try_from(_value: Value<'_>) -> Result<Self, Self::Error> {
-            Err(ConversionError)
-        }
-    }
 
     struct Thermostat;
 

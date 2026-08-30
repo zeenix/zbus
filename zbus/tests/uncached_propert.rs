@@ -86,3 +86,130 @@ async fn test_uncached_property() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[timeout(15000)]
+fn serde_property() {
+    block_on(test_serde_property()).unwrap();
+}
+
+async fn test_serde_property() -> Result<()> {
+    use std::collections::HashMap;
+
+    use futures_util::StreamExt;
+    use serde::{Deserialize, Serialize};
+    use zbus::{
+        names::OwnedUniqueName,
+        wire::{Optional, OwnedValue, Str, Type},
+    };
+
+    #[derive(Debug, Deserialize, Serialize, Type, PartialEq)]
+    #[zvariant(signature = "s")]
+    struct CustomString(String);
+
+    struct Service(String);
+
+    #[zbus::interface(name = "org.freedesktop.zbus.SerdePropertyTest")]
+    impl Service {
+        #[zbus(property)]
+        fn cached_prop(&self) -> String {
+            self.0.clone()
+        }
+
+        #[zbus(property)]
+        fn set_cached_prop(&mut self, value: String) {
+            self.0 = value;
+        }
+
+        #[zbus(property(emits_changed_signal = "false"))]
+        fn uncached_prop(&self) -> String {
+            self.0.clone()
+        }
+
+        #[zbus(property)]
+        fn optional_name(&self) -> Optional<OwnedUniqueName> {
+            Optional::default()
+        }
+
+        #[zbus(property)]
+        fn dynamic_array(&self) -> Vec<OwnedValue> {
+            vec![OwnedValue::from(Str::from("array value"))]
+        }
+
+        #[zbus(property)]
+        fn dynamic_dict(&self) -> HashMap<String, OwnedValue> {
+            HashMap::from([("key".to_string(), OwnedValue::from(Str::from("dict value")))])
+        }
+    }
+
+    #[zbus::proxy(
+        interface = "org.freedesktop.zbus.SerdePropertyTest",
+        default_path = "/org/freedesktop/zbus/SerdePropertyTest"
+    )]
+    trait SerdePropertyTest {
+        #[zbus(property)]
+        fn cached_prop(&self) -> zbus::Result<CustomString>;
+
+        #[zbus(property)]
+        fn set_cached_prop(&self, value: CustomString) -> zbus::Result<()>;
+
+        #[zbus(property(emits_changed_signal = "false"))]
+        fn uncached_prop(&self) -> zbus::Result<CustomString>;
+
+        #[zbus(property)]
+        fn optional_name(&self) -> zbus::Result<Optional<OwnedUniqueName>>;
+
+        #[zbus(property)]
+        fn dynamic_array(&self) -> zbus::Result<Vec<String>>;
+
+        #[zbus(property)]
+        fn dynamic_dict(&self) -> zbus::Result<HashMap<String, String>>;
+    }
+
+    let service = zbus::connection::Builder::session()?
+        .serve_at(
+            "/org/freedesktop/zbus/SerdePropertyTest",
+            Service("before".to_string()),
+        )?
+        .build()
+        .await?;
+    let client_conn = zbus::Connection::session().await?;
+    let client = SerdePropertyTestProxy::builder(&client_conn)
+        .destination(service.unique_name().unwrap())?
+        .build()
+        .await?;
+
+    assert_eq!(
+        client.cached_prop().await?,
+        CustomString("before".to_string())
+    );
+    assert_eq!(
+        client.uncached_prop().await?,
+        CustomString("before".to_string())
+    );
+    assert!(Option::<OwnedUniqueName>::from(client.optional_name().await?).is_none());
+    assert_eq!(client.dynamic_array().await?, ["array value"]);
+    assert_eq!(client.dynamic_dict().await?["key"], "dict value");
+
+    let mut changes = client.receive_cached_prop_changed().await;
+    assert_eq!(
+        changes.next().await.unwrap().get().await?,
+        CustomString("before".to_string())
+    );
+
+    let (changed, ()) = futures_util::try_join!(
+        async { changes.next().await.unwrap().get().await },
+        client.set_cached_prop(CustomString("after".to_string())),
+    )?;
+    assert_eq!(changed, CustomString("after".to_string()));
+    assert_eq!(
+        client.cached_prop().await?,
+        CustomString("after".to_string())
+    );
+    assert_eq!(
+        client.uncached_prop().await?,
+        CustomString("after".to_string())
+    );
+
+    Ok(())
+}

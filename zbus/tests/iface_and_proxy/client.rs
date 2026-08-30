@@ -13,7 +13,7 @@ use zbus::{
 use super::{
     helpers::{check_hash_map, check_ipv4_address, check_ipv4_address_hashmap},
     iface::MyIfaceProxy,
-    types::{ArgStructTest, IP4Adress, MyIfaceError},
+    types::{ArgStructTest, IP4Adress, MyIfaceError, RefType},
 };
 
 #[instrument]
@@ -169,6 +169,12 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     proxy.set_str_prop("This is an str ref").await?;
     check_ipv4_address(proxy.address_data().await?);
     check_ipv4_address_hashmap(proxy.address_data2().await?);
+
+    proxy
+        .set_ref_prop(RefType {
+            field1: "borrowed setter".into(),
+        })
+        .await?;
 
     proxy.test_no_reply().await?;
     proxy.test_no_autostart().await?;
