@@ -3,14 +3,10 @@ use async_broadcast::Receiver as ActiveReceiver;
 use async_io::Async;
 use enumflags2::BitFlags;
 use event_listener::Event;
-#[cfg(not(feature = "tokio"))]
-use std::net::TcpStream;
 use std::{
     collections::{HashMap, HashSet},
     mem, vec,
 };
-#[cfg(feature = "tokio")]
-use tokio::net::TcpStream;
 #[cfg(feature = "tokio-vsock")]
 use tokio_vsock::VsockStream;
 #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
@@ -234,30 +230,6 @@ impl<'a> Builder<'a> {
     #[cfg(feature = "async-io")]
     pub fn async_io_tcp_stream(stream: AsyncIoTcpStream) -> Self {
         Self::new(Target::AsyncIoTcpStream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given TCP stream.
-    ///
-    /// This method expects a
-    /// [`tokio::net::TcpStream`](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html).
-    /// Without the `tokio` feature it accepts a [`std::net::TcpStream`] instead, but that form is
-    /// deprecated in favor of [`async_io_tcp_stream`](Self::async_io_tcp_stream).
-    #[cfg_attr(
-        not(feature = "tokio"),
-        deprecated(
-            since = "5.19.0",
-            note = "Use `async_io_tcp_stream` to avoid a build failure if the `tokio` feature gets enabled"
-        )
-    )]
-    pub fn tcp_stream(stream: TcpStream) -> Self {
-        #[cfg(not(feature = "tokio"))]
-        {
-            Self::new(Target::AsyncIoTcpStream(stream))
-        }
-        #[cfg(feature = "tokio")]
-        {
-            Self::new(Target::TokioTcpStream(stream))
-        }
     }
 
     /// Create a builder for a connection that will use the given TCP stream with Tokio.

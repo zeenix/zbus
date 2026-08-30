@@ -1,8 +1,3 @@
-#[cfg(not(feature = "tokio"))]
-use std::net::TcpStream;
-#[cfg(feature = "tokio")]
-use tokio::net::TcpStream;
-
 // Feature-independent stream types for the `async_io_*_stream` builders.
 #[cfg(feature = "async-io")]
 use std::net::TcpStream as AsyncIoTcpStream;
@@ -118,24 +113,6 @@ impl<'a> Builder<'a> {
     #[cfg(feature = "async-io")]
     pub fn async_io_tcp_stream(stream: AsyncIoTcpStream) -> Self {
         Self(crate::connection::Builder::async_io_tcp_stream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given TCP stream.
-    ///
-    /// This method expects a
-    /// [`tokio::net::TcpStream`](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html).
-    /// Without the `tokio` feature it accepts a [`std::net::TcpStream`] instead, but that form is
-    /// deprecated in favor of [`async_io_tcp_stream`](Self::async_io_tcp_stream).
-    #[cfg_attr(
-        not(feature = "tokio"),
-        deprecated(
-            since = "5.19.0",
-            note = "Use `async_io_tcp_stream` to avoid a build failure if the `tokio` feature gets enabled"
-        )
-    )]
-    #[allow(deprecated)] // forwards to the async builder's equally-deprecated `tcp_stream`
-    pub fn tcp_stream(stream: TcpStream) -> Self {
-        Self(crate::connection::Builder::tcp_stream(stream))
     }
 
     /// Create a builder for a connection that will use the given TCP stream with Tokio.
