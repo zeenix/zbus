@@ -73,7 +73,7 @@ mod tests {
     fn optional_owned_value_conversion_maps_empty_name_to_none() {
         use crate::wire::Optional;
 
-        // The path proxy property getters take: `TryFrom<OwnedValue>` on an owned type.
+        // The sentinel must be recognized before the empty name is validated.
         let owned = OwnedValue::from(crate::wire::Str::from(""));
         let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
         assert!(Option::<OwnedUniqueName>::from(opt).is_none());

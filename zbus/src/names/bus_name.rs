@@ -533,9 +533,9 @@ impl PartialEq<BusName<'_>> for OwnedBusName {
 }
 
 impl NoneValue for OwnedBusName {
-    type NoneType = <BusName<'static> as NoneValue>::NoneType;
+    type NoneType = String;
 
     fn null_value() -> Self::NoneType {
-        BusName::null_value()
+        String::new()
     }
 }
