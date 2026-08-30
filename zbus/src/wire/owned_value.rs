@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::wire::{
-    Array, Dict, NoneValue, ObjectPath, Optional, OwnedObjectPath, Signature, Str, Structure, Type,
-    Value,
+    Array, Basic, Dict, NoneValue, ObjectPath, Optional, OwnedObjectPath, Signature, Str,
+    Structure, Type, Value,
 };
 
 #[cfg(unix)]
@@ -147,7 +147,7 @@ where
 
 impl<K, V> From<BTreeMap<K, V>> for OwnedValue
 where
-    K: Type + Into<Value<'static>> + std::cmp::Ord,
+    K: Basic + Into<Value<'static>> + std::cmp::Ord,
     V: Type + Into<Value<'static>>,
 {
     fn from(value: BTreeMap<K, V>) -> Self {
@@ -176,7 +176,7 @@ where
 
 impl<K, V, H> From<HashMap<K, V, H>> for OwnedValue
 where
-    K: Type + Into<Value<'static>> + std::hash::Hash + std::cmp::Eq,
+    K: Basic + Into<Value<'static>> + std::hash::Hash + std::cmp::Eq,
     V: Type + Into<Value<'static>>,
     H: BuildHasher + Default,
 {

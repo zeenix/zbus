@@ -310,3 +310,122 @@ impl<const CAP: usize> Basic for heapless::String<CAP> {
     const SIGNATURE_CHAR: char = <&str as Basic>::SIGNATURE_CHAR;
     const SIGNATURE_STR: &'static str = <&str as Basic>::SIGNATURE_STR;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+macro_rules! impl_basic_with_repr {
+    ($($ty:ty => $repr:ty),+ $(,)?) => {
+        $(
+            impl Basic for $ty {
+                const SIGNATURE_CHAR: char = <$repr as Basic>::SIGNATURE_CHAR;
+                const SIGNATURE_STR: &'static str = <$repr as Basic>::SIGNATURE_STR;
+            }
+        )+
+    };
+}
+
+impl_basic_with_repr!(
+    std::path::Path => str,
+    std::path::PathBuf => str,
+);
+
+impl<T> Basic for [T; 0]
+where
+    T: Type,
+{
+    const SIGNATURE_CHAR: char = u8::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = u8::SIGNATURE_STR;
+}
+
+#[cfg(feature = "arrayvec")]
+impl<const CAP: usize> Basic for arrayvec::ArrayString<CAP> {
+    const SIGNATURE_CHAR: char = str::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = str::SIGNATURE_STR;
+}
+
+#[cfg(feature = "camino")]
+impl_basic_with_repr!(
+    camino::Utf8Path => str,
+    camino::Utf8PathBuf => str,
+);
+
+#[cfg(feature = "url")]
+impl_basic_with_repr!(url::Url => str);
+
+#[cfg(feature = "time")]
+impl_basic_with_repr!(
+    time::Month => u8,
+    time::Weekday => u8,
+);
+
+#[cfg(feature = "chrono")]
+impl<Tz> Basic for chrono::DateTime<Tz>
+where
+    Tz: chrono::TimeZone,
+{
+    const SIGNATURE_CHAR: char = str::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = str::SIGNATURE_STR;
+}
+
+#[cfg(feature = "chrono")]
+impl_basic_with_repr!(
+    chrono::Month => str,
+    chrono::NaiveDate => str,
+    chrono::NaiveDateTime => str,
+    chrono::NaiveTime => str,
+    chrono::Weekday => str,
+);
+
+#[cfg(feature = "enumflags2")]
+impl<F> Basic for enumflags2::BitFlags<F>
+where
+    F: enumflags2::BitFlag,
+    F::Numeric: Basic,
+{
+    const SIGNATURE_CHAR: char = F::Numeric::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = F::Numeric::SIGNATURE_STR;
+}
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::assert_impl_all;
+
+    use super::Basic;
+
+    assert_impl_all!([u8; 0]: Basic);
+    assert_impl_all!(std::path::Path: Basic);
+    assert_impl_all!(std::path::PathBuf: Basic);
+    assert_impl_all!(crate::wire::Optional<u8>: Basic);
+
+    #[cfg(feature = "arrayvec")]
+    assert_impl_all!(arrayvec::ArrayString<8>: Basic);
+
+    #[cfg(feature = "camino")]
+    assert_impl_all!(camino::Utf8Path: Basic);
+    #[cfg(feature = "camino")]
+    assert_impl_all!(camino::Utf8PathBuf: Basic);
+
+    #[cfg(feature = "url")]
+    assert_impl_all!(url::Url: Basic);
+
+    #[cfg(feature = "time")]
+    assert_impl_all!(time::Month: Basic);
+    #[cfg(feature = "time")]
+    assert_impl_all!(time::Weekday: Basic);
+
+    #[cfg(feature = "chrono")]
+    assert_impl_all!(chrono::DateTime<chrono::Utc>: Basic);
+    #[cfg(feature = "chrono")]
+    assert_impl_all!(chrono::Month: Basic);
+    #[cfg(feature = "chrono")]
+    assert_impl_all!(chrono::NaiveDate: Basic);
+    #[cfg(feature = "chrono")]
+    assert_impl_all!(chrono::NaiveDateTime: Basic);
+    #[cfg(feature = "chrono")]
+    assert_impl_all!(chrono::NaiveTime: Basic);
+    #[cfg(feature = "chrono")]
+    assert_impl_all!(chrono::Weekday: Basic);
+
+    #[cfg(feature = "comms")]
+    assert_impl_all!(enumflags2::BitFlags<crate::fdo::RequestNameFlags>: Basic);
+}

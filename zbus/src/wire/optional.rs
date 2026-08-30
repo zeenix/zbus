@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
-use crate::wire::Type;
+use crate::wire::{Basic, Type};
 
 /// Type that uses a special value to be used as none.
 ///
@@ -75,6 +75,14 @@ where
 /// [ts]: https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-owner-changed
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Optional<T>(Option<T>);
+
+impl<T> Basic for Optional<T>
+where
+    T: Basic,
+{
+    const SIGNATURE_CHAR: char = T::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = T::SIGNATURE_STR;
+}
 
 impl<T> Type for Optional<T>
 where

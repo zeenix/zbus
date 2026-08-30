@@ -5,7 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::wire::{Array, Dict, NoneValue, ObjectPath, Optional, Str, Structure, Type, Value};
+use crate::wire::{
+    Array, Basic, Dict, NoneValue, ObjectPath, Optional, Str, Structure, Type, Value,
+};
 
 #[cfg(unix)]
 use crate::wire::Fd;
@@ -132,7 +134,7 @@ impl<'a, 'k, 'v, K, V> From<BTreeMap<K, V>> for Value<'a>
 where
     'k: 'a,
     'v: 'a,
-    K: Type + Into<Value<'k>> + std::cmp::Ord,
+    K: Basic + Into<Value<'k>> + std::cmp::Ord,
     V: Type + Into<Value<'v>>,
 {
     fn from(value: BTreeMap<K, V>) -> Self {
@@ -144,7 +146,7 @@ impl<'a, 'k, 'v, K, V, H> From<HashMap<K, V, H>> for Value<'a>
 where
     'k: 'a,
     'v: 'a,
-    K: Type + Into<Value<'k>> + std::hash::Hash + std::cmp::Eq,
+    K: Basic + Into<Value<'k>> + std::hash::Hash + std::cmp::Eq,
     V: Type + Into<Value<'v>>,
     H: BuildHasher + Default,
 {
