@@ -62,8 +62,8 @@ let (client_conn, server_conn) = futures_util::try_join!(
 # }
 ```
 
-`async_io_unix_stream` (and `async_io_tcp_stream`) take a [`std::os::unix::net::UnixStream`]. With `tokio`
-enabled you can instead pass a [`tokio::net::UnixStream`] to `unix_stream`.
+`async_io_unix_stream` takes a [`std::os::unix::net::UnixStream`]. With `tokio` enabled you can
+instead pass a [`tokio::net::UnixStream`] to `tokio_unix_stream`.
 
 [`std::os::unix::net::UnixStream`]: https://doc.rust-lang.org/std/os/unix/net/struct.UnixStream.html
 [`tokio::net::UnixStream`]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html

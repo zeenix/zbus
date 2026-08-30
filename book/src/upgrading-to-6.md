@@ -296,8 +296,37 @@ The compatibility module is removed in zbus 7.0.
 
 ## Other changes in 6.0
 
-Four more things break in 6.0 without being a consequence of the crate merge. They reach code
+Five more things break in 6.0 without being a consequence of the crate merge. They reach code
 that never mentioned `zvariant` or `zbus_names`.
+
+### Stream constructors name their I/O backend
+
+The stream constructors on `connection::Builder` no longer change their parameter type when Cargo
+features are unified. `unix_stream`, `tcp_stream` and `vsock_stream` are gone; choose the
+constructor that matches the stream instead:
+
+- `tokio::net::UnixStream`: `Builder::unix_stream` becomes `Builder::tokio_unix_stream` with
+  `tokio`.
+- `std::os::unix::net::UnixStream` or `uds_windows::UnixStream`: `Builder::unix_stream` becomes
+  `Builder::async_io_unix_stream` with `async-io`.
+- `tokio::net::TcpStream`: `Builder::tcp_stream` becomes `Builder::tokio_tcp_stream` with `tokio`.
+- `std::net::TcpStream`: `Builder::tcp_stream` becomes `Builder::async_io_tcp_stream` with
+  `async-io`.
+- `tokio_vsock::VsockStream`: `Builder::vsock_stream` becomes `Builder::tokio_vsock_stream` with
+  `tokio-vsock`.
+- `vsock::VsockStream`: `Builder::vsock_stream` becomes `Builder::async_io_vsock_stream` with
+  `vsock`.
+
+`async_io_unix_stream` and `async_io_tcp_stream` already existed in zbus 5.19 and keep their
+names. The Unix and TCP renames also apply to `zbus::blocking::connection::Builder`; the blocking
+builder has no VSOCK stream constructors.
+
+When the corresponding runtime features are enabled, both sets of applicable constructors are
+available; enabling one feature no longer changes a constructor supplied by the other. A supplied
+stream's constructor explicitly chooses its I/O backend. For address-created async connections,
+transports supported by both backends instead choose at run time: tokio when the current thread is
+inside a tokio runtime, and `async-io` otherwise. The stream constructor does not override the
+internal task executor selected while building the connection.
 
 ### The encoding context has no format
 
