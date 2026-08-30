@@ -1,3 +1,5 @@
+#![cfg(feature = "comms")]
+
 use std::collections::HashMap;
 
 use enumflags2::BitFlags;

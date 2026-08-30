@@ -1,3 +1,5 @@
+#![cfg(feature = "comms")]
+
 //! Tests for [`zbus::connection::Builder::build_message_stream`].
 //!
 //! Simulates the busd scenario: a bus client pipelines a `Hello` method call as part of its

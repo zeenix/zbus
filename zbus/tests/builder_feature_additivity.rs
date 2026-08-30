@@ -1,3 +1,5 @@
+#![cfg(feature = "comms")]
+
 //! Compile-time checks that enabling another runtime feature does not replace a stream builder.
 
 use zbus::connection::Builder;

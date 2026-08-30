@@ -1,3 +1,4 @@
+#![cfg(feature = "comms")]
 #![cfg(all(unix, feature = "p2p", feature = "async-io"))]
 
 use std::os::unix::net::UnixStream;
