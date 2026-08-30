@@ -5,20 +5,14 @@ use enumflags2::BitFlags;
 use event_listener::Event;
 #[cfg(not(feature = "tokio"))]
 use std::net::TcpStream;
-#[cfg(all(unix, not(feature = "tokio")))]
-use std::os::unix::net::UnixStream;
 use std::{
     collections::{HashMap, HashSet},
     mem, vec,
 };
 #[cfg(feature = "tokio")]
 use tokio::net::TcpStream;
-#[cfg(all(unix, feature = "tokio"))]
-use tokio::net::UnixStream;
 #[cfg(feature = "tokio-vsock")]
 use tokio_vsock::VsockStream;
-#[cfg(all(windows, not(feature = "tokio")))]
-use uds_windows::UnixStream;
 #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
 use vsock::VsockStream;
 
@@ -212,37 +206,6 @@ impl<'a> Builder<'a> {
     #[cfg(all(any(unix, windows), feature = "async-io"))]
     pub fn async_io_unix_stream(stream: AsyncIoUnixStream) -> Self {
         Self::new(Target::AsyncIoUnixStream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given unix stream.
-    ///
-    /// This method expects a
-    /// [`tokio::net::UnixStream`](https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html).
-    /// Without the `tokio` feature it accepts a [`std::os::unix::net::UnixStream`] instead, but
-    /// that form is deprecated in favor of
-    /// [`async_io_unix_stream`](Self::async_io_unix_stream).
-    ///
-    /// Since tokio currently [does not support Unix domain sockets][tuds] on Windows, this method
-    /// is not available when the `tokio` feature is enabled and building for Windows target.
-    ///
-    /// [tuds]: https://github.com/tokio-rs/tokio/issues/2201
-    #[cfg_attr(
-        not(feature = "tokio"),
-        deprecated(
-            since = "5.19.0",
-            note = "Use `async_io_unix_stream` to avoid a build failure if the `tokio` feature gets enabled"
-        )
-    )]
-    #[cfg(any(unix, not(feature = "tokio")))]
-    pub fn unix_stream(stream: UnixStream) -> Self {
-        #[cfg(not(feature = "tokio"))]
-        {
-            Self::new(Target::AsyncIoUnixStream(stream))
-        }
-        #[cfg(feature = "tokio")]
-        {
-            Self::new(Target::TokioUnixStream(stream))
-        }
     }
 
     /// Create a builder for a connection that will use the given unix stream with Tokio.

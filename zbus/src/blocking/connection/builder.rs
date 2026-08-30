@@ -1,13 +1,7 @@
 #[cfg(not(feature = "tokio"))]
 use std::net::TcpStream;
-#[cfg(all(unix, not(feature = "tokio")))]
-use std::os::unix::net::UnixStream;
 #[cfg(feature = "tokio")]
 use tokio::net::TcpStream;
-#[cfg(all(unix, feature = "tokio"))]
-use tokio::net::UnixStream;
-#[cfg(all(windows, not(feature = "tokio")))]
-use uds_windows::UnixStream;
 
 // Feature-independent stream types for the `async_io_*_stream` builders.
 #[cfg(feature = "async-io")]
@@ -96,31 +90,6 @@ impl<'a> Builder<'a> {
     #[cfg(all(any(unix, windows), feature = "async-io"))]
     pub fn async_io_unix_stream(stream: AsyncIoUnixStream) -> Self {
         Self(crate::connection::Builder::async_io_unix_stream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given unix stream.
-    ///
-    /// This method expects a
-    /// [`tokio::net::UnixStream`](https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html).
-    /// Without the `tokio` feature it accepts a [`std::os::unix::net::UnixStream`] instead, but
-    /// that form is deprecated in favor of
-    /// [`async_io_unix_stream`](Self::async_io_unix_stream).
-    ///
-    /// Since tokio currently [does not support Unix domain sockets][tuds] on Windows, this method
-    /// is not available when the `tokio` feature is enabled and building for Windows target.
-    ///
-    /// [tuds]: https://github.com/tokio-rs/tokio/issues/2201
-    #[cfg_attr(
-        not(feature = "tokio"),
-        deprecated(
-            since = "5.19.0",
-            note = "Use `async_io_unix_stream` to avoid a build failure if the `tokio` feature gets enabled"
-        )
-    )]
-    #[cfg(any(unix, not(feature = "tokio")))]
-    #[allow(deprecated)] // forwards to the async builder's equally-deprecated `unix_stream`
-    pub fn unix_stream(stream: UnixStream) -> Self {
-        Self(crate::connection::Builder::unix_stream(stream))
     }
 
     /// Create a builder for a connection that will use the given unix stream with Tokio.
