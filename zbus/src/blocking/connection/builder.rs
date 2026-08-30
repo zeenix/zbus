@@ -163,6 +163,17 @@ impl<'a> Builder<'a> {
         Self(crate::connection::Builder::tcp_stream(stream))
     }
 
+    /// Create a builder for a connection that will use the given TCP stream with Tokio.
+    ///
+    /// The stream is a [`tokio::net::TcpStream`]. To use a [`std::net::TcpStream`] instead, see
+    /// `async_io_tcp_stream`.
+    ///
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    #[cfg(feature = "tokio")]
+    pub fn tokio_tcp_stream(stream: tokio::net::TcpStream) -> Self {
+        Self(crate::connection::Builder::tokio_tcp_stream(stream))
+    }
+
     /// Create a builder for a connection that will use the given pre-authenticated socket.
     ///
     /// This is similar to [`Builder::socket`], except that the socket is either already

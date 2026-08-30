@@ -287,6 +287,17 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Create a builder for a connection that will use the given TCP stream with Tokio.
+    ///
+    /// The stream is a [`tokio::net::TcpStream`]. To use a [`std::net::TcpStream`] instead, see
+    /// `async_io_tcp_stream`.
+    ///
+    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
+    #[cfg(feature = "tokio")]
+    pub fn tokio_tcp_stream(stream: tokio::net::TcpStream) -> Self {
+        Self::new(Target::TokioTcpStream(stream))
+    }
+
     /// Create a builder for a connection that will use the given VSOCK stream.
     ///
     /// This method is only available when either `vsock` or `tokio-vsock` feature is enabled. The
