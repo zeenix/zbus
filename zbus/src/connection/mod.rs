@@ -1739,7 +1739,10 @@ mod p2p_tests {
             Builder::async_io_unix_stream(p0),
         );
         #[cfg(feature = "tokio")]
-        let (b1, b0) = (Builder::unix_stream(p1), Builder::unix_stream(p0));
+        let (b1, b0) = (
+            Builder::tokio_unix_stream(p1),
+            Builder::tokio_unix_stream(p0),
+        );
 
         futures_util::try_join!(b1.p2p().build(), b0.server(guid).unwrap().p2p().build(),)
     }

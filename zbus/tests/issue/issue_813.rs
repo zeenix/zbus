@@ -5,7 +5,6 @@ use zbus::block_on;
 
 use zbus::Result;
 
-#[allow(deprecated)] // exercises the deprecated `unix_stream`, which must keep working
 #[instrument]
 #[test]
 #[timeout(15000)]
@@ -59,7 +58,11 @@ fn issue_813() {
         let server_event = event_listener::Event::new();
         let server_listener = server_event.listen();
         let server = async move {
-            let _conn = Builder::unix_stream(p0)
+            #[cfg(not(feature = "tokio"))]
+            let builder = Builder::async_io_unix_stream(p0);
+            #[cfg(feature = "tokio")]
+            let builder = Builder::tokio_unix_stream(p0);
+            let _conn = builder
                 .server(guid)?
                 .p2p()
                 .serve_at(
