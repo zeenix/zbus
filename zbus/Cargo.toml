@@ -169,6 +169,7 @@ chrono = { workspace = true, features = [
     "serde",
     "alloc",
 ], default-features = false }
+static_assertions.workspace = true
 
 [package.metadata.docs.rs]
 # we can't use:
