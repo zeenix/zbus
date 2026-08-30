@@ -2,8 +2,8 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
 use syn::{
-    AngleBracketedGenericArguments, Attribute, Error, Expr, ExprLit, FnArg, GenericArgument, Ident,
-    ImplItem, ImplItemFn, ItemImpl,
+    AngleBracketedGenericArguments, Attribute, Error, Expr, ExprLit, FnArg, Ident, ImplItem,
+    ImplItemFn, ItemImpl,
     Lit::Str,
     Meta, MetaNameValue, PatType, PathArguments, ReturnType, Signature, Token, Type, TypePath,
     TypeReference, Visibility,
@@ -535,39 +535,6 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                         )
                     };
 
-                    // * For reference arg, we convert from `&Value` (so `TryFrom<&Value<'_>>` is
-                    //   required).
-                    //
-                    // * For argument type with lifetimes, we convert from `Value` (so
-                    //   `TryFrom<Value<'_>>` is required).
-                    //
-                    // * For all other arg types, we convert the passed value to `OwnedValue` first
-                    //   and then pass it as `Value` (so `TryFrom<OwnedValue>` is required).
-                    let value_to_owned = quote! {
-                        match #zbus::wire::Value::try_to_owned(value) {
-                            ::std::result::Result::Ok(val) => #zbus::wire::Value::from(val),
-                            ::std::result::Result::Err(e) => {
-                                return ::std::result::Result::Err(
-                                    ::std::convert::Into::into(
-                                        ::std::convert::Into::<#zbus::Error>::into(e),
-                                    )
-                                );
-                            }
-                        }
-                    };
-                    let value_cloned = quote! {
-                        match #zbus::wire::Value::try_clone(value) {
-                            ::std::result::Result::Ok(val) => val,
-                            ::std::result::Result::Err(e) => {
-                                return ::std::result::Result::Err(
-                                    ::std::convert::Into::into(
-                                        ::std::convert::Into::<#zbus::Error>::into(e),
-                                    )
-                                );
-                            }
-                        }
-                    };
-
                     let value_param = typed_inputs
                         .iter()
                         .find(|input| {
@@ -583,26 +550,17 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                         p.emits_changed_signal = PropertyEmitsChangedSignal::False;
                     }
 
-                    let value_arg = match &*value_param.ty {
-                        Type::Reference(_) => quote!(value),
-                        Type::Path(path) => path
-                            .path
-                            .segments
-                            .first()
-                            .map(|segment| match &segment.arguments {
-                                PathArguments::AngleBracketed(angled) => angled
-                                    .args
-                                    .first()
-                                    .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
-                                    .map(|_| value_cloned.clone())
-                                    .unwrap_or_else(|| value_to_owned.clone()),
-                                _ => value_to_owned.clone(),
-                            })
-                            .unwrap_or_else(|| value_to_owned.clone()),
-                        _ => value_to_owned,
-                    };
-
                     let value_param_name = &value_param.pat;
+                    let value_ty = maybe_unref_ty(&value_param.ty).unwrap_or(&value_param.ty);
+                    let value_arg = if maybe_unref_ty(&value_param.ty).is_some() {
+                        quote! {
+                            let #value_param_name = &__zbus__value;
+                        }
+                    } else {
+                        quote! {
+                            let #value_param_name = __zbus__value;
+                        }
+                    };
                     let prop_changed_method = match p.emits_changed_signal {
                         PropertyEmitsChangedSignal::True => {
                             quote!({
@@ -626,26 +584,23 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     };
                     let do_set = quote!({
                         #args_from_msg
-                        let value = #value_arg;
-                        match ::std::convert::TryInto::try_into(value) {
-                            ::std::result::Result::Ok(val) => {
-                                let #value_param_name = val;
+                        match #zbus::wire::as_value::deserialize_for_property::<#value_ty>(value) {
+                            ::std::result::Result::Ok(__zbus__value) => {
+                                #value_arg
                                 match #set_call {
                                     ::std::result::Result::Ok(set_result) => {
                                         (#prop_changed_method)
                                             .map_err(|e| #zbus::fdo::Error::from(e))
                                     }
                                     ::std::result::Result::Err(e) => {
-                                        ::std::result::Result::Err(#zbus::fdo::Error::from(e))
+                                        ::std::result::Result::Err(
+                                            #zbus::fdo::Error::from(e),
+                                        )
                                     }
                                 }
                             }
                             ::std::result::Result::Err(e) => {
-                                ::std::result::Result::Err(
-                                    ::std::convert::Into::into(
-                                        ::std::convert::Into::<#zbus::Error>::into(e),
-                                    ),
-                                )
+                                ::std::result::Result::Err(#zbus::fdo::Error::from(e))
                             }
                         }
                     });
@@ -681,12 +636,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     p.ty = Some(get_return_type(output)?.clone());
 
                     let value_convert = quote!(
-                        <#zbus::wire::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                            <#zbus::wire::Value as ::std::convert::From<_>>::from(
-                                value,
-                            ),
-                        )
-                        .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))
+                        #zbus::wire::as_value::to_owned_value(&value)
+                            .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))
                     );
                     let inner = if is_fallible_property {
                         quote!(self.#ident(#args_names) #method_await .and_then(|value| #value_convert))
@@ -712,12 +663,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             if let Ok(prop) = self.#ident(#args_names)#method_await {
                             props.insert(
                                 ::std::string::ToString::to_string(#member_name),
-                                <#zbus::wire::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                                    <#zbus::wire::Value as ::std::convert::From<_>>::from(
-                                        prop,
-                                    ),
-                                )
-                                .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))?,
+                                #zbus::wire::as_value::to_owned_value(&prop)
+                                    .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))?,
                             );
                         }})
                     } else {
@@ -725,12 +672,11 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             #args_from_msg
                             props.insert(
                                 ::std::string::ToString::to_string(#member_name),
-                                <#zbus::wire::OwnedValue as ::std::convert::TryFrom<_>>::try_from(
-                                    <#zbus::wire::Value as ::std::convert::From<_>>::from(
-                                        self.#ident(#args_names)#method_await,
-                                    ),
-                                )
-                                .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))?,
+                                {
+                                    let value = self.#ident(#args_names)#method_await;
+                                    #zbus::wire::as_value::to_owned_value(&value)
+                                        .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))?
+                                },
                             );
                         })
                     };
@@ -760,14 +706,22 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                 let __zbus__connection = __zbus__signal_emitter.connection();
                                 let __zbus__object_server = __zbus__connection.object_server();
                                 #args_from_msg
+                                let value = #prop_value_handled;
                                 let mut changed = ::std::collections::HashMap::new();
-                                let value = <#zbus::wire::Value as ::std::convert::From<_>>::from(#prop_value_handled);
-                                changed.insert(#member_name, value);
-                                #zbus::fdo::Properties::properties_changed(
-                                    __zbus__signal_emitter,
-                                    #zbus::names::InterfaceName::from_static_str_unchecked(#iface_name),
-                                    changed,
-                                    ::std::borrow::Cow::Borrowed(&[]),
+                                changed.insert(
+                                    #member_name,
+                                    #zbus::wire::as_value::Serialize(&value),
+                                );
+                                __zbus__signal_emitter.emit(
+                                    "org.freedesktop.DBus.Properties",
+                                    "PropertiesChanged",
+                                    &(
+                                        #zbus::names::InterfaceName::from_static_str_unchecked(
+                                            #iface_name,
+                                        ),
+                                        changed,
+                                        ::std::borrow::Cow::<[&str]>::Borrowed(&[]),
+                                    ),
                                 ).await
                             }
                         );
@@ -1807,12 +1761,8 @@ mod tests {
             "generated code names ::zbus instead of the requested crate: {expanded}"
         );
         assert!(
-            expanded.contains(":: mybus :: wire :: Value :: try_to_owned"),
-            "generated code lost the owned-value conversion: {expanded}"
-        );
-        assert!(
-            expanded.contains(":: mybus :: wire :: Value :: try_clone"),
-            "generated code lost the borrowed-value conversion: {expanded}"
+            expanded.contains(":: mybus :: wire :: as_value :: deserialize_for_property"),
+            "generated code lost the value deserialization: {expanded}"
         );
     }
 }
