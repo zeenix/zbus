@@ -788,7 +788,9 @@ fn start_internal_executor(executor: &Executor<'static>, internal_executor: bool
         std::thread::Builder::new()
             .name("zbus::Connection executor".into())
             .spawn(move || {
-                crate::utils::block_on(async move {
+                // `utils::block_on` selects tokio when both backends are enabled, which would make
+                // tasks on this async-io executor unexpectedly observe a tokio runtime.
+                async_io::block_on(async move {
                     // Run as long as there is a task to run.
                     while !executor.is_empty() {
                         executor.tick().await;

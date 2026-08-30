@@ -1752,10 +1752,32 @@ mod p2p_tests {
     #[test]
     #[timeout(15000)]
     fn unix_p2p_async_io_backend() {
+        use futures_lite::FutureExt;
+        use std::time::Duration;
+
         async_io::block_on(async {
             let (server1, client1) = async_io_unix_p2p_pipe().await.unwrap();
             assert!(server1.executor().needs_internal_driver());
             assert!(client1.executor().needs_internal_driver());
+
+            server1
+                .executor()
+                .spawn(
+                    async {
+                        assert!(
+                            tokio::runtime::Handle::try_current().is_err(),
+                            "async-io executor task unexpectedly entered a tokio runtime",
+                        );
+                    },
+                    "verify async-io runtime",
+                )
+                .or(async {
+                    async_io::Timer::after(Duration::from_secs(5)).await;
+                    panic!("async-io executor task did not run");
+                })
+                .await
+                .unwrap();
+
             let (server2, client2) = async_io_unix_p2p_pipe().await.unwrap();
 
             test_p2p(server1, client1, server2, client2).await.unwrap();
