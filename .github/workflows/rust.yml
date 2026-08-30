@@ -125,6 +125,10 @@ jobs:
           # Start IBus daemon for IBus test.
           ibus-daemon -d --xim
           sleep 2
+          # Test all workspace features together.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --all-features \
+              -- --skip fdpass_systemd
           # All features except tokio.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --features uuid,url,time,chrono,option-as-array,vsock,bus-impl \
