@@ -76,7 +76,6 @@ impl<'f> From<&'f OsString> for FilePath<'f> {
 
 impl From<OsString> for FilePath<'_> {
     fn from(value: OsString) -> Self {
-        #[allow(deprecated)]
         FilePath(vec_to_cstr(value.as_encoded_bytes().to_vec()))
     }
 }
@@ -149,12 +148,7 @@ impl<'f> From<FilePath<'f>> for PathBuf {
 /// # Returns
 ///
 /// A `Cow<'_, CStr>` containing a *guaranteed* null-terminated string.
-#[doc(hidden)]
-#[deprecated(
-    since = "5.9.0",
-    note = "This function was never meant to be public and will be removed in a future release."
-)]
-pub fn vec_to_cstr(mut bytes: Vec<u8>) -> Cow<'static, CStr> {
+fn vec_to_cstr(mut bytes: Vec<u8>) -> Cow<'static, CStr> {
     if let Some(pos) = bytes.iter().position(|&b| b == 0) {
         bytes.truncate(pos + 1);
     } else {
@@ -237,7 +231,6 @@ mod file_path_test {
 
     #[test]
     fn vec_nul_termination() {
-        #[allow(deprecated)]
         fn call_vec_to_cstr(v: Vec<u8>) -> Cow<'static, CStr> {
             vec_to_cstr(v)
         }

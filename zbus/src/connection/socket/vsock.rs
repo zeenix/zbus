@@ -17,8 +17,8 @@ impl super::ReadHalf for std::sync::Arc<async_io::Async<vsock::VsockStream>> {
         }
     }
 
-    fn auth_mechanism(&self) -> crate::AuthMechanism {
-        crate::AuthMechanism::Anonymous
+    fn auth_mechanism(&self) -> crate::conn::AuthMechanism {
+        crate::conn::AuthMechanism::Anonymous
     }
 }
 
