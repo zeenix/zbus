@@ -173,6 +173,20 @@ impl<'a> Proxy<'a> {
         self.inner().cached_property(property_name)
     }
 
+    /// Get the cached value of the property `property_name` in serialized form.
+    ///
+    /// Like [`Proxy::cached_property`], but the value is returned in serialized form, so it can
+    /// be deserialized into a type that borrows from the returned
+    /// [`PropertyData`][crate::proxy::PropertyData].
+    pub fn cached_property_data(
+        &self,
+        property_name: &str,
+        expected_signature: &crate::wire::Signature,
+    ) -> Result<Option<crate::proxy::PropertyData>> {
+        self.inner()
+            .cached_property_data(property_name, expected_signature)
+    }
+
     /// Get the cached value of the property `property_name`.
     ///
     /// Same as `cached_property`, but gives you access to the raw value stored in the cache. This
@@ -193,6 +207,22 @@ impl<'a> Proxy<'a> {
         T: serde::de::DeserializeOwned + crate::wire::Type,
     {
         block_on(self.inner().get_property(property_name))
+    }
+
+    /// Get the property `property_name` in serialized form.
+    ///
+    /// Like [`Proxy::get_property`], but the value is returned in serialized form, so it can be
+    /// deserialized into a type that borrows from the returned
+    /// [`PropertyData`][crate::proxy::PropertyData].
+    pub fn get_property_data(
+        &self,
+        property_name: &str,
+        expected_signature: &crate::wire::Signature,
+    ) -> Result<crate::proxy::PropertyData> {
+        block_on(
+            self.inner()
+                .get_property_data(property_name, expected_signature),
+        )
     }
 
     /// Set the property `property_name`.
