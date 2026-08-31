@@ -306,8 +306,38 @@ getters require `DeserializeOwned + Type` and setters require `Serialize + Type`
 getters require `Serialize + Type` and setters require `Deserialize + Type`. Replace custom
 `Value` and `OwnedValue` conversions with the appropriate Serde traits and `Type`.
 
-Proxy property getters that deserialize by borrowing must switch to an owned result type that
-implements `DeserializeOwned`, like regular proxy method results.
+Proxy property getters whose result type borrows (it carries a lifetime or contains
+references) keep working, but return the value in two steps: the generated getter returns a
+guard type owning the property value in serialized form, and its `get` method deserializes the
+value borrowing from the guard. This is necessary because the D-Bus reply the value would
+otherwise borrow from does not outlive the getter call:
+
+```rust,noplayground
+use serde::{Deserialize, Serialize};
+use zbus::wire::{Str, Type};
+
+#[derive(Serialize, Deserialize, Type, Debug, PartialEq)]
+struct RefType<'a> {
+    #[serde(borrow)]
+    field1: Str<'a>,
+}
+
+#[zbus::proxy(interface = "org.example.Svc", assume_defaults = true)]
+trait Svc {
+    #[zbus(property)]
+    fn ref_prop(&self) -> zbus::Result<RefType<'_>>;
+}
+
+# async fn example(proxy: &SvcProxy<'_>) -> zbus::Result<()> {
+let ref_prop = proxy.ref_prop().await?; // A `SvcProxyRefProp` guard.
+let value: RefType<'_> = ref_prop.get()?; // Borrows from `ref_prop`.
+assert_eq!(value.field1, "hello");
+# Ok(())
+# }
+```
+
+A result type without lifetimes keeps the one-step getter, and needs `DeserializeOwned`, like
+regular proxy method results.
 
 Serde now also determines the property's wire representation. Audit `#[serde(...)]` attributes
 before upgrading because they were not used by the old `Value` conversions. In particular, an
