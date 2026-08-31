@@ -1144,10 +1144,9 @@ fn to_rust_type(ty: &Signature, input: bool, as_ref: bool) -> String {
 
 // Like `to_rust_type` for an input parameter, but tailored to property setters.
 //
-// `Proxy::set_property` requires the value to satisfy `T: Into<Value<'t>>`. For most
-// types, the `&T` form already implements this (via `From<&T> for Value`). For `Variant`
-// and `Structure`, the `&T` form does not, so the owned form is emitted instead, also
-// when these appear nested inside an `Array` or `Dict`.
+// Both owned and borrowed forms satisfy `set_property`'s `Serialize + Type` bounds. Keep `Variant`
+// and `Structure` types (including nested forms) owned to preserve the generated API; other inputs
+// retain the borrowed forms emitted by `to_rust_type`.
 fn to_property_setter_type(ty: &Signature) -> String {
     fn inner(signature: &Signature) -> String {
         match signature {

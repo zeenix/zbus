@@ -7,6 +7,7 @@ use syn::{
     Lit::Str,
     Meta, MetaNameValue, PatType, PathArguments, ReturnType, Signature, Token, Type, TypePath,
     TypeReference, Visibility,
+    fold::Fold,
     parse::{Parse, ParseStream},
     parse_quote, parse_str,
     punctuated::Punctuated,
@@ -1569,6 +1570,16 @@ impl Proxy {
             .cloned()
             .collect();
         let zbus = &self.zbus;
+        let proxy_object = method_info
+            .proxy_attrs
+            .as_ref()
+            .is_some_and(|attrs| attrs.object.is_some());
+        let generic_property = matches!(
+            method_info.method_type,
+            MethodType::Property(PropertyType::Getter)
+        ) && !proxy_object
+            && type_borrows(get_return_type(&method_info.output)?);
+        let generic_type = format_ident!("__ZbusProxyProperty");
         let ret = match &method_info.output {
             ReturnType::Type(_, ty) => {
                 let ty = ty.as_ref();
@@ -1600,6 +1611,27 @@ impl Proxy {
             }
             ReturnType::Default => quote! { #zbus::Result<()> },
         };
+        let (generics, ret, where_clause) = if generic_property {
+            (
+                quote! { <#generic_type> },
+                quote! { #zbus::Result<#generic_type> },
+                quote! {
+                    where
+                        #generic_type: #zbus::export::serde::de::DeserializeOwned
+                            + #zbus::wire::Type
+                },
+            )
+        } else {
+            (quote! {}, ret, quote! {})
+        };
+        let generic_property_doc = generic_property.then(|| {
+            let doc = concat!(
+                "Callers select a `DeserializeOwned + Type` result with the same D-Bus ",
+                "signature as the interface property.",
+            );
+
+            quote! { #[doc = #doc] }
+        });
         let ident = &method_info.ident;
         let member_name = method_info.member_name;
         let mut proxy_method_attrs = quote! { name = #member_name, };
@@ -1645,8 +1677,10 @@ impl Proxy {
         self.methods.extend(quote! {
             #(#cfg_attrs)*
             #(#doc_attrs)*
+            #generic_property_doc
             #[zbus(#proxy_method_attrs)]
-            fn #ident(&self, #inputs) -> #ret;
+            fn #ident #generics(&self, #inputs) -> #ret
+            #where_clause;
         });
 
         Ok(())
@@ -1720,6 +1754,29 @@ impl Proxy {
             }
         })
     }
+}
+
+fn type_borrows(ty: &Type) -> bool {
+    struct FindBorrow(bool);
+
+    impl Fold for FindBorrow {
+        fn fold_type_reference(&mut self, node: TypeReference) -> TypeReference {
+            self.0 = true;
+
+            node
+        }
+
+        fn fold_lifetime(&mut self, lifetime: syn::Lifetime) -> syn::Lifetime {
+            self.0 |= lifetime.ident != "static";
+
+            lifetime
+        }
+    }
+
+    let mut finder = FindBorrow(false);
+    finder.fold_type(ty.clone());
+
+    finder.0
 }
 
 #[cfg(test)]
