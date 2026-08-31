@@ -111,12 +111,12 @@ impl FromStr for Guid<'static> {
     }
 }
 
-impl<'de> Deserialize<'de> for Guid<'de> {
+impl<'de, 'g> Deserialize<'de> for Guid<'g> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        <Cow<'de, str>>::deserialize(deserializer)
+        String::deserialize(deserializer)
             .and_then(|s| s.try_into().map_err(serde::de::Error::custom))
     }
 }

@@ -115,12 +115,12 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl<'de: 'name, 'name> serde::Deserialize<'de> for $name<'name> {
+        impl<'de, 'name> serde::Deserialize<'de> for $name<'name> {
             fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,
             {
-                let name = <std::borrow::Cow<'name, str>>::deserialize(deserializer)?;
+                let name = <String as serde::Deserialize>::deserialize(deserializer)?;
 
                 Self::try_from(name).map_err(|e| serde::de::Error::custom(e.to_string()))
             }

@@ -183,12 +183,12 @@ impl<'name> NoneValue for BusName<'name> {
 }
 
 // Manual deserialize implementation to get the desired error on invalid bus names.
-impl<'de: 'name, 'name> Deserialize<'de> for BusName<'name> {
+impl<'de, 'name> Deserialize<'de> for BusName<'name> {
     fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let name = <Cow<'name, str>>::deserialize(deserializer)?;
+        let name = String::deserialize(deserializer)?;
 
         Self::try_from(name).map_err(|e| de::Error::custom(e.to_string()))
     }
