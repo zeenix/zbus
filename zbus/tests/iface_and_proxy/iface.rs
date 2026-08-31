@@ -21,6 +21,7 @@ pub struct MyIface {
     emits_changed_const: u32,
     emits_changed_false: u32,
     r#let: u32,
+    ref_prop: String,
 }
 
 impl MyIface {
@@ -34,6 +35,7 @@ impl MyIface {
             emits_changed_const: 0,
             emits_changed_false: 0,
             r#let: 0,
+            ref_prop: "borrowed getter".to_string(),
         }
     }
 }
@@ -361,8 +363,17 @@ impl MyIface {
 
     #[instrument]
     #[zbus(property)]
-    fn set_ref_prop(&self, ref_type: RefType<'_>) {
+    fn ref_prop(&self) -> RefType<'_> {
+        RefType {
+            field1: self.ref_prop.as_str().into(),
+        }
+    }
+
+    #[instrument]
+    #[zbus(property)]
+    fn set_ref_prop(&mut self, ref_type: RefType<'_>) {
         debug!("`SetRefType` called with {:?}", ref_type);
+        self.ref_prop = ref_type.field1.to_string();
     }
 
     #[instrument]

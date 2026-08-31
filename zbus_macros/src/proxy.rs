@@ -248,15 +248,20 @@ pub fn create_proxy(
                     uncached_properties.push(dbus_member_name.clone());
                 }
 
-                gen_proxy_property(
+                let (method, types) = gen_proxy_property(
                     &dbus_member_name,
                     r#_stripped_rust_method_name,
                     m,
                     &method_attrs,
                     &async_opts,
                     emits_changed_signal,
+                    &proxy_name,
+                    visibility,
                     &zbus,
-                )
+                );
+                stream_types.extend(types);
+
+                method
             } else if is_signal {
                 let (method, types) = gen_proxy_signal(
                     &proxy_name,
@@ -708,6 +713,7 @@ fn gen_proxy_method_call(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gen_proxy_property(
     property_name: &str,
     rust_method_name: &str,
@@ -715,8 +721,10 @@ fn gen_proxy_property(
     method_attrs: &MethodAttributes,
     async_opts: &AsyncOpts,
     emits_changed_signal: PropertyEmitsChangedSignal,
+    proxy_name: &Ident,
+    visibility: &Visibility,
     zbus: &TokenStream,
-) -> TokenStream {
+) -> (TokenStream, TokenStream) {
     let AsyncOpts {
         usage,
         wait,
@@ -730,13 +738,15 @@ fn gen_proxy_property(
     let signature = &m.sig;
     if signature.inputs.len() > 1 {
         let value = pat_ident(typed_arg(signature.inputs.last().unwrap()).unwrap()).unwrap();
-        quote! {
+        let method = quote! {
             #(#other_attrs)*
             #[allow(clippy::needless_question_mark)]
             pub #usage #signature {
                 ::std::result::Result::Ok(self.0.set_property(#property_name, #value)#wait?)
             }
-        }
+        };
+
+        (method, TokenStream::new())
     } else {
         // Check for object attribute to return a proxy instead of OwnedObjectPath
         let proxy_object = method_attrs.object.as_ref().map(|o| {
@@ -770,6 +780,25 @@ fn gen_proxy_property(
         } else {
             None
         };
+
+        // A result type that borrows can't be returned by the getter directly: the D-Bus reply
+        // it would borrow from doesn't outlive the getter call. For such types, the getter
+        // instead returns a generated guard type owning the property value in serialized form,
+        // whose `get` method deserializes the value borrowing from the guard.
+        let guard = ret_type
+            .filter(|ty| proxy_object.is_none() && type_borrows(ty))
+            .map(|ty| {
+                let guard_name = format_ident!(
+                    "{}{}",
+                    proxy_name,
+                    crate::utils::pascal_case(rust_method_name)
+                );
+                let ty_static = SetLifetimeStatic.fold_type((**ty).clone());
+                let ty_elided = SetLifetimeElided.fold_type((**ty).clone());
+
+                (guard_name, ty_static, ty_elided)
+            });
+        let is_object = proxy_object.is_some();
 
         // Generate the getter body - either returning a proxy object or the raw property value
         let (body, custom_signature) = if let Some(proxy_path_str) = proxy_object {
@@ -816,6 +845,22 @@ fn gen_proxy_property(
                 }
             };
             (body, Some(custom_sig))
+        } else if let Some((guard_name, ty_static, _)) = &guard {
+            let method_name = Ident::new(rust_method_name, m.sig.ident.span());
+            let custom_sig = quote! {
+                fn #method_name(&self) -> ::std::result::Result<
+                    #guard_name,
+                    <#ty_static as #zbus::ResultAdapter>::Err>
+            };
+            let body = quote_spanned! {body_span =>
+                let data = self.0.get_property_data(
+                    #property_name,
+                    <<#ty_static as #zbus::ResultAdapter>::Ok as #zbus::wire::Type>::SIGNATURE,
+                )#wait?;
+
+                ::std::result::Result::Ok(#guard_name(data))
+            };
+            (body, Some(custom_sig))
         } else {
             let body = quote_spanned! {body_span =>
                 ::std::result::Result::Ok(self.0.get_property(#property_name)#wait?)
@@ -840,12 +885,20 @@ fn gen_proxy_property(
                     "Create a stream for the `{property_name}` property changes. \
                 This is a convenient wrapper around [`{proxy_name}::receive_property_changed`]."
                 );
+                // For a borrowing result type, the stream is typed with the `'static` form of
+                // the type; deserialize the values it yields through
+                // [`PropertyChanged::get_data`].
+                let stream_item = if let Some((_, ty_static, _)) = &guard {
+                    quote! { <#ty_static as #zbus::ResultAdapter>::Ok }
+                } else {
+                    quote! { <#ret_type as #zbus::ResultAdapter>::Ok }
+                };
                 quote! {
                     #(#other_attrs)*
                     #[doc = #gen_doc]
                     pub #usage fn #receive #ty_generics(
                         &self
-                    ) -> #prop_stream<'p, <#ret_type as #zbus::ResultAdapter>::Ok>
+                    ) -> #prop_stream<'p, #stream_item>
                     #where_clause
                     {
                         self.0.receive_property_changed(#property_name)#wait
@@ -865,14 +918,41 @@ fn gen_proxy_property(
                 let cached_doc = format!(
                     " Get the cached value of the `{property_name}` property, or `None` if the property is not cached.",
                 );
+                let (cached_ret, cached_body) = if let Some((guard_name, ty_static, _)) = &guard {
+                    (
+                        quote! {
+                            ::std::result::Result<
+                                ::std::option::Option<#guard_name>,
+                                <#ty_static as #zbus::ResultAdapter>::Err>
+                        },
+                        quote! {
+                            self.0.cached_property_data(
+                                #property_name,
+                                <<#ty_static as #zbus::ResultAdapter>::Ok
+                                    as #zbus::wire::Type>::SIGNATURE,
+                            )
+                            .map(|data| data.map(#guard_name))
+                            .map_err(::std::convert::Into::into)
+                        },
+                    )
+                } else {
+                    (
+                        quote! {
+                            ::std::result::Result<
+                                ::std::option::Option<<#ret_type as #zbus::ResultAdapter>::Ok>,
+                                <#ret_type as #zbus::ResultAdapter>::Err>
+                        },
+                        quote! {
+                            self.0.cached_property(#property_name)
+                                .map_err(::std::convert::Into::into)
+                        },
+                    )
+                };
                 quote! {
                     #(#other_attrs)*
                     #[doc = #cached_doc]
-                    pub fn #cached_getter(&self) -> ::std::result::Result<
-                        ::std::option::Option<<#ret_type as #zbus::ResultAdapter>::Ok>,
-                        <#ret_type as #zbus::ResultAdapter>::Err>
-                    {
-                        self.0.cached_property(#property_name).map_err(::std::convert::Into::into)
+                    pub fn #cached_getter(&self) -> #cached_ret {
+                        #cached_body
                     }
                 }
             }
@@ -881,19 +961,45 @@ fn gen_proxy_property(
 
         // When object attribute is used, we use a custom signature and skip cached/receive methods
         // since those don't make sense for proxy objects
-        let (sig, extra_methods) = if let Some(sig) = custom_signature {
-            (sig, quote! {})
+        let extra_methods = if is_object {
+            quote! {}
         } else {
-            (
-                quote! { #signature },
-                quote! {
-                    #cached_getter_method
-                    #receive_method
-                },
-            )
+            quote! {
+                #cached_getter_method
+                #receive_method
+            }
+        };
+        let sig = if let Some(sig) = custom_signature {
+            sig
+        } else {
+            quote! { #signature }
         };
 
-        quote! {
+        let guard_items = if let Some((guard_name, ty_static, ty_elided)) = &guard {
+            let guard_doc = format!(
+                "Serialized value of the `{property_name}` property, owned so that \
+                 deserializing through [`{guard_name}::get`] can borrow from it.",
+            );
+            quote! {
+                #[doc = #guard_doc]
+                #[derive(::std::fmt::Debug)]
+                #visibility struct #guard_name(#zbus::proxy::PropertyData);
+
+                impl #guard_name {
+                    /// Deserialize the property value, borrowing from `self` where possible.
+                    pub fn get(&self) -> ::std::result::Result<
+                        <#ty_elided as #zbus::ResultAdapter>::Ok,
+                        <#ty_static as #zbus::ResultAdapter>::Err>
+                    {
+                        self.0.deserialize().map_err(::std::convert::Into::into)
+                    }
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+
+        let method = quote! {
             #(#other_attrs)*
             #[allow(clippy::needless_question_mark)]
             pub #usage #sig {
@@ -901,8 +1007,58 @@ fn gen_proxy_property(
             }
 
             #extra_methods
+        };
+
+        (method, guard_items)
+    }
+}
+
+struct SetLifetimeStatic;
+
+impl Fold for SetLifetimeStatic {
+    fn fold_type_reference(&mut self, node: syn::TypeReference) -> syn::TypeReference {
+        let mut t = syn::fold::fold_type_reference(self, node);
+        t.lifetime = Some(syn::Lifetime::new("'static", Span::call_site()));
+        t
+    }
+
+    fn fold_lifetime(&mut self, _node: syn::Lifetime) -> syn::Lifetime {
+        syn::Lifetime::new("'static", Span::call_site())
+    }
+}
+
+struct SetLifetimeElided;
+
+impl Fold for SetLifetimeElided {
+    fn fold_lifetime(&mut self, _node: syn::Lifetime) -> syn::Lifetime {
+        syn::Lifetime::new("'_", Span::call_site())
+    }
+}
+
+/// Whether the type borrows, i.e. carries a lifetime other than `'static` or a reference.
+fn type_borrows(ty: &syn::Type) -> bool {
+    #[derive(Default)]
+    struct Scan {
+        borrows: bool,
+    }
+
+    impl Fold for Scan {
+        fn fold_lifetime(&mut self, lifetime: syn::Lifetime) -> syn::Lifetime {
+            if lifetime.ident != "static" {
+                self.borrows = true;
+            }
+            lifetime
+        }
+
+        fn fold_type_reference(&mut self, node: syn::TypeReference) -> syn::TypeReference {
+            self.borrows = true;
+            syn::fold::fold_type_reference(self, node)
         }
     }
+
+    let mut scan = Scan::default();
+    let _ = scan.fold_type(ty.clone());
+    scan.borrows
 }
 
 struct SetLifetimeS;

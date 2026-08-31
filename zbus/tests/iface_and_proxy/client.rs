@@ -170,11 +170,27 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     check_ipv4_address(proxy.address_data().await?);
     check_ipv4_address_hashmap(proxy.address_data2().await?);
 
+    let ref_prop = proxy.ref_prop().await?;
+    assert_eq!(
+        ref_prop.get()?,
+        RefType {
+            field1: "borrowed getter".into(),
+        }
+    );
+
     proxy
         .set_ref_prop(RefType {
             field1: "borrowed setter".into(),
         })
         .await?;
+    if let Some(cached) = proxy.cached_ref_prop()? {
+        assert_eq!(
+            cached.get()?,
+            RefType {
+                field1: "borrowed setter".into(),
+            }
+        );
+    }
 
     proxy.test_no_reply().await?;
     proxy.test_no_autostart().await?;
