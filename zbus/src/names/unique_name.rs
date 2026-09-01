@@ -110,6 +110,30 @@ mod tests {
     }
 
     #[test]
+    fn optional_owned_name_is_deserialize_owned() {
+        use crate::{
+            names::OwnedBusName,
+            wire::{LE, Optional, serialized::Context, to_bytes},
+        };
+        use serde::de::DeserializeOwned;
+
+        fn assert_deserialize_owned<T: DeserializeOwned>() {}
+
+        assert_deserialize_owned::<Optional<OwnedUniqueName>>();
+        assert_deserialize_owned::<Optional<OwnedBusName>>();
+
+        let ctxt = Context::new(LE, 0);
+        let encoded = to_bytes(ctxt, &Optional::<OwnedUniqueName>::default()).unwrap();
+        let opt: Optional<OwnedUniqueName> = encoded.deserialize().unwrap().0;
+        assert!(Option::<OwnedUniqueName>::from(opt).is_none());
+
+        let name = OwnedUniqueName::try_from(":1.42").unwrap();
+        let encoded = to_bytes(ctxt, &Optional::from(Some(name.clone()))).unwrap();
+        let opt: Optional<OwnedUniqueName> = encoded.deserialize().unwrap().0;
+        assert_eq!(Option::<OwnedUniqueName>::from(opt), Some(name));
+    }
+
+    #[test]
     fn value_conversion_round_trips_valid_name() {
         let name = UniqueName::try_from(":1.23").unwrap();
         let value = Value::from(name.clone());

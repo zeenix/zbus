@@ -702,3 +702,109 @@ impl ser::SerializeStructVariant for StructSeqSerializer {
         ser::SerializeTuple::end(self)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::wire::{LE, serialized::Context, to_bytes};
+
+    #[derive(Debug, PartialEq, serde::Serialize, crate::wire::Type)]
+    struct Pair(u32, String);
+
+    #[derive(serde::Serialize, crate::wire::Type)]
+    struct Empty {}
+
+    #[derive(crate::wire::SerializeDict, crate::wire::Type)]
+    #[zvariant(signature = "dict")]
+    struct DictStruct {
+        count: u32,
+        name: String,
+    }
+
+    #[derive(Debug, PartialEq, serde::Serialize, crate::wire::Type)]
+    enum Enum {
+        First(u32, String),
+        Second(u32, String),
+    }
+
+    #[derive(serde::Serialize, crate::wire::Type)]
+    enum UnitEnum {
+        First,
+        Second,
+    }
+
+    #[derive(serde::Serialize, crate::wire::Type)]
+    #[zvariant(signature = "s")]
+    #[serde(rename_all = "snake_case")]
+    enum StringEnum {
+        FirstValue,
+        SecondValue,
+    }
+
+    #[repr(u32)]
+    #[derive(serde_repr::Serialize_repr, crate::wire::Type)]
+    enum ReprEnum {
+        First = 1,
+        Second = 2,
+    }
+
+    fn assert_matches_wire<T>(value: &T)
+    where
+        T: Type + Serialize,
+    {
+        let direct = to_owned_value(value).unwrap();
+        let encoded = to_bytes(Context::new(LE, 0), &super::super::Serialize(value)).unwrap();
+        let wire: OwnedValue = encoded.deserialize().unwrap().0;
+        assert_eq!(Value::from(direct), Value::from(wire));
+    }
+
+    #[test]
+    fn plain_value_matches_wire_round_trip() {
+        let pair = Pair(42, "hello".to_owned());
+        assert_matches_wire(&pair);
+    }
+
+    #[test]
+    fn nested_variant_matches_wire_round_trip() {
+        let value = Value::new(Value::new(42_u32));
+        assert_matches_wire(&value);
+    }
+
+    #[test]
+    fn supported_values_match_wire_round_trip() {
+        assert_matches_wire(&Empty {});
+        assert_matches_wire(&vec![1_u32, 2, 3]);
+        let map = HashMap::from([
+            ("hi".to_owned(), "hello".to_owned()),
+            ("bye".to_owned(), "now".to_owned()),
+        ]);
+        assert_matches_wire(&map);
+        let value = Value::from(to_owned_value(&map).unwrap());
+        let decoded: HashMap<String, String> =
+            super::super::deserialize_for_property(&value).unwrap();
+        assert_eq!(decoded, map);
+        assert_matches_wire(&DictStruct {
+            count: 7,
+            name: "dict".to_owned(),
+        });
+        assert_matches_wire(&Enum::First(7, "first".to_owned()));
+        assert_matches_wire(&Enum::Second(42, "hello".to_owned()));
+        assert_matches_wire(&UnitEnum::First);
+        assert_matches_wire(&UnitEnum::Second);
+        assert_matches_wire(&StringEnum::FirstValue);
+        assert_matches_wire(&StringEnum::SecondValue);
+        assert_matches_wire(&ReprEnum::First);
+        assert_matches_wire(&ReprEnum::Second);
+
+        #[cfg(feature = "option-as-array")]
+        {
+            assert_matches_wire(&Some(42_u32));
+            assert_matches_wire(&None::<u32>);
+        }
+
+        #[cfg(feature = "serde_bytes")]
+        assert_matches_wire(&serde_bytes::ByteBuf::from(vec![1, 2, 3]));
+    }
+}

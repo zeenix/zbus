@@ -856,3 +856,319 @@ fn signatures_compatible(actual: &Signature, expected: &Signature, unwrap_varian
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde::Deserialize;
+
+    use super::*;
+    use crate::wire::{Array, OwnedValue, StructureBuilder, Type};
+
+    fn convert_property_value<T>(value: &Value<'_>) -> T
+    where
+        T: for<'de> Deserialize<'de> + Type,
+    {
+        deserialize_for_property(value).unwrap()
+    }
+
+    #[test]
+    fn unwraps_array_variants() {
+        let mut array = Array::new(&Signature::Variant);
+        array
+            .append(Value::Value(Box::new(Value::from("one"))))
+            .unwrap();
+        array
+            .append(Value::Value(Box::new(Value::from("two"))))
+            .unwrap();
+
+        assert_eq!(
+            convert_property_value::<Vec<String>>(&Value::Array(array)),
+            ["one", "two"]
+        );
+    }
+
+    #[test]
+    fn unwraps_variants_in_nested_containers() {
+        let mut inner = Array::new(&Signature::Variant);
+        inner
+            .append(Value::Value(Box::new(Value::from("value"))))
+            .unwrap();
+        let mut outer = Array::new(inner.signature());
+        outer.append(Value::Array(inner)).unwrap();
+        let structure = StructureBuilder::new()
+            .append_field(Value::Array(outer))
+            .build()
+            .unwrap();
+        let decoded: (Vec<Vec<String>>,) = convert_property_value(&Value::Structure(structure));
+
+        assert_eq!(decoded.0, [vec!["value".to_string()]]);
+    }
+
+    #[test]
+    fn unwraps_dict_variants() {
+        let mut dict = Dict::new(&Signature::Str, &Signature::Variant);
+        dict.append(
+            Value::from("key"),
+            Value::Value(Box::new(Value::from("value"))),
+        )
+        .unwrap();
+
+        assert_eq!(
+            convert_property_value::<HashMap<String, String>>(&Value::Dict(dict))["key"],
+            "value"
+        );
+    }
+
+    #[test]
+    fn unwraps_variants_in_nested_dicts() {
+        let mut properties = Dict::new(&Signature::Str, &Signature::Variant);
+        properties
+            .append(
+                Value::from("ssid"),
+                Value::Value(Box::new(Value::from("home"))),
+            )
+            .unwrap();
+        let mut interfaces = Dict::new(&Signature::Str, properties.signature());
+        interfaces
+            .append(Value::from("802-11-wireless"), Value::Dict(properties))
+            .unwrap();
+
+        let decoded: HashMap<String, HashMap<String, String>> =
+            convert_property_value(&Value::Dict(interfaces));
+        assert_eq!(decoded["802-11-wireless"]["ssid"], "home");
+    }
+
+    #[test]
+    fn rejects_unrelated_empty_containers() {
+        let array = Value::Array(Array::new(&Signature::I32));
+        assert!(deserialize_for_property::<Vec<String>>(&array).is_err());
+
+        let dict = Value::Dict(Dict::new(&Signature::I32, &Signature::Str));
+        assert!(deserialize_for_property::<HashMap<String, String>>(&dict).is_err());
+    }
+
+    #[test]
+    fn preserves_variant_values() {
+        let value = Value::U32(42);
+        let decoded: Value<'_> = deserialize_for_property(&value).unwrap();
+        assert_eq!(decoded, Value::U32(42));
+
+        let decoded = convert_property_value::<OwnedValue>(&value);
+        assert_eq!(decoded, OwnedValue::from(42_u32));
+
+        let value = Value::Value(Box::new(Value::U32(42)));
+        let decoded = convert_property_value::<OwnedValue>(&value);
+        assert_eq!(decoded, OwnedValue::try_from(value).unwrap());
+    }
+
+    #[test]
+    fn unwraps_variant_structure_and_enum_fields() {
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::wire::Type)]
+        struct WithValue(u32, OwnedValue);
+
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::wire::Type)]
+        enum NewType {
+            First(OwnedValue),
+            Second(OwnedValue),
+        }
+
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::wire::Type)]
+        enum Fields {
+            First(u8, OwnedValue),
+            Second { y: u8, value: OwnedValue },
+        }
+
+        let value = WithValue(7, OwnedValue::from(42_u32));
+        let serialized = Value::from(super::super::to_owned_value(&value).unwrap());
+        assert_eq!(convert_property_value::<WithValue>(&serialized), value);
+
+        let value = NewType::Second(OwnedValue::from(42_u32));
+        let serialized = Value::from(super::super::to_owned_value(&value).unwrap());
+        assert_eq!(convert_property_value::<NewType>(&serialized), value);
+
+        let value = Fields::Second {
+            y: 7,
+            value: OwnedValue::from(42_u32),
+        };
+        let serialized = Value::from(super::super::to_owned_value(&value).unwrap());
+        assert_eq!(convert_property_value::<Fields>(&serialized), value);
+    }
+
+    #[test]
+    fn borrows_strings_from_values() {
+        let value = Value::from("borrowed");
+        let decoded: &str = deserialize_for_property(&value).unwrap();
+        assert_eq!(decoded, "borrowed");
+    }
+
+    #[test]
+    fn deserializes_signatures() {
+        let value = Value::Signature(Signature::try_from("a{sv}").unwrap());
+        assert_eq!(
+            deserialize_for_property::<Signature>(&value).unwrap(),
+            Signature::try_from("a{sv}").unwrap()
+        );
+    }
+
+    #[test]
+    fn deserializes_repr_enums() {
+        #[repr(u32)]
+        #[derive(Debug, PartialEq, crate::wire::Type, serde_repr::Deserialize_repr)]
+        enum Kind {
+            First = 1,
+            Second = 2,
+        }
+
+        let value = Value::U32(2);
+        assert_eq!(
+            deserialize_for_property::<Kind>(&value).unwrap(),
+            Kind::Second
+        );
+    }
+
+    #[test]
+    fn deserializes_wire_enum_representations() {
+        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        enum Unit {
+            First,
+            Second,
+        }
+
+        let value = Value::U32(1);
+        assert_eq!(
+            deserialize_for_property::<Unit>(&value).unwrap(),
+            Unit::Second
+        );
+
+        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        #[zvariant(signature = "s")]
+        #[serde(rename_all = "snake_case")]
+        enum StringUnit {
+            First,
+            Second,
+        }
+
+        let value = Value::from("second");
+        assert_eq!(
+            deserialize_for_property::<StringUnit>(&value).unwrap(),
+            StringUnit::Second
+        );
+
+        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        enum NewType {
+            First(f64),
+            Second(f64),
+        }
+
+        let value = StructureBuilder::new()
+            .append_field(Value::U32(1))
+            .append_field(Value::F64(2.5))
+            .build()
+            .unwrap();
+        assert_eq!(
+            deserialize_for_property::<NewType>(&Value::Structure(value)).unwrap(),
+            NewType::Second(2.5)
+        );
+
+        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        enum Fields {
+            First(u8, u32),
+            Second { y: u8, t: u32 },
+        }
+
+        let payload = StructureBuilder::new()
+            .append_field(Value::U8(3))
+            .append_field(Value::U32(4))
+            .build()
+            .unwrap();
+        let value = StructureBuilder::new()
+            .append_field(Value::U32(1))
+            .append_field(Value::Structure(payload))
+            .build()
+            .unwrap();
+        assert_eq!(
+            deserialize_for_property::<Fields>(&Value::Structure(value)).unwrap(),
+            Fields::Second { y: 3, t: 4 }
+        );
+    }
+
+    #[test]
+    fn deserializes_value_containers_and_dict_structs() {
+        #[derive(Debug, PartialEq, crate::wire::DeserializeDict, crate::wire::Type)]
+        #[zvariant(signature = "dict")]
+        struct DictStruct {
+            count: u32,
+            name: String,
+        }
+
+        let mut dict = Dict::new(&Signature::Str, &Signature::Variant);
+        dict.append(Value::from("count"), Value::new(Value::from(7_u32)))
+            .unwrap();
+        dict.append(Value::from("name"), Value::new(Value::from("dict")))
+            .unwrap();
+        assert_eq!(
+            deserialize_for_property::<DictStruct>(&Value::Dict(dict)).unwrap(),
+            DictStruct {
+                count: 7,
+                name: "dict".to_owned(),
+            }
+        );
+
+        let mut array = Array::new(&Signature::Variant);
+        array.append(Value::new(Value::from("first"))).unwrap();
+        array.append(Value::new(Value::from(42_u32))).unwrap();
+        assert_eq!(
+            deserialize_for_property::<Vec<Value<'_>>>(&Value::Array(array)).unwrap(),
+            [Value::from("first"), Value::from(42_u32)],
+        );
+    }
+
+    #[test]
+    fn deserializes_empty_structs() {
+        #[derive(serde::Deserialize, crate::wire::Type)]
+        struct Empty {}
+
+        deserialize_for_property::<Empty>(&Value::U8(0)).unwrap();
+    }
+
+    #[cfg(feature = "serde_bytes")]
+    #[test]
+    fn deserializes_variant_wrapped_bytes() {
+        let mut values = Array::new(&Signature::Variant);
+        for byte in [1_u8, 2, 3] {
+            values
+                .append(Value::Value(Box::new(Value::from(byte))))
+                .unwrap();
+        }
+
+        assert_eq!(
+            deserialize_for_property::<serde_bytes::ByteBuf>(&Value::Array(values)).unwrap(),
+            serde_bytes::ByteBuf::from(vec![1, 2, 3]),
+        );
+    }
+
+    #[cfg(feature = "option-as-array")]
+    #[test]
+    fn deserializes_option_arrays() {
+        let some = Value::Array(Array::from(vec![42_i32]));
+        let none = Value::Array(Array::new(&Signature::I32));
+        let mut variants = Array::new(&Signature::Variant);
+        variants
+            .append(Value::Value(Box::new(Value::from(42_i32))))
+            .unwrap();
+        assert_eq!(
+            deserialize_for_property::<Option<i32>>(&some).unwrap(),
+            Some(42)
+        );
+        assert_eq!(
+            deserialize_for_property::<Option<i32>>(&none).unwrap(),
+            None
+        );
+        assert_eq!(
+            deserialize_for_property::<Option<i32>>(&Value::Array(variants)).unwrap(),
+            Some(42)
+        );
+    }
+}
