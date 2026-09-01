@@ -54,7 +54,6 @@ async-io = [
     "comms",
     "dep:async-io",
     "async-executor",
-    "async-fs",
     "async-task",
     "async-lock",
     # FIXME: We only currently only need this for unix but Cargo doesn't provide a way to enable
@@ -71,8 +70,6 @@ blocking-api = ["comms", "zbus_macros/blocking-api"]
 p2p = ["comms", "uuid?/v4"]
 # Enables API that is only needed for bus implementations (enables `p2p`).
 bus-impl = ["p2p"]
-# Dummy features to satisfy `cargo semver`. Should be removed at the next major version bump.
-async-fs = []
 
 [dependencies]
 zbus_macros = { path = "../zbus_macros", version = "6.0.0", default-features = false }
