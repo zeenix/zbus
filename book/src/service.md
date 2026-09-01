@@ -297,16 +297,6 @@ org.zbus.MyGreeter1                 interface -         -             -
 .GreetedEveryone                    signal    -         -             -
 ```
 
-### Trait-bounds for property values
-
-If you use custom types for property values, you might get a compile error for missing
-`TryFrom<zbus::wire::Value<'_>>` and/or `TryFrom<OwnedValue>` implementations. This is because
-properties are always sent as Variants on the bus, so you need to implement these conversions for
-your custom types.
-
-Not to worry though, the `zbus::wire` module provides a [`Value`] and [`OwnedValue`] derive macro
-to implement these conversions for you.
-
 ### Method errors
 
 There are two possibilities for the return value of interface methods. The first is for infallible
@@ -442,21 +432,17 @@ proxy.whatever().await?;
 While it's extremely useful to be able to generate the client-side proxy code directly from
 `interface` as it allows you to avoid duplicating code, there are some limitations to be aware of:
 
-* The trait bounds of the `proxy` macro methods' arguments and return value, now also apply to the
-  `interface` methods. For example, when only generating the service-side code, the method return
-  values need to implement `serde::Serialize` but when generating the client-side proxy code, the
-  method return values need to implement `serde::DeserializeOwned` as well.
-* Reference types in return values of `interface` methods won't work. As you may have noticed,
-  unlike the previous examples the `greeter_name` method in the example above returns a `String`
-  instead of a `&str`. This is because the methods in the `proxy` macro do not support reference
-  type to be returned from its methods.
+* The `proxy` macro's trait bounds also apply to ordinary `interface` methods. A service-only
+  method result needs `Serialize + Type`, while the corresponding generated proxy method also
+  needs `DeserializeOwned`.
+* Ordinary method return values cannot borrow. A borrowing property getter is supported: its
+  generated proxy getter is generic over an owned `DeserializeOwned + Type` result selected by the
+  caller.
 * Methods returning [`object_server::ResponseDispatchNotifier`] wrapper type will do the same for
   proxy as well.
 
 [D-Bus concepts]: concepts.html#bus-name--service-name
 [didoc]: https://docs.rs/zbus/latest/zbus/attr.interface.html
-[`Value`]: https://docs.rs/zbus/latest/zbus/wire/derive.Value.html
-[`OwnedValue`]: https://docs.rs/zbus/latest/zbus/wire/derive.OwnedValue.html
 [`zbus::DBusError`]:https://docs.rs/zbus/latest/zbus/trait.DBusError.html
 [`zbus::fdo::Error`]: https://docs.rs/zbus/latest/zbus/fdo/enum.Error.html
 [`zbus::fdo::Error::UnknownProperty`]: https://docs.rs/zbus/latest/zbus/fdo/enum.Error.html#variant.UnknownProperty

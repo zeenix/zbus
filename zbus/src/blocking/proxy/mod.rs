@@ -11,7 +11,7 @@ use crate::{
     names::{BusName, InterfaceName, MemberName, UniqueName},
     proxy::{Defaults, MethodFlags},
     utils::block_on,
-    wire::{ObjectPath, OwnedValue, Value},
+    wire::{ObjectPath, Value},
 };
 
 use crate::fdo;
@@ -168,8 +168,7 @@ impl<'a> Proxy<'a> {
     /// the peer.
     pub fn cached_property<T>(&self, property_name: &str) -> Result<Option<T>>
     where
-        T: TryFrom<OwnedValue>,
-        T::Error: Into<Error>,
+        T: serde::de::DeserializeOwned + crate::wire::Type,
     {
         self.inner().cached_property(property_name)
     }
@@ -191,8 +190,7 @@ impl<'a> Proxy<'a> {
     /// `org.freedesktop.DBus.Properties` interface.
     pub fn get_property<T>(&self, property_name: &str) -> Result<T>
     where
-        T: TryFrom<OwnedValue>,
-        T::Error: Into<Error>,
+        T: serde::de::DeserializeOwned + crate::wire::Type,
     {
         block_on(self.inner().get_property(property_name))
     }
@@ -200,9 +198,9 @@ impl<'a> Proxy<'a> {
     /// Set the property `property_name`.
     ///
     /// Effectively, call the `Set` method of the `org.freedesktop.DBus.Properties` interface.
-    pub fn set_property<'t, T>(&self, property_name: &str, value: T) -> fdo::Result<()>
+    pub fn set_property<T>(&self, property_name: &str, value: T) -> fdo::Result<()>
     where
-        T: 't + Into<Value<'t>>,
+        T: serde::Serialize + crate::wire::Type,
     {
         block_on(self.inner().set_property(property_name, value))
     }
@@ -461,8 +459,7 @@ impl<T> PropertyChanged<'_, T> {
 
 impl<T> PropertyChanged<'_, T>
 where
-    T: TryFrom<crate::wire::OwnedValue>,
-    T::Error: Into<crate::Error>,
+    T: serde::de::DeserializeOwned + crate::wire::Type,
 {
     /// Get the value of the property that changed.
     ///

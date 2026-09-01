@@ -73,7 +73,7 @@ mod tests {
     fn optional_owned_value_conversion_maps_empty_name_to_none() {
         use crate::wire::Optional;
 
-        // The path proxy property getters take: `TryFrom<OwnedValue>` on an owned type.
+        // The sentinel must be recognized before the empty name is validated.
         let owned = OwnedValue::from(crate::wire::Str::from(""));
         let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
         assert!(Option::<OwnedUniqueName>::from(opt).is_none());
@@ -107,6 +107,30 @@ mod tests {
         encoded
             .deserialize::<Optional<UniqueName<'_>>>()
             .unwrap_err();
+    }
+
+    #[test]
+    fn optional_owned_name_is_deserialize_owned() {
+        use crate::{
+            names::OwnedBusName,
+            wire::{LE, Optional, serialized::Context, to_bytes},
+        };
+        use serde::de::DeserializeOwned;
+
+        fn assert_deserialize_owned<T: DeserializeOwned>() {}
+
+        assert_deserialize_owned::<Optional<OwnedUniqueName>>();
+        assert_deserialize_owned::<Optional<OwnedBusName>>();
+
+        let ctxt = Context::new(LE, 0);
+        let encoded = to_bytes(ctxt, &Optional::<OwnedUniqueName>::default()).unwrap();
+        let opt: Optional<OwnedUniqueName> = encoded.deserialize().unwrap().0;
+        assert!(Option::<OwnedUniqueName>::from(opt).is_none());
+
+        let name = OwnedUniqueName::try_from(":1.42").unwrap();
+        let encoded = to_bytes(ctxt, &Optional::from(Some(name.clone()))).unwrap();
+        let opt: Optional<OwnedUniqueName> = encoded.deserialize().unwrap().0;
+        assert_eq!(Option::<OwnedUniqueName>::from(opt), Some(name));
     }
 
     #[test]

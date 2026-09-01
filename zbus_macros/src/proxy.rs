@@ -861,6 +861,7 @@ fn gen_proxy_property(
             PropertyEmitsChangedSignal::True
             | PropertyEmitsChangedSignal::Invalidates
             | PropertyEmitsChangedSignal::Const => {
+                let (generics, _, where_clause) = m.sig.generics.split_for_impl();
                 let cached_getter = format_ident!("cached_{}", rust_method_name);
                 let cached_doc = format!(
                     " Get the cached value of the `{property_name}` property, or `None` if the property is not cached.",
@@ -868,9 +869,10 @@ fn gen_proxy_property(
                 quote! {
                     #(#other_attrs)*
                     #[doc = #cached_doc]
-                    pub fn #cached_getter(&self) -> ::std::result::Result<
+                    pub fn #cached_getter #generics(&self) -> ::std::result::Result<
                         ::std::option::Option<<#ret_type as #zbus::ResultAdapter>::Ok>,
                         <#ret_type as #zbus::ResultAdapter>::Err>
+                    #where_clause
                     {
                         self.0.cached_property(#property_name).map_err(::std::convert::Into::into)
                     }

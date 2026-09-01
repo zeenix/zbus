@@ -296,8 +296,27 @@ The compatibility module is removed in zbus 7.0.
 
 ## Other changes in 6.0
 
-Five more things break in 6.0 without being a consequence of the crate merge. They reach code
+Six more things break in 6.0 without being a consequence of the crate merge. They reach code
 that never mentioned `zvariant` or `zbus_names`.
+
+### Property methods use Serde traits
+
+Property APIs now use the same Serde traits and `Type` bounds as regular methods. Client-side
+getters require `DeserializeOwned + Type` and setters require `Serialize + Type`; service-side
+getters require `Serialize + Type` and setters require `Deserialize + Type`. Replace custom
+`Value` and `OwnedValue` conversions with the appropriate Serde traits and `Type`.
+
+Property getters declared with `#[proxy]` must use owned result types. A proxy generated from an
+interface getter with a borrowing result is generic over its owned result type; select a
+`DeserializeOwned + Type` representation at the call site.
+
+Serde now also determines the property's wire representation. Audit `#[serde(...)]` attributes
+before upgrading because they were not used by the old `Value` conversions. In particular, an
+ordinary Serde derive serializes a unit enum as its variant index, not an explicit Rust
+discriminant. Use `serde_repr` for an integer enum whose discriminants are its D-Bus values.
+
+A property type mismatch now returns `Error::SignatureMismatch` rather than
+`Error::IncorrectType`. The new error includes both the actual and expected signatures.
 
 ### Stream constructors name their I/O backend
 
@@ -408,6 +427,10 @@ conversions if its `NoneType` has no `Into<Value>`.
 
 The order matters for any `T` whose conversion validates its input. The name types above reject
 the empty string, and the sentinel now maps to `None` without being converted at all.
+
+The public `NoneValue::NoneType` associated type for each owned name type is now `String` rather
+than `&'static str`. This allows `Optional<Owned*Name>` to implement `DeserializeOwned` without
+changing its wire encoding.
 
 ## A stale zvariant in the dependency graph
 
