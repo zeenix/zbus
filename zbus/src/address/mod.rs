@@ -69,7 +69,9 @@ impl Address {
             Ok(val) => Self::from_str(&val),
             _ => {
                 #[cfg(windows)]
-                return Self::from_str("autolaunch:");
+                {
+                    Self::from_str("autolaunch:")
+                }
 
                 #[cfg(all(unix, not(target_os = "macos")))]
                 {
@@ -81,7 +83,9 @@ impl Address {
                 }
 
                 #[cfg(target_os = "macos")]
-                return Self::from_str("launchd:env=DBUS_LAUNCHD_SESSION_BUS_SOCKET");
+                {
+                    Self::from_str("launchd:env=DBUS_LAUNCHD_SESSION_BUS_SOCKET")
+                }
             }
         }
     }
