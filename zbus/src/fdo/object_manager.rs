@@ -25,8 +25,9 @@ pub type ManagedObjects =
 ///
 /// The recommended path to add this interface at is the path form of the well-known name of a D-Bus
 /// service, or below. For example, if a D-Bus service is available at the well-known name
-/// `net.example.ExampleService1`, this interface should typically be registered at
-/// `/net/example/ExampleService1`, or below (to allow for multiple object managers in a service).
+/// `org.freedesktop.zbus.ExampleService1`, this interface should typically be registered at
+/// `/org/freedesktop/zbus/ExampleService1`, or below (to allow for multiple object managers in a
+/// service).
 ///
 /// It is supported, but not recommended, to add this interface at the root path, `/`.
 ///
@@ -37,6 +38,47 @@ pub type ManagedObjects =
 /// Because registering it reads the properties of every object under `path`, adding an
 /// `ObjectManager` at an ancestor of an interface from within that interface's own `&mut self`
 /// method will deadlock. See [`ObjectServer::at`](crate::ObjectServer::at) for details.
+///
+/// # Example
+///
+/// Add the provided `ObjectManager` at a path via the [`ObjectServer`](crate::ObjectServer), and
+/// every object registered under that path is tracked for you, with `InterfacesAdded` and
+/// `InterfacesRemoved` signals emitted automatically.
+///
+/// ```
+/// #
+/// # zbus::block_on(async {
+/// use zbus::{Connection, fdo::ObjectManager, interface};
+///
+/// let connection = Connection::session().await?;
+/// let object_server = connection.object_server();
+///
+/// // Register the object manager first, then add the objects it should manage below its path.
+/// object_server
+///     .at("/org/freedesktop/zbus/ExampleObject1", ObjectManager)
+///     .await?;
+/// object_server
+///     .at(
+///         "/org/freedesktop/zbus/ExampleObject1/item1",
+///         Item { name: "First".to_string() },
+///     )
+///     .await?;
+///
+/// // The specific interface being managed is not the interesting part here.
+/// struct Item {
+///     name: String,
+/// }
+///
+/// #[interface(name = "org.freedesktop.zbus.ExampleObject1.Item")]
+/// impl Item {
+///     #[zbus(property)]
+///     async fn name(&self) -> String {
+///         self.name.clone()
+///     }
+/// }
+/// # Ok::<(), zbus::Error>(())
+/// # }).unwrap();
+/// ```
 ///
 /// [om]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
 #[derive(Debug, Clone)]
