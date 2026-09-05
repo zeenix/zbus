@@ -26,7 +26,7 @@ use crate::{
     async_lock::{Mutex, Semaphore, SemaphorePermit},
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
     is_flatpak,
-    message::{Flags, Message, Type},
+    message::{self, Flags, Message, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     timeout::timeout,
 };
@@ -414,11 +414,7 @@ impl Connection {
     {
         let _permit = acquire_serial_num_semaphore().await;
 
-        let mut b = Message::method_return(call)?;
-        if let Some(sender) = self.unique_name() {
-            b = b.sender(sender)?;
-        }
-        let m = b.build(body)?;
+        let m = self.reply_message(Message::method_return(call), &mut |b| b.build(body))?;
         self.send(&m).await
     }
 
@@ -439,12 +435,24 @@ impl Connection {
     {
         let _permit = acquire_serial_num_semaphore().await;
 
-        let mut b = Message::error(call, error_name)?;
-        if let Some(sender) = self.unique_name() {
-            b = b.sender(sender)?;
-        }
-        let m = b.build(body)?;
+        let m = self.reply_message(Message::error(call, error_name), &mut |b| b.build(body))?;
         self.send(&m).await
+    }
+
+    /// Build a reply from `builder`, with this connection's unique name as the sender.
+    ///
+    /// The body is written through a trait object so that this is compiled once rather than once
+    /// per body type.
+    fn reply_message(
+        &self,
+        builder: Result<message::Builder<'_>>,
+        build: &mut dyn FnMut(message::Builder<'_>) -> Result<Message>,
+    ) -> Result<Message> {
+        let mut builder = builder?;
+        if let Some(sender) = self.unique_name() {
+            builder = builder.sender(sender)?;
+        }
+        build(builder)
     }
 
     /// Reply an error to a message.
