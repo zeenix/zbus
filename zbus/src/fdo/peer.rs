@@ -3,18 +3,18 @@
 //! The D-Bus specification defines the message bus messages and some standard interfaces that may
 //! be useful across various D-Bus applications. This module provides their proxy.
 
-use super::{Error, Result};
+#[cfg(feature = "service")]
+use super::Error;
+use super::Result;
 
+#[cfg(feature = "service")]
 pub(crate) struct Peer;
 
 /// Service-side implementation for the `org.freedesktop.DBus.Peer` interface.
 /// This interface is implemented automatically for any object registered to the
 /// [ObjectServer](crate::ObjectServer).
-#[crate::interface(
-    name = "org.freedesktop.DBus.Peer",
-    introspection_docs = false,
-    proxy(visibility = "pub")
-)]
+#[cfg(feature = "service")]
+#[crate::interface(name = "org.freedesktop.DBus.Peer", introspection_docs = false)]
 impl Peer {
     /// On receipt, an application should do nothing other than reply as usual. It does not matter
     /// which object path a ping is sent to.
@@ -48,6 +48,30 @@ impl Peer {
     }
 }
 
+/// Proxy for the `org.freedesktop.DBus.Peer` interface.
+#[cfg(feature = "proxy")]
+#[crate::proxy(interface = "org.freedesktop.DBus.Peer")]
+pub trait Peer {
+    /// On receipt, an application should do nothing other than reply as usual. It does not matter
+    /// which object path a ping is sent to.
+    fn ping(&self) -> zbus::Result<()>;
+
+    /// An application should reply the containing a hex-encoded UUID representing the identity of
+    /// the machine the process is running on. This UUID must be the same for all processes on a
+    /// single system at least until that system next reboots. It should be the same across reboots
+    /// if possible, but this is not always possible to implement and is not guaranteed. It does not
+    /// matter which object path a GetMachineId is sent to.
+    ///
+    /// This method is implemented for:
+    /// - Linux: Reads from `/var/lib/dbus/machine-id` or `/etc/machine-id`
+    /// - macOS: Uses `gethostuuid()` system call
+    /// - FreeBSD/DragonFlyBSD: Reads from standard D-Bus locations, falls back to `kern.hostuuid`
+    /// - OpenBSD/NetBSD: Reads from standard D-Bus locations (`/var/db/dbus/machine-id`, etc.)
+    /// - Windows: Uses Windows hardware profile GUID
+    fn get_machine_id(&self) -> Result<String>;
+}
+
+#[cfg(feature = "service")]
 #[cfg(target_os = "linux")]
 fn get_platform_machine_id() -> Result<String> {
     let mut id = match std::fs::read_to_string("/var/lib/dbus/machine-id") {
@@ -68,6 +92,7 @@ fn get_platform_machine_id() -> Result<String> {
     Ok(id)
 }
 
+#[cfg(feature = "service")]
 #[cfg(target_os = "macos")]
 fn get_platform_machine_id() -> Result<String> {
     unsafe extern "C" {
@@ -93,6 +118,7 @@ fn get_platform_machine_id() -> Result<String> {
 
 /// Get the machine ID on FreeBSD or DragonFlyBSD using the kern.hostuuid sysctl.
 /// This returns a UUID that is typically generated at install time and persists across reboots.
+#[cfg(feature = "service")]
 #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
 fn get_platform_machine_id() -> Result<String> {
     use std::ffi::CStr;
@@ -140,6 +166,7 @@ fn get_platform_machine_id() -> Result<String> {
 /// Try to read machine ID from standard D-Bus locations.
 /// Used on *BSD platforms as the primary method before falling back to platform-specific
 /// mechanisms.
+#[cfg(feature = "service")]
 #[cfg(any(
     target_os = "freebsd",
     target_os = "dragonfly",
@@ -165,6 +192,7 @@ fn read_dbus_machine_id() -> Option<String> {
     None
 }
 
+#[cfg(feature = "service")]
 #[cfg(any(target_os = "openbsd", target_os = "netbsd"))]
 fn get_platform_machine_id() -> Result<String> {
     // OpenBSD and NetBSD don't have a built-in machine UUID mechanism.
@@ -177,6 +205,7 @@ fn get_platform_machine_id() -> Result<String> {
 }
 
 /// Fallback for other Unix platforms not explicitly supported.
+#[cfg(feature = "service")]
 #[cfg(all(
     unix,
     not(any(
@@ -194,12 +223,13 @@ fn get_platform_machine_id() -> Result<String> {
     ))
 }
 
+#[cfg(feature = "service")]
 #[cfg(windows)]
 fn get_platform_machine_id() -> Result<String> {
     crate::win32::machine_id().map_err(|e| Error::IOError(e.to_string()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "service"))]
 mod tests {
     #[allow(unused)]
     use super::*;

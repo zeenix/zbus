@@ -1,0 +1,22 @@
+[package]
+name = "service_only_fixture"
+version = "0.0.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+
+description = "Compile-only fixture: a service-only crate whose build script pulls in the proxy API"
+
+[dependencies]
+# Only the service side of the D-Bus API. Whether the `proxy` attribute of the `interface` macro
+# generates a proxy must follow this feature set.
+zbus = { path = "../../zbus", default-features = false, features = ["async-io", "service"] }
+
+[build-dependencies]
+# The whole point of this fixture: Cargo unifies the features of host dependencies separately from
+# the target ones, so this enables `proxy` in the (host) `zbus_macros` but not in the (target)
+# `zbus` above. The macros must not act on their own features.
+zbus = { path = "../../zbus", default-features = false, features = ["async-io", "proxy"] }
+
+[lints]
+workspace = true

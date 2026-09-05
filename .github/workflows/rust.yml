@@ -91,6 +91,21 @@ jobs:
           cargo --locked clippy -p zbus --no-default-features --target x86_64-unknown-netbsd
           cargo --locked clippy -p zbus --no-default-features --target x86_64-pc-windows-gnu
           cargo --locked clippy -p zbus --no-default-features --target aarch64-linux-android
+          # The proxy and service API can be disabled independently. `--all-targets` covers the
+          # tests, examples and benchmarks, whose `required-features` must match what they use.
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features async-io,blocking-api,p2p
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features async-io,blocking-api,p2p,proxy
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features async-io,blocking-api,p2p,service
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features tokio,p2p,proxy
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features tokio,p2p,service
+          # The service-only fixture has to be built on its own: in a workspace-wide build, the
+          # features of its `zbus` dependency are unified with those of the other members.
+          cargo --locked clippy -p service_only_fixture
 
   linux_test:
     runs-on: ubuntu-latest
@@ -137,7 +152,7 @@ jobs:
           # Test tokio support.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --tests -p zbus --no-default-features \
-              --features tokio-vsock -- --skip fdpass_systemd
+              --features tokio-vsock,proxy,service -- --skip fdpass_systemd
           # Test tokio and async-io enabled together (additive features): the backend is then
           # chosen at run time. `vsock` is included as it pulls in `async-io` alongside `tokio`.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
@@ -148,7 +163,21 @@ jobs:
           # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc -p zbus --no-default-features \
-              --features tokio connection::Connection::executor
+              --features tokio,service connection::Connection::executor
+          # The doc examples with the proxy or service API disabled, with and without the blocking
+          # API.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
+              --features async-io,proxy
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
+              --features async-io,service
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
+              --features async-io,blocking-api,proxy
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
+              --features async-io,blocking-api,service
           # The wire-format-only build. No D-Bus API, so no session bus is needed.
           cargo --locked test --release --verbose -p zbus --no-default-features
           cargo --locked test --release --verbose -p zbus --no-default-features \
@@ -204,7 +233,7 @@ jobs:
           # The tokio-only build. `-p zbus` is load-bearing: a workspace-wide
           # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
           # `--tests` because the doc examples assume the async-io runtime.
-          cargo --locked test -p zbus --no-default-features --features tokio --tests
+          cargo --locked test -p zbus --no-default-features --features tokio,proxy,service --tests
           # The wire-format-only build.
           cargo --locked test -p zbus --no-default-features
           cargo --locked test -p zbus --no-default-features `
@@ -245,6 +274,12 @@ jobs:
         run: cargo --locked doc --all-features -p zbus
       - name: Check wire-format-only documentation build
         run: cargo --locked doc --no-default-features -p zbus
+      - name: Check documentation build with the proxy or service API disabled
+        run: |
+          cargo --locked doc --no-default-features --features async-io,proxy -p zbus
+          cargo --locked doc --no-default-features --features async-io,service -p zbus
+          cargo --locked doc --no-default-features --features async-io,blocking-api,proxy -p zbus
+          cargo --locked doc --no-default-features --features async-io,blocking-api,service -p zbus
       - name: Check zbus_xml documentation build
         run: cargo --locked doc --all-features -p zbus_xml
 

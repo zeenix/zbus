@@ -1443,6 +1443,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "service_only_fixture"
+version = "0.0.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,12 +1,14 @@
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 use std::fmt::Display;
 
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::quote;
-#[cfg(feature = "comms")]
-use syn::{Attribute, FnArg, Ident, Pat, PatIdent, PatType};
+#[cfg(feature = "service")]
+use syn::Attribute;
+#[cfg(any(feature = "proxy", feature = "service"))]
+use syn::{FnArg, Ident, Pat, PatIdent, PatType};
 
 /// Parses the `crate` attribute value into a path.
 #[cfg(feature = "comms")]
@@ -43,7 +45,7 @@ pub fn wire_path() -> TokenStream {
     quote! { #zbus::wire }
 }
 
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 pub fn typed_arg(arg: &FnArg) -> Option<&PatType> {
     match arg {
         FnArg::Typed(t) => Some(t),
@@ -51,7 +53,7 @@ pub fn typed_arg(arg: &FnArg) -> Option<&PatType> {
     }
 }
 
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 pub fn pat_ident(pat: &PatType) -> Option<&Ident> {
     match &*pat.pat {
         Pat::Ident(PatIdent { ident, .. }) => Some(ident),
@@ -59,14 +61,14 @@ pub fn pat_ident(pat: &PatType) -> Option<&Ident> {
     }
 }
 
-#[cfg(feature = "comms")]
+#[cfg(feature = "service")]
 pub fn get_doc_attrs(attrs: &[Attribute]) -> Vec<&Attribute> {
     attrs.iter().filter(|x| x.path().is_ident("doc")).collect()
 }
 
 // Convert to pascal case, assuming snake case.
 // If `s` is already in pascal case, should yield the same result.
-#[cfg(feature = "comms")]
+#[cfg(feature = "service")]
 pub fn pascal_case(s: &str) -> String {
     let mut pascal = String::new();
     let mut capitalize = true;
@@ -83,7 +85,7 @@ pub fn pascal_case(s: &str) -> String {
     pascal
 }
 
-#[cfg(feature = "comms")]
+#[cfg(feature = "service")]
 pub fn is_blank(s: &str) -> bool {
     s.trim().is_empty()
 }
@@ -91,7 +93,7 @@ pub fn is_blank(s: &str) -> bool {
 /// Standard annotation `org.freedesktop.DBus.Property.EmitsChangedSignal`.
 ///
 /// See <https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format>.
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum PropertyEmitsChangedSignal {
     #[default]
@@ -101,7 +103,7 @@ pub enum PropertyEmitsChangedSignal {
     False,
 }
 
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 impl Display for PropertyEmitsChangedSignal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let emits_changed_signal = match self {
@@ -114,7 +116,7 @@ impl Display for PropertyEmitsChangedSignal {
     }
 }
 
-#[cfg(feature = "comms")]
+#[cfg(any(feature = "proxy", feature = "service"))]
 impl PropertyEmitsChangedSignal {
     pub fn parse(s: &str, span: Span) -> syn::Result<Self> {
         use PropertyEmitsChangedSignal::*;

@@ -3,38 +3,58 @@ pub use error::{Error, Result};
 
 pub(crate) mod dbus;
 pub use dbus::{
-    ConnectionCredentials, DBusProxy, NameAcquired, NameAcquiredArgs, NameAcquiredStream, NameLost,
-    NameLostArgs, NameLostStream, NameOwnerChanged, NameOwnerChangedArgs, NameOwnerChangedStream,
-    ReleaseNameReply, RequestNameFlags, RequestNameReply, StartServiceReply,
+    ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply, StartServiceReply,
+};
+#[cfg(feature = "proxy")]
+pub use dbus::{
+    DBusProxy, NameAcquired, NameAcquiredArgs, NameAcquiredStream, NameLost, NameLostArgs,
+    NameLostStream, NameOwnerChanged, NameOwnerChangedArgs, NameOwnerChangedStream,
 };
 
+#[cfg(any(feature = "proxy", feature = "service"))]
 pub(crate) mod introspectable;
+#[cfg(feature = "service")]
 pub(crate) use introspectable::Introspectable;
+#[cfg(feature = "proxy")]
 pub use introspectable::IntrospectableProxy;
 
+#[cfg(feature = "proxy")]
 pub(crate) mod monitoring;
+#[cfg(feature = "proxy")]
 pub use monitoring::MonitoringProxy;
 
 pub(crate) mod object_manager;
+pub use object_manager::ManagedObjects;
+#[cfg(feature = "service")]
+pub use object_manager::ObjectManager;
+#[cfg(feature = "proxy")]
 pub use object_manager::{
     InterfacesAdded, InterfacesAddedArgs, InterfacesAddedStream, InterfacesRemoved,
-    InterfacesRemovedArgs, InterfacesRemovedStream, ManagedObjects, ObjectManager,
-    ObjectManagerProxy,
+    InterfacesRemovedArgs, InterfacesRemovedStream, ObjectManagerProxy,
 };
 
+#[cfg(any(feature = "proxy", feature = "service"))]
 pub(crate) mod peer;
+#[cfg(feature = "service")]
 pub(crate) use peer::Peer;
+#[cfg(feature = "proxy")]
 pub use peer::PeerProxy;
 
+#[cfg(any(feature = "proxy", feature = "service"))]
 pub(crate) mod properties;
+#[cfg(feature = "service")]
+pub use properties::Properties;
+#[cfg(feature = "proxy")]
 pub use properties::{
-    Properties, PropertiesChanged, PropertiesChangedArgs, PropertiesChangedStream, PropertiesProxy,
+    PropertiesChanged, PropertiesChangedArgs, PropertiesChangedStream, PropertiesProxy,
 };
 
+#[cfg(feature = "proxy")]
 pub(crate) mod stats;
+#[cfg(feature = "proxy")]
 pub use stats::StatsProxy;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "proxy", feature = "service"))]
 mod tests {
     use crate::{DBusError, Error, fdo, interface, message::Message, names::WellKnownName};
     use futures_util::StreamExt;

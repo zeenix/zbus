@@ -46,7 +46,7 @@ impl MyIface {
     #[instrument]
     async fn ping(&mut self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> u32 {
         self.count += 1;
-        if self.count % 3 == 0 {
+        if self.count.is_multiple_of(3) {
             emitter
                 .alert_count(self.count)
                 .await

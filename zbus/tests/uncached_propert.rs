@@ -1,4 +1,4 @@
-#![cfg(feature = "comms")]
+#![cfg(all(feature = "proxy", feature = "service"))]
 
 use ntest::timeout;
 use test_log::test;

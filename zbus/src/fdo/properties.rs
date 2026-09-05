@@ -5,25 +5,24 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
-use super::{Error, Result};
+#[cfg(feature = "service")]
+use super::Error;
+use super::Result;
+#[cfg(feature = "service")]
+use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
 use crate::{
-    Connection, ObjectServer, interface,
-    message::Header,
     names::InterfaceName,
-    object_server::SignalEmitter,
     wire::{OwnedValue, Value},
 };
 
 /// Service-side implementation for the `org.freedesktop.DBus.Properties` interface.
 /// This interface is implemented automatically for any object registered to the
 /// [ObjectServer].
+#[cfg(feature = "service")]
 pub struct Properties;
 
-#[interface(
-    name = "org.freedesktop.DBus.Properties",
-    introspection_docs = false,
-    proxy(visibility = "pub")
-)]
+#[cfg(feature = "service")]
+#[interface(name = "org.freedesktop.DBus.Properties", introspection_docs = false)]
 impl Properties {
     /// Get a property value.
     async fn get(
@@ -148,6 +147,34 @@ impl Properties {
     #[rustfmt::skip]
     pub async fn properties_changed(
         emitter: &SignalEmitter<'_>,
+        interface_name: InterfaceName<'_>,
+        changed_properties: HashMap<&str, Value<'_>>,
+        invalidated_properties: Cow<'_, [&str]>,
+    ) -> zbus::Result<()>;
+}
+
+/// Proxy for the `org.freedesktop.DBus.Properties` interface.
+#[cfg(feature = "proxy")]
+#[crate::proxy(interface = "org.freedesktop.DBus.Properties")]
+pub trait Properties {
+    /// Get a property value.
+    fn get(&self, interface_name: InterfaceName<'_>, property_name: &str) -> Result<OwnedValue>;
+
+    /// Set a property value.
+    fn set(
+        &self,
+        interface_name: InterfaceName<'_>,
+        property_name: &str,
+        value: &Value<'_>,
+    ) -> Result<()>;
+
+    /// Get all properties.
+    fn get_all(&self, interface_name: InterfaceName<'_>) -> Result<HashMap<String, OwnedValue>>;
+
+    /// Emit the `org.freedesktop.DBus.Properties.PropertiesChanged` signal.
+    #[zbus(signal)]
+    fn properties_changed(
+        &self,
         interface_name: InterfaceName<'_>,
         changed_properties: HashMap<&str, Value<'_>>,
         invalidated_properties: Cow<'_, [&str]>,

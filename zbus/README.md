@@ -28,7 +28,7 @@ That build compiles `zbus::wire` and `zbus::names` and nothing else — no conne
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
 `chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
 and enabling any D-Bus feature (`comms`, `async-io`, `tokio`, `blocking-api`, `p2p`,
-`bus-impl`, `vsock`, `tokio-vsock`) brings the full API back.
+`bus-impl`, `vsock`, `tokio-vsock`, `proxy`, `service`) brings the D-Bus API back.
 
 ## Example code
 
@@ -117,6 +117,13 @@ async fn main() -> Result<()> {
 While zbus is primarily asynchronous (since 2.0), [blocking wrappers][bw] are provided for
 convenience. Since zbus 5.0, blocking API can be disabled by disabling the `blocking-api` cargo
 feature.
+
+## Proxy and service API
+
+Since zbus 6.0, the client-side proxy API and the service-side object server API live behind the
+`proxy` and `service` cargo features, respectively. Both are enabled by default. If you are
+writing a pure service or a pure client, you can disable the API you don't need to reduce the
+size of your binary.
 
 ## Compatibility with async runtimes
 

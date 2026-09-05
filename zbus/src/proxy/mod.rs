@@ -1381,7 +1381,7 @@ enum Either<L, R> {
     Right(R),
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "service"))]
 mod tests {
     use super::*;
     use crate::{connection, interface, object_server::SignalEmitter, proxy, utils::block_on};

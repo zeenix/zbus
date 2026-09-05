@@ -31,7 +31,14 @@ use crate::{
 /// this trait. The [`crate::interface`] macro implements it for you.
 ///
 /// If you have an advanced use case where `interface` is inadequate, consider using
-/// [`crate::MessageStream`] or [`crate::blocking::MessageIterator`] instead.
+#[cfg_attr(
+    feature = "blocking-api",
+    doc = "[`crate::MessageStream`] or [`crate::blocking::MessageIterator`] instead."
+)]
+#[cfg_attr(
+    not(feature = "blocking-api"),
+    doc = "[`crate::MessageStream`] instead."
+)]
 #[async_trait]
 pub trait Interface: Any + Send + Sync {
     /// Return the name of the interface. Ex: "org.foo.MyInterface"

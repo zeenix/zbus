@@ -12,13 +12,17 @@ use std::{
     },
     time::Duration,
 };
-use tracing::{Instrument, debug, info_span, instrument, trace, trace_span, warn};
+use tracing::{Instrument, info_span, trace, trace_span, warn};
+#[cfg(feature = "service")]
+use tracing::{debug, instrument};
 
 use futures_lite::StreamExt;
 use ordered_stream::OrderedFuture;
 
+#[cfg(feature = "service")]
+use crate::ObjectServer;
 use crate::{
-    DBusError, Error, Executor, MatchRule, ObjectServer, OwnedGuid, OwnedMatchRule, Result, Task,
+    DBusError, Error, Executor, MatchRule, OwnedGuid, OwnedMatchRule, Result, Task,
     async_lock::{Mutex, Semaphore, SemaphorePermit},
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
     is_flatpak,
@@ -73,7 +77,9 @@ pub(crate) struct ConnectionInner {
 
     subscriptions: Mutex<Subscriptions>,
 
+    #[cfg(feature = "service")]
     object_server: OnceLock<ObjectServer>,
+    #[cfg(feature = "service")]
     object_server_dispatch_task: OnceLock<Task<()>>,
 
     drop_event: Event,
@@ -105,13 +111,30 @@ pub(crate) type MsgBroadcaster = Broadcaster<Result<Message>>;
 ///
 /// For higher-level message handling (typed functions, introspection, documentation reasons etc),
 /// it is recommended to wrap the low-level D-Bus messages into Rust functions with the
-/// [`macro@crate::proxy`] and [`macro@crate::interface`] macros instead of doing it directly on a
-/// `Connection`.
+#[cfg_attr(
+    all(feature = "proxy", feature = "service"),
+    doc = "[`macro@crate::proxy`] and [`macro@crate::interface`] macros instead of doing it",
+    doc = "directly on a `Connection`."
+)]
+#[cfg_attr(
+    not(all(feature = "proxy", feature = "service")),
+    doc = "`proxy` and `interface` macros (requiring the `proxy` and `service` features",
+    doc = "respectively) instead of doing it directly on a `Connection`."
+)]
 ///
 /// Typically, a connection is made to the session bus with [`Connection::session`], or to the
-/// system bus with [`Connection::system`]. Then the connection is used with [`crate::Proxy`]
-/// instances or the on-demand [`ObjectServer`] instance that can be accessed through
-/// [`Connection::object_server`].
+#[cfg_attr(
+    all(feature = "proxy", feature = "service"),
+    doc = "system bus with [`Connection::system`]. Then the connection is used with",
+    doc = "[`crate::Proxy`] instances or the on-demand [`ObjectServer`] instance that can be",
+    doc = "accessed through [`Connection::object_server`]."
+)]
+#[cfg_attr(
+    not(all(feature = "proxy", feature = "service")),
+    doc = "system bus with [`Connection::system`]. Then the connection is used with `Proxy`",
+    doc = "instances (requires the `proxy` feature) or the on-demand `ObjectServer` instance that",
+    doc = "can be accessed through `Connection::object_server` (requires the `service` feature)."
+)]
 ///
 /// `Connection` implements [`Clone`] and cloning it is a very cheap operation, as the underlying
 /// data is not cloned. This makes it very convenient to share the connection between different
@@ -121,9 +144,17 @@ pub(crate) type MsgBroadcaster = Broadcaster<Result<Message>>;
 /// `Connection` keeps internal queues of incoming message. The default capacity of each of these is
 /// 64. The capacity of the main (unfiltered) queue is configurable through the [`set_max_queued`]
 /// method. When the queue is full, no more messages can be received until room is created for more.
-/// This is why it's important to ensure that all [`crate::MessageStream`] and
-/// [`crate::blocking::MessageIterator`] instances are continuously polled and iterated on,
-/// respectively.
+#[cfg_attr(
+    feature = "blocking-api",
+    doc = "This is why it's important to ensure that all [`crate::MessageStream`] and",
+    doc = "[`crate::blocking::MessageIterator`] instances are continuously polled and iterated on,",
+    doc = "respectively."
+)]
+#[cfg_attr(
+    not(feature = "blocking-api"),
+    doc = "This is why it's important to ensure that all [`crate::MessageStream`] instances are",
+    doc = "continuously polled."
+)]
 ///
 /// For sending messages you can use the [`Connection::send`] method.
 ///
@@ -475,19 +506,35 @@ impl Connection {
     ///
     /// This is the same as [`Connection::request_name`] but allows to specify the flags to use when
     /// requesting the name.
-    ///
-    /// If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up in the
-    /// queue, you can use [`crate::fdo::NameAcquiredStream`] to be notified when the name is
-    /// acquired. A queued name request can be cancelled using [`Connection::release_name`].
-    ///
-    /// If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name can be
-    /// lost if another peer requests the same name. You can use [`crate::fdo::NameLostStream`] to
-    /// be notified when the name is lost
+    #[cfg_attr(
+        feature = "proxy",
+        doc = "If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up",
+        doc = "in the queue, you can use [`crate::fdo::NameAcquiredStream`] to be notified when",
+        doc = "the name is acquired. A queued name request can be cancelled using",
+        doc = "[`Connection::release_name`].",
+        doc = "",
+        doc = "If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name",
+        doc = "can be lost if another peer requests the same name. You can use",
+        doc = "[`crate::fdo::NameLostStream`] to be notified when the name is lost"
+    )]
+    #[cfg_attr(
+        not(feature = "proxy"),
+        doc = "If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up",
+        doc = "in the queue, you can use `fdo::NameAcquiredStream` (requires the `proxy` feature)",
+        doc = "to be notified when the name is acquired. A queued name request can be cancelled",
+        doc = "using [`Connection::release_name`].",
+        doc = "",
+        doc = "If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name",
+        doc = "can be lost if another peer requests the same name. You can use",
+        doc = "`fdo::NameLostStream` (requires the `proxy` feature) to be notified when the name",
+        doc = "is lost"
+    )]
     ///
     /// # Example
     ///
     /// ```
-    /// #
+    /// # // The example waits for name acquisition and loss through the `DBusProxy` signals.
+    /// # #[cfg(feature = "proxy")]
     /// # zbus::block_on(async {
     /// use zbus::{Connection, fdo::{DBusProxy, RequestNameFlags, RequestNameReply}};
     /// use enumflags2::BitFlags;
@@ -540,10 +587,22 @@ impl Connection {
     /// # Caveats
     ///
     /// * Same as that of [`Connection::request_name`].
-    /// * If you wish to track changes to name ownership after this call, make sure that the
-    ///   [`crate::fdo::NameAcquired`] and/or [`crate::fdo::NameLostStream`] instance(s) are created
-    ///   **before** calling this method. Otherwise, you may loose the signal if it's emitted after
-    ///   this call but just before the stream instance get created.
+    #[cfg_attr(
+        feature = "proxy",
+        doc = "* If you wish to track changes to name ownership after this call, make sure that",
+        doc = "  the [`crate::fdo::NameAcquiredStream`] and/or [`crate::fdo::NameLostStream`]",
+        doc = "  instance(s) are created **before** calling this method. Otherwise, you may loose",
+        doc = "  the signal if it's emitted after this call but just before the stream instance",
+        doc = "  get created."
+    )]
+    #[cfg_attr(
+        not(feature = "proxy"),
+        doc = "* If you wish to track changes to name ownership after this call, make sure that",
+        doc = "  the `fdo::NameAcquiredStream` and/or `fdo::NameLostStream` instance(s) (requiring",
+        doc = "  the `proxy` feature) are created **before** calling this method. Otherwise, you",
+        doc = "  may loose the signal if it's emitted after this call but just before the stream",
+        doc = "  instance get created."
+    )]
     pub async fn request_name_with_flags<'w, W>(
         &self,
         well_known_name: W,
@@ -557,6 +616,7 @@ impl Connection {
 
         // Warn if requesting a name before setting up the object server, as this can cause
         // method calls to be lost.
+        #[cfg(feature = "service")]
         if self.is_bus() && self.inner.object_server.get().is_none() {
             warn!(
                 "Requesting name `{well_known_name}` before setting up the object server. \
@@ -823,23 +883,21 @@ impl Connection {
     /// use zbus::connection::Builder;
     /// use tokio::task::spawn;
     ///
+    /// # #[cfg(feature = "service")]
     /// # struct SomeIface;
     /// #
+    /// # #[cfg(feature = "service")]
     /// # #[zbus::interface]
     /// # impl SomeIface {
     /// # }
     /// #
     /// #[tokio::main]
     /// async fn main() {
-    ///     let conn = Builder::session()
-    ///         .unwrap()
-    ///         .internal_executor(false)
-    /// #         // This is only for testing a deadlock that used to happen with this combo.
-    /// #         .serve_at("/some/iface", SomeIface)
-    /// #         .unwrap()
-    ///         .build()
-    ///         .await
-    ///         .unwrap();
+    ///     let builder = Builder::session().unwrap().internal_executor(false);
+    /// #   // This is only for testing a deadlock that used to happen with this combo.
+    /// #   #[cfg(feature = "service")]
+    /// #   let builder = builder.serve_at("/some/iface", SomeIface).unwrap();
+    ///     let conn = builder.build().await.unwrap();
     ///     {
     ///        let conn = conn.clone();
     ///        spawn(async move {
@@ -871,16 +929,19 @@ impl Connection {
     /// **Note**: Once the `ObjectServer` is created, it will be replying to all method calls
     /// received on `self`. If you want to manually reply to method calls, do not use this
     /// method (or any of the `ObjectServer` related API).
+    #[cfg(feature = "service")]
     pub fn object_server(&self) -> &ObjectServer {
         self.ensure_object_server(true)
     }
 
+    #[cfg(feature = "service")]
     pub(crate) fn ensure_object_server(&self, start: bool) -> &ObjectServer {
         self.inner
             .object_server
             .get_or_init(move || self.setup_object_server(start, None))
     }
 
+    #[cfg(feature = "service")]
     fn setup_object_server(&self, start: bool, started_event: Option<Event>) -> ObjectServer {
         if start {
             self.start_object_server(started_event);
@@ -889,6 +950,7 @@ impl Connection {
         ObjectServer::new(self)
     }
 
+    #[cfg(feature = "service")]
     #[instrument(skip(self))]
     pub(crate) fn start_object_server(&self, started_event: Option<Event>) {
         self.inner.object_server_dispatch_task.get_or_init(|| {
@@ -1120,7 +1182,9 @@ impl Connection {
                 bus_conn: bus_connection,
                 unique_name: OnceLock::new(),
                 subscriptions,
+                #[cfg(feature = "service")]
                 object_server: OnceLock::new(),
+                #[cfg(feature = "service")]
                 object_server_dispatch_task: OnceLock::new(),
                 executor,
                 socket_reader_task: OnceLock::new(),
@@ -1249,17 +1313,26 @@ impl Connection {
     /// # Example
     ///
     /// ```
+    /// # #[cfg(feature = "service")]
     /// # use std::error::Error;
+    /// # #[cfg(feature = "service")]
     /// # use zbus::connection::Builder;
+    /// # #[cfg(feature = "service")]
     /// # use zbus::interface;
     /// #
+    /// # #[cfg(feature = "service")]
     /// # struct MyInterface;
     /// #
+    /// # #[cfg(feature = "service")]
     /// # #[interface(name = "foo.bar.baz")]
     /// # impl MyInterface {
     /// #     async fn do_thing(&self) {}
     /// # }
     /// #
+    /// # // The example serves an interface, which needs the `service` feature.
+    /// # #[cfg(not(feature = "service"))]
+    /// # fn main() {}
+    /// # #[cfg(feature = "service")]
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn Error>> {
     /// let conn = Builder::session()?
@@ -1367,10 +1440,15 @@ async fn acquire_serial_num_semaphore() -> Option<SemaphorePermit<'static>> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "service")]
     use super::*;
+    #[cfg(all(feature = "proxy", feature = "service"))]
     use crate::fdo::DBusProxy;
+    #[cfg(feature = "service")]
     use ntest::timeout;
+    #[cfg(feature = "service")]
     use std::{pin::pin, time::Duration};
+    #[cfg(all(feature = "proxy", feature = "service"))]
     use test_log::test;
 
     #[cfg(windows)]
@@ -1395,6 +1473,7 @@ mod tests {
         .expect("Unable to connect to session bus");
     }
 
+    #[cfg(all(feature = "proxy", feature = "service"))]
     #[test]
     #[timeout(15000)]
     fn disconnect_on_drop() {
@@ -1403,6 +1482,7 @@ mod tests {
         crate::utils::block_on(test_disconnect_on_drop());
     }
 
+    #[cfg(all(feature = "proxy", feature = "service"))]
     async fn test_disconnect_on_drop() {
         #[derive(Default)]
         struct MyInterface {}
@@ -1439,6 +1519,7 @@ mod tests {
         assert!(!name_has_owner);
     }
 
+    #[cfg(feature = "service")]
     #[tokio::test(start_paused = true)]
     #[timeout(15000)]
     async fn test_graceful_shutdown() {

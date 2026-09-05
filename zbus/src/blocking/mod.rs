@@ -11,8 +11,17 @@
 //!
 //! Since methods provided by these types run their own little runtime (`block_on`), you must not
 //! use them in async contexts because of the infamous [async sandwich footgun][asf]. This is
-//! an especially important fact to keep in mind for [`crate::interface`]. While `interface` allows
-//! non-async methods for convenience, these methods are called from an async context. The
+#![cfg_attr(
+    feature = "service",
+    doc = " an especially important fact to keep in mind for [`crate::interface`]. While",
+    doc = " `interface`"
+)]
+#![cfg_attr(
+    not(feature = "service"),
+    doc = " an especially important fact to keep in mind for the `interface` macro (requires the",
+    doc = " `service` feature). While `interface`"
+)]
+//! allows non-async methods for convenience, these methods are called from an async context. The
 //! [`blocking` crate] provides an easy way around this problem though.
 //!
 //! [asf]: https://rust-lang.github.io/wg-async/vision/shiny_future/users_manual.html#caveat-beware-the-async-sandwich
@@ -25,9 +34,14 @@ pub use connection::Connection;
 
 mod message_iterator;
 pub use message_iterator::*;
+#[cfg(feature = "service")]
 pub mod object_server;
+#[cfg(feature = "service")]
 pub use object_server::ObjectServer;
+#[cfg(feature = "proxy")]
 pub mod proxy;
+#[cfg(feature = "proxy")]
 pub use proxy::Proxy;
 
+#[cfg(feature = "proxy")]
 pub mod fdo;
