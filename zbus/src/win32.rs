@@ -9,6 +9,8 @@ use std::{
     ptr,
 };
 
+#[cfg(feature = "service")]
+use windows_sys::Win32::System::WindowsProgramming::{GetCurrentHwProfileA, HW_PROFILE_INFOA};
 use windows_sys::Win32::{
     Foundation::{
         ERROR_INSUFFICIENT_BUFFER, FALSE, HANDLE, LocalFree, NO_ERROR, WAIT_ABANDONED,
@@ -27,7 +29,6 @@ use windows_sys::Win32::{
             PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_LIMITED_INFORMATION, ReleaseMutex,
             WaitForSingleObject,
         },
-        WindowsProgramming::{GetCurrentHwProfileA, HW_PROFILE_INFOA},
     },
 };
 
@@ -320,6 +321,7 @@ pub fn autolaunch_bus_address() -> Result<Address, crate::Error> {
 /// Get the machine ID using the hardware profile GUID.
 ///
 /// As per the D-Bus specification, on Windows we use the `GetCurrentHwProfile` API.
+#[cfg(feature = "service")]
 pub fn machine_id() -> Result<String, Error> {
     let mut hw_profile: HW_PROFILE_INFOA = unsafe { std::mem::zeroed() };
 
@@ -353,6 +355,7 @@ mod tests {
         assert!(!sid.is_empty());
     }
 
+    #[cfg(feature = "service")]
     #[test]
     fn machine_id() {
         let id = super::machine_id().expect("machine_id should succeed");

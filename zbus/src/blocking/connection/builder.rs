@@ -10,9 +10,10 @@ use uds_windows::UnixStream as AsyncIoUnixStream;
 use crate::Guid;
 use crate::{
     Error, Result, address::Address, blocking::Connection, conn::AuthMechanism,
-    connection::socket::BoxedSplit, names::WellKnownName, object_server::Interface,
-    utils::block_on, wire::ObjectPath,
+    connection::socket::BoxedSplit, names::WellKnownName, utils::block_on,
 };
+#[cfg(feature = "service")]
+use crate::{object_server::Interface, wire::ObjectPath};
 
 /// A builder for [`zbus::blocking::Connection`].
 #[derive(Debug)]
@@ -215,6 +216,7 @@ impl<'a> Builder<'a> {
     /// your interfaces available immediately after the connection is established. Typically, this
     /// is exactly what you'd want. Also in contrast to [`zbus::blocking::ObjectServer::at`], this
     /// method will replace any previously added interface with the same name at the same path.
+    #[cfg(feature = "service")]
     pub fn serve_at<P, I>(self, path: P, iface: I) -> Result<Self>
     where
         I: Interface,
@@ -228,7 +230,15 @@ impl<'a> Builder<'a> {
     ///
     /// This is similar to [`zbus::blocking::Connection::request_name`], except the name is
     /// requested as part of the connection setup ([`Builder::build`]), immediately after
-    /// interfaces registered (through [`Builder::serve_at`]) are advertised. Typically
+    #[cfg_attr(
+        feature = "service",
+        doc = "interfaces registered (through [`Builder::serve_at`]) are advertised. Typically"
+    )]
+    #[cfg_attr(
+        not(feature = "service"),
+        doc = "interfaces registered (through `Builder::serve_at`, which requires the `service`",
+        doc = "feature) are advertised. Typically"
+    )]
     /// this is exactly what you want.
     pub fn name<W>(self, well_known_name: W) -> Result<Self>
     where

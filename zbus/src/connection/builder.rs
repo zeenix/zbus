@@ -2,11 +2,11 @@ use async_broadcast::Receiver as ActiveReceiver;
 #[cfg(feature = "async-io")]
 use async_io::Async;
 use enumflags2::BitFlags;
+#[cfg(feature = "service")]
 use event_listener::Event;
-use std::{
-    collections::{HashMap, HashSet},
-    mem, vec,
-};
+#[cfg(feature = "service")]
+use std::collections::HashMap;
+use std::{collections::HashSet, mem, vec};
 
 // Feature-independent stream types for the `async_io_*_stream` builders: these always take the
 // blocking/`async-io` stream, so enabling `tokio` elsewhere can't change what they accept.
@@ -24,7 +24,11 @@ use crate::{
     address::{self, Address},
     fdo::RequestNameFlags,
     message::Message,
-    names::{InterfaceName, WellKnownName},
+    names::WellKnownName,
+};
+#[cfg(feature = "service")]
+use crate::{
+    names::InterfaceName,
     object_server::{ArcInterface, Interface},
     wire::ObjectPath,
 };
@@ -55,6 +59,7 @@ enum Target {
     AuthenticatedSocket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
 }
 
+#[cfg(feature = "service")]
 type Interfaces<'a> = HashMap<ObjectPath<'a>, HashMap<InterfaceName<'static>, ArcInterface>>;
 
 /// A builder for [`zbus::Connection`].
@@ -87,6 +92,7 @@ pub struct Builder<'a> {
     #[cfg(feature = "p2p")]
     p2p: bool,
     internal_executor: bool,
+    #[cfg(feature = "service")]
     interfaces: Interfaces<'a>,
     names: HashSet<WellKnownName<'a>>,
     auth_mechanism: Option<AuthMechanism>,
@@ -392,6 +398,7 @@ impl<'a> Builder<'a> {
     ///
     /// Standard interfaces (Peer, Introspectable, Properties) are added on your behalf. If you
     /// attempt to add yours, [`Builder::build()`] will fail.
+    #[cfg(feature = "service")]
     pub fn serve_at<P, I>(mut self, path: P, iface: I) -> Result<Self>
     where
         I: Interface,
@@ -408,7 +415,15 @@ impl<'a> Builder<'a> {
     ///
     /// This is similar to [`zbus::Connection::request_name`], except the name is requested as part
     /// of the connection setup ([`Builder::build`]), immediately after interfaces
-    /// registered (through [`Builder::serve_at`]) are advertised. Typically this is
+    #[cfg_attr(
+        feature = "service",
+        doc = "registered (through [`Builder::serve_at`]) are advertised. Typically this is"
+    )]
+    #[cfg_attr(
+        not(feature = "service"),
+        doc = "registered (through `Builder::serve_at`, which requires the `service` feature) are",
+        doc = "advertised. Typically this is"
+    )]
     /// exactly what you want.
     ///
     /// The methods [`Builder::allow_name_replacements`] and [`Builder::replace_existing_names`]
@@ -591,6 +606,7 @@ impl<'a> Builder<'a> {
         let mut conn = Connection::new(auth, is_bus_conn, executor, self.method_timeout).await?;
         conn.set_max_queued(self.max_queued.unwrap_or(DEFAULT_MAX_QUEUED));
 
+        #[cfg(feature = "service")]
         if !self.interfaces.is_empty() {
             let object_server = conn.ensure_object_server(false);
             for (path, interfaces) in self.interfaces {
@@ -639,6 +655,7 @@ impl<'a> Builder<'a> {
             max_queued: None,
             guid: None,
             internal_executor: true,
+            #[cfg(feature = "service")]
             interfaces: HashMap::new(),
             names: HashSet::new(),
             auth_mechanism: None,

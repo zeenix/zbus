@@ -17,12 +17,14 @@ categories = ["data-structures", "encoding", "parsing"]
 readme = "README.md"
 
 [features]
-default = ["comms", "proxy"]
-# The D-Bus macro infrastructure, the `interface` macro and the `DBusError` derive (default). The
-# wire-format derives are always compiled.
+default = ["comms", "proxy", "service"]
+# The D-Bus macro infrastructure and the `DBusError` derive (default). The wire-format derives
+# are always compiled.
 comms = ["syn/fold"]
 # The `proxy` macro and proxy generation from the `interface` macro (default).
 proxy = ["comms"]
+# The `interface` macro (default).
+service = ["comms"]
 
 [lib]
 proc-macro = true

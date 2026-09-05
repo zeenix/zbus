@@ -3,18 +3,24 @@
 //! The D-Bus specification defines the message bus messages and some standard interfaces that may
 //! be useful across various D-Bus applications. This module provides their proxy.
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-};
+#[cfg(any(feature = "proxy", feature = "service"))]
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 
-use super::{Error, Result};
+#[cfg(feature = "service")]
+use super::Error;
+#[cfg(any(feature = "proxy", feature = "service"))]
+use super::Result;
+#[cfg(feature = "service")]
+use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
+#[cfg(any(feature = "proxy", feature = "service"))]
 use crate::{
-    Connection, ObjectServer, interface,
-    message::Header,
-    names::{InterfaceName, OwnedInterfaceName},
-    object_server::SignalEmitter,
-    wire::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
+    names::InterfaceName,
+    wire::{ObjectPath, Value},
+};
+use crate::{
+    names::OwnedInterfaceName,
+    wire::{OwnedObjectPath, OwnedValue},
 };
 
 #[cfg_attr(
@@ -89,9 +95,11 @@ pub type ManagedObjects =
 /// ```
 ///
 /// [om]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
+#[cfg(feature = "service")]
 #[derive(Debug, Clone)]
 pub struct ObjectManager;
 
+#[cfg(feature = "service")]
 #[interface(
     name = "org.freedesktop.DBus.ObjectManager",
     introspection_docs = false

@@ -2,11 +2,14 @@
 
 use enumflags2::BitFlags;
 use event_listener::EventListener;
-use std::{io, ops::Deref, sync::Arc};
+#[cfg(feature = "service")]
+use std::ops::Deref;
+use std::{io, sync::Arc};
 
+#[cfg(feature = "service")]
+use crate::blocking::ObjectServer;
 use crate::{
     DBusError, Error, Result,
-    blocking::ObjectServer,
     fdo::{ConnectionCredentials, RequestNameFlags, RequestNameReply},
     message::Message,
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
@@ -220,6 +223,7 @@ impl Connection {
     /// Get a reference to the associated [`ObjectServer`].
     ///
     /// The `ObjectServer` is created on-demand.
+    #[cfg(feature = "service")]
     pub fn object_server(&self) -> impl Deref<Target = ObjectServer> + '_ {
         struct Wrapper(ObjectServer);
         impl Deref for Wrapper {

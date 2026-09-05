@@ -5,20 +5,23 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
-use super::{Error, Result};
+#[cfg(feature = "service")]
+use super::Error;
+use super::Result;
+#[cfg(feature = "service")]
+use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
 use crate::{
-    Connection, ObjectServer, interface,
-    message::Header,
     names::InterfaceName,
-    object_server::SignalEmitter,
     wire::{OwnedValue, Value},
 };
 
 /// Service-side implementation for the `org.freedesktop.DBus.Properties` interface.
 /// This interface is implemented automatically for any object registered to the
 /// [ObjectServer].
+#[cfg(feature = "service")]
 pub struct Properties;
 
+#[cfg(feature = "service")]
 #[interface(name = "org.freedesktop.DBus.Properties", introspection_docs = false)]
 impl Properties {
     /// Get a property value.

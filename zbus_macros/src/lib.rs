@@ -13,14 +13,18 @@
 
 use proc_macro::TokenStream;
 use syn::DeriveInput;
+#[cfg(feature = "service")]
+use syn::ItemImpl;
 #[cfg(feature = "proxy")]
 use syn::ItemTrait;
 #[cfg(feature = "comms")]
-use syn::{ItemImpl, Meta, Token, parse_macro_input, punctuated::Punctuated};
+use syn::parse_macro_input;
+#[cfg(any(feature = "proxy", feature = "service"))]
+use syn::{Meta, Token, punctuated::Punctuated};
 
 #[cfg(feature = "comms")]
 mod error;
-#[cfg(feature = "comms")]
+#[cfg(feature = "service")]
 mod iface;
 #[cfg(feature = "proxy")]
 mod proxy;
@@ -417,7 +421,7 @@ pub fn proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// [`SignalEmitter`]: https://docs.rs/zbus/latest/zbus/object_server/struct.SignalEmitter.html
 /// [`Interface`]: https://docs.rs/zbus/latest/zbus/object_server/trait.Interface.html
 /// [dbus_emits_changed_signal]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
-#[cfg(feature = "comms")]
+#[cfg(feature = "service")]
 #[proc_macro_attribute]
 pub fn interface(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated<Meta, Token![,]>::parse_terminated);

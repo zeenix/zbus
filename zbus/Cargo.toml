@@ -13,7 +13,7 @@ categories = ["os::unix-apis"]
 readme = "README.md"
 
 [features]
-default = ["async-io", "blocking-api", "proxy"]
+default = ["async-io", "blocking-api", "proxy", "service"]
 
 # Wire-format optional impls — the former zvariant features, same names.
 arrayvec = ["dep:arrayvec"]
@@ -68,6 +68,8 @@ tokio-vsock = ["dep:tokio-vsock", "tokio"]
 blocking-api = ["comms"]
 # The client-side (proxy) API (default).
 proxy = ["comms", "zbus_macros/proxy"]
+# The service-side (object server) API (default).
+service = ["comms", "zbus_macros/service"]
 # Enables API that is only needed for peer-to-peer (p2p) connections.
 p2p = ["comms", "uuid?/v4"]
 # Enables API that is only needed for bus implementations (enables `p2p`).
@@ -215,7 +217,7 @@ required-features = ["comms"]
 [[bench]]
 name = "concurrent_method_calls"
 harness = false
-required-features = ["p2p"]
+required-features = ["p2p", "service"]
 
 [[bench]]
 name = "names"
