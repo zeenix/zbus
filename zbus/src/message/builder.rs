@@ -178,7 +178,7 @@ impl<'a> Builder<'a> {
 
         let signature = body.signature();
 
-        self.build_generic(signature, body_size, move |cursor| {
+        self.build_generic(signature, body_size, &mut move |cursor| {
             // SAFETY: build_generic puts FDs and the body in the same Message.
             unsafe { crate::wire::to_writer(cursor, ctxt, body) }.map(|s| {
                 #[cfg(unix)]
@@ -217,30 +217,29 @@ impl<'a> Builder<'a> {
             body_size.set_num_fds(num_fds)
         };
 
-        self.build_generic(
-            signature,
-            body_size,
-            move |cursor: &mut Cursor<&mut Vec<u8>>| {
-                cursor.write_all(body_bytes)?;
+        #[cfg(unix)]
+        let mut fds = Some(fds);
+        let mut write_body = move |cursor: &mut Cursor<&mut Vec<u8>>| {
+            cursor.write_all(body_bytes)?;
 
-                #[cfg(unix)]
-                return Ok::<Vec<OwnedFd>, Error>(fds);
+            #[cfg(unix)]
+            return Ok::<Vec<OwnedFd>, Error>(fds.take().unwrap_or_default());
 
-                #[cfg(not(unix))]
-                return Ok::<(), Error>(());
-            },
-        )
+            #[cfg(not(unix))]
+            return Ok::<(), Error>(());
+        };
+
+        self.build_generic(signature, body_size, &mut write_body)
     }
 
-    fn build_generic<WriteFunc>(
+    /// The body writer is a trait object so that this function is compiled once rather than once
+    /// per body type.
+    fn build_generic(
         self,
         signature: Signature,
         body_size: serialized::Size,
-        write_body: WriteFunc,
-    ) -> Result<Message>
-    where
-        WriteFunc: FnOnce(&mut Cursor<&mut Vec<u8>>) -> Result<BuildGenericResult>,
-    {
+        write_body: &mut dyn FnMut(&mut Cursor<&mut Vec<u8>>) -> Result<BuildGenericResult>,
+    ) -> Result<Message> {
         let ctxt = dbus_context!(self, 0);
         let mut header = self.header;
 
