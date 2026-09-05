@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_ibus_default() {
-        let ibus = Ibus::default();
+        let ibus: Ibus = Default::default();
         assert_eq!(ibus.to_string(), "ibus:");
     }
 
