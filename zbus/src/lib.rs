@@ -75,12 +75,23 @@ mod error;
 pub use error::*;
 
 pub mod wire;
+#[doc(inline)]
+pub use wire::{
+    Array, Basic, DeserializeDict, Dict, DynamicTuple, DynamicType, FilePath, NoneValue,
+    ObjectPath, Optional, OwnedObjectPath, OwnedStructure, OwnedValue, SerializeDict, Signature,
+    Str, Structure, Type, Value, as_value,
+};
+#[cfg(unix)]
+#[doc(inline)]
+pub use wire::{Fd, OwnedFd};
+#[doc(inline)]
+pub use zbus_macros::signature;
 
 pub mod names;
 
 #[deprecated(
     since = "6.0.0",
-    note = "zvariant was merged into zbus; use `zbus::wire`"
+    note = "zvariant was merged into zbus; use `zbus` for types, `zbus::wire` for codecs"
 )]
 pub mod zvariant;
 

@@ -3,6 +3,9 @@
 //! This module encodes and decodes data to and from the [D-Bus wire format][dwf]. The format is
 //! simple and very efficient, which makes it useful outside of a D-Bus context as well.
 //!
+//! Commonly used types and traits are re-exported at the [`crate`] root. This module contains the
+//! lower-level encoding and decoding API.
+//!
 //! The API is [serde]-based, so you will find it intuitive if you are already familiar with
 //! serde. If you are not, you may want to read serde's [tutorial] first.
 //!
@@ -28,7 +31,7 @@
 //!
 //! ```
 //! use std::collections::HashMap;
-//! use zbus::wire::{serialized::Context, to_bytes, Type, LE};
+//! use zbus::{Type, wire::{LE, serialized::Context, to_bytes}};
 //! use serde::{Deserialize, Serialize};
 //!
 //! // All serialization and deserialization API, needs a context.
