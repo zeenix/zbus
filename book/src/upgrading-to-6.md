@@ -39,8 +39,20 @@ zbus users change the version and nothing else:
 zbus = "6"
 ```
 
-The `default-features = false, features = ["tokio"]` idiom is unaffected: `tokio` enables
-`comms`, which is the whole D-Bus API.
+The `default-features = false, features = ["tokio"]` idiom needs one more feature or two:
+`tokio` enables `comms`, the D-Bus connection layer, but the client-side proxy API and the
+service-side object server API are now behind the `proxy` and `service` features (see
+[below](#proxy-and-service-api-are-separate-features)):
+
+```toml
+# Before
+[dependencies]
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+# After
+[dependencies]
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy", "service"] }
+```
 
 Wire-format-only users replace the crate. Every `zvariant` feature kept its name, except
 `gvariant` and `ostree-tests`, which are gone:
@@ -83,11 +95,12 @@ Four things to know about the features:
   That is a build-size question only; nothing behaves differently.
 
 A crate that depends on `zbus_macros` directly keeps `proxy`, `interface` and `DBusError`
-without doing anything: `comms` is a default feature there, and `blocking-api` implies it. Only a
-direct dependency that had turned the (previously empty) defaults off *and* uses those three
-macros needs `features = ["comms"]` now, or drops the `default-features = false`; the wire-format
-derives and `signature!` never needed it. zbus's own dependency on the macro crate is such a
-defaults-off one, and its `comms` feature switches the macro crate's `comms` back on.
+without doing anything: `comms`, `proxy` and `service` are default features there. Only a
+direct dependency that had turned the (previously empty) defaults off *and* uses those macros
+needs `features = ["proxy"]` and/or `features = ["service"]` now (`DBusError` alone needs
+`comms`), or drops the `default-features = false`; the wire-format derives and `signature!` never
+needed it. zbus's own dependency on the macro crate is such a defaults-off one, and its `comms`,
+`proxy` and `service` features switch the macro crate's back on.
 
 ## Paths
 
@@ -296,7 +309,7 @@ The compatibility module is removed in zbus 7.0.
 
 ## Other changes in 6.0
 
-Six more things break in 6.0 without being a consequence of the crate merge. They reach code
+Seven more things break in 6.0 without being a consequence of the crate merge. They reach code
 that never mentioned `zvariant` or `zbus_names`.
 
 ### Property methods use Serde traits
@@ -431,6 +444,26 @@ the empty string, and the sentinel now maps to `None` without being converted at
 The public `NoneValue::NoneType` associated type for each owned name type is now `String` rather
 than `&'static str`. This allows `Optional<Owned*Name>` to implement `DeserializeOwned` without
 changing its wire encoding.
+
+### Proxy and service API are separate features
+
+The client-side proxy API (`zbus::proxy`, `zbus::Proxy`, `#[proxy]`, the `fdo::*Proxy` types)
+and the service-side object server API (`zbus::object_server`, `zbus::ObjectServer`,
+`#[interface]`, `Connection::object_server`, `Builder::serve_at`) are behind the `proxy` and
+`service` features respectively. Both are default features, so a plain `zbus = "6"` dependency
+is unaffected. A `default-features = false` build has to ask for the half it uses:
+
+```toml
+[dependencies]
+# A pure client.
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
+# A pure service.
+zbus = { version = "6", default-features = false, features = ["tokio", "service"] }
+```
+
+Leaving out the half you don't use keeps its code out of your binary, which even fat LTO could
+not do before. Everything else in the D-Bus API (`Connection`, `Message`, `MessageStream`,
+`MatchRule`, the plain `fdo` types and errors, `Connection::request_name`) needs neither.
 
 ## A stale zvariant in the dependency graph
 
