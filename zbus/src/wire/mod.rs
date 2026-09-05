@@ -22,8 +22,9 @@
 //! ```
 //!
 //! That build contains no connection, proxy or object server, and pulls in nothing beyond what
-//! the encoding itself needs. Enabling any D-Bus feature (`comms`, `async-io`, `tokio`,
-//! `blocking-api`, `p2p`, `bus-impl`, `vsock`, `tokio-vsock`) brings the whole API back.
+//! the encoding itself needs. Runtime features such as `async-io` and `tokio` enable `comms`
+//! for connections and messages. Enable `proxy` for clients and `service` for the object server;
+//! both features are enabled by default.
 //!
 //! # Example
 //!
