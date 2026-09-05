@@ -149,7 +149,7 @@ impl<'a> Builder<'a> {
     /// #
     /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
     /// ```
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "ibus"))]
     pub fn ibus() -> Result<Self> {
         use crate::address::transport::{Ibus, Transport};
         Ok(Self::new(Target::Address(Address::from(Transport::Ibus(
@@ -763,7 +763,7 @@ impl<'a> Builder<'a> {
                 match address.connect().await? {
                     #[cfg(any(unix, feature = "async-io"))]
                     address::transport::Stream::Unix(split) => split,
-                    #[cfg(unix)]
+                    #[cfg(all(unix, feature = "unixexec"))]
                     address::transport::Stream::Unixexec(split) => split,
                     address::transport::Stream::Tcp(split) => split,
                     #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
