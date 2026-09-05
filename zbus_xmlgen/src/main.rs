@@ -10,9 +10,9 @@ use std::{
 use clap::Parser;
 use snakecase::ascii::to_snakecase;
 use zbus::{
+    ObjectPath,
     blocking::{Connection, connection, fdo::IntrospectableProxy},
     names::BusName,
-    wire::ObjectPath,
 };
 use zbus_xml::{Interface, Node, Warning};
 

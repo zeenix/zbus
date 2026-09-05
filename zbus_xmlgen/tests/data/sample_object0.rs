@@ -14,13 +14,13 @@ pub trait SampleInterface0 {
             i32,
             bool,
         ),
-    ) -> zbus::Result<Vec<(String, zbus::wire::OwnedObjectPath)>>;
+    ) -> zbus::Result<Vec<(String, zbus::OwnedObjectPath)>>;
 
     /// Bazic method
     fn bazic(&self, bar: &(i32, i32), foo: &(i32,)) -> zbus::Result<((i32, i32), Vec<(i32,)>)>;
 
     /// Bazify method
-    fn bazify(&self, bar: &(i32, i32, u32)) -> zbus::Result<zbus::wire::OwnedValue>;
+    fn bazify(&self, bar: &(i32, i32, u32)) -> zbus::Result<zbus::OwnedValue>;
 
     /// Frobate method
     fn frobate(
@@ -30,13 +30,10 @@ pub trait SampleInterface0 {
     ) -> zbus::Result<(String, std::collections::HashMap<u32, String>)>;
 
     /// GetSignature method
-    fn get_signature(
-        &self,
-        challenge: &zbus::wire::Signature,
-    ) -> zbus::Result<zbus::wire::Signature>;
+    fn get_signature(&self, challenge: &zbus::Signature) -> zbus::Result<zbus::Signature>;
 
     /// MogrifyMe method
-    fn mogrify_me(&self, bar: &(i32, i32, &[&zbus::wire::Value<'_>])) -> zbus::Result<()>;
+    fn mogrify_me(&self, bar: &(i32, i32, &[&zbus::Value<'_>])) -> zbus::Result<()>;
 
     /// Odyssey method
     #[allow(clippy::too_many_arguments)]
@@ -48,7 +45,7 @@ pub trait SampleInterface0 {
         circe: i32,
         athena: bool,
         polyphemus: i32,
-        calypso: &zbus::wire::Value<'_>,
+        calypso: &zbus::Value<'_>,
     ) -> zbus::Result<()>;
 
     /// Changed signal
@@ -67,12 +64,12 @@ pub trait SampleInterface0 {
     #[zbus(signal)]
     fn signal_dict_string_to_value(
         &self,
-        dict: std::collections::HashMap<&str, zbus::wire::Value<'_>>,
+        dict: std::collections::HashMap<&str, zbus::Value<'_>>,
     ) -> zbus::Result<()>;
 
     /// SignalValue signal
     #[zbus(signal)]
-    fn signal_value(&self, value: zbus::wire::Value<'_>) -> zbus::Result<()>;
+    fn signal_value(&self, value: zbus::Value<'_>) -> zbus::Result<()>;
 
     /// Bar property
     #[zbus(property)]
@@ -93,11 +90,11 @@ pub trait SampleInterface0 {
         &self,
     ) -> zbus::Result<
         Vec<(
-            zbus::wire::OwnedObjectPath,
+            zbus::OwnedObjectPath,
             i32,
             Vec<String>,
             u64,
-            std::collections::HashMap<String, zbus::wire::OwnedValue>,
+            std::collections::HashMap<String, zbus::OwnedValue>,
         )>,
     >;
 }
