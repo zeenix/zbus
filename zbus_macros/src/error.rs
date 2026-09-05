@@ -146,23 +146,18 @@ pub fn expand_derive(input: DeriveInput) -> Result<TokenStream, Error> {
             quote! {
                 impl ::std::convert::From<#zbus::Error> for #name {
                     fn from(value: #zbus::Error) -> #name {
-                        match &value {
+                        let (name, desc) = match &value {
                             #zbus::Error::MethodError(name, desc, _) => {
-                                let desc = desc.as_deref();
-                                match name.as_str() {
-                                    #error_converts
-                                    _ => Self::#ident(value),
-                                }
+                                (name.as_ref(), desc.as_deref())
                             }
                             #zbus::Error::FDO(e) => {
                                 let e = ::std::convert::AsRef::as_ref(e);
-                                let name = #zbus::DBusError::name(e);
-                                let desc = #zbus::DBusError::description(e);
-                                match name.as_str() {
-                                    #error_converts
-                                    _ => Self::#ident(value),
-                                }
+                                (#zbus::DBusError::name(e), #zbus::DBusError::description(e))
                             }
+                            _ => return Self::#ident(value),
+                        };
+                        match name.as_str() {
+                            #error_converts
                             _ => Self::#ident(value),
                         }
                     }
@@ -201,6 +196,7 @@ pub fn expand_derive(input: DeriveInput) -> Result<TokenStream, Error> {
 
             fn create_reply(&self, call: &#zbus::message::Header) -> #zbus::Result<#zbus::message::Message> {
                 let name = self.name();
+                let builder = #zbus::message::Message::error(call, name)?;
                 match self {
                     #replies
                 }
@@ -223,7 +219,7 @@ fn gen_reply_for_variant(
     let ident = &variant.ident;
     match &variant.fields {
         Fields::Unit => Ok(quote! {
-            Self::#ident => #zbus::message::Message::error(call, name)?.build(&()),
+            Self::#ident => builder.build(&()),
         }),
         Fields::Unnamed(f) => {
             // Name the unnamed fields as the number of the field with an 'f' in front.
@@ -253,13 +249,13 @@ fn gen_reply_for_variant(
             };
 
             Ok(quote! {
-                Self::#ident(#(#in_fields),*) => #zbus::message::Message::error(call, name)?.build(&(#(#out_fields),*)),
+                Self::#ident(#(#in_fields),*) => builder.build(&(#(#out_fields),*)),
             })
         }
         Fields::Named(f) => {
             let fields = f.named.iter().map(|v| v.ident.as_ref()).collect::<Vec<_>>();
             Ok(quote! {
-                Self::#ident { #(#fields),* } => #zbus::message::Message::error(call, name)?.build(&(#(#fields),*)),
+                Self::#ident { #(#fields),* } => builder.build(&(#(#fields),*)),
             })
         }
     }
