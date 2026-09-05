@@ -328,7 +328,7 @@ async fn test_freedesktop_api() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "proxy"))]
 #[tokio::test]
 #[timeout(15000)]
 #[instrument]

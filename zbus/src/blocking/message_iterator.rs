@@ -37,8 +37,13 @@ impl MessageIterator {
     /// # Example
     ///
     /// ```
+    /// # // The example decodes the signal with the `NameOwnerChanged` type of the `DBusProxy`.
+    /// # #[cfg(feature = "proxy")]
     /// use zbus::{blocking::{Connection, MessageIterator}, MatchRule, fdo::NameOwnerChanged};
     ///
+    /// # #[cfg(not(feature = "proxy"))]
+    /// # fn main() {}
+    /// # #[cfg(feature = "proxy")]
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let conn = Connection::session()?;
     /// let rule = MatchRule::builder()

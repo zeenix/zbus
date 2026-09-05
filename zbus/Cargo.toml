@@ -13,7 +13,7 @@ categories = ["os::unix-apis"]
 readme = "README.md"
 
 [features]
-default = ["async-io", "blocking-api"]
+default = ["async-io", "blocking-api", "proxy"]
 
 # Wire-format optional impls — the former zvariant features, same names.
 arrayvec = ["dep:arrayvec"]
@@ -66,6 +66,8 @@ vsock = ["dep:vsock", "async-io"]
 tokio-vsock = ["dep:tokio-vsock", "tokio"]
 # Enable blocking API (default).
 blocking-api = ["comms"]
+# The client-side (proxy) API (default).
+proxy = ["comms", "zbus_macros/proxy"]
 # Enables API that is only needed for peer-to-peer (p2p) connections.
 p2p = ["comms", "uuid?/v4"]
 # Enables API that is only needed for bus implementations (enables `p2p`).
@@ -231,4 +233,4 @@ required-features = ["blocking-api"]
 [[example]]
 name = "watch-systemd-jobs"
 path = "examples/watch-systemd-jobs.rs"
-required-features = ["async-io"]
+required-features = ["async-io", "proxy"]

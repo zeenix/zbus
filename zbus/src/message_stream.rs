@@ -53,10 +53,15 @@ impl MessageStream {
     /// # Example
     ///
     /// ```
+    /// # // The example decodes the signal with the `NameOwnerChanged` type of the `DBusProxy`.
+    /// # #[cfg(feature = "proxy")]
     /// use async_io::Timer;
+    /// # #[cfg(feature = "proxy")]
     /// use zbus::{AsyncDrop, Connection, MatchRule, MessageStream, fdo::NameOwnerChanged};
+    /// # #[cfg(feature = "proxy")]
     /// use futures_util::{TryStreamExt, future::select, future::Either::{Left, Right}, pin_mut};
     ///
+    /// # #[cfg(feature = "proxy")]
     /// # zbus::block_on(async {
     /// let conn = Connection::session().await?;
     /// let rule = MatchRule::builder()

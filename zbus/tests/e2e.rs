@@ -1,4 +1,4 @@
-#![cfg(feature = "comms")]
+#![cfg(feature = "proxy")]
 #![allow(clippy::disallowed_names)]
 
 mod iface_and_proxy;

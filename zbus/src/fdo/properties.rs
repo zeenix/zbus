@@ -151,6 +151,7 @@ impl Properties {
 }
 
 /// Proxy for the `org.freedesktop.DBus.Properties` interface.
+#[cfg(feature = "proxy")]
 #[crate::proxy(interface = "org.freedesktop.DBus.Properties")]
 pub trait Properties {
     /// Get a property value.

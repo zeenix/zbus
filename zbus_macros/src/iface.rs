@@ -338,6 +338,8 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
     };
     let with_spawn = impl_attrs.spawn.unwrap_or(true);
     let crate_attr = impl_attrs.crate_path.clone();
+    // Whether the proxy is actually generated is decided by the `proxy` feature of `zbus`, not by
+    // the features of this crate. See `Proxy::gen`.
     let mut proxy = impl_attrs
         .proxy
         .map(|p| Proxy::new(ty, &iface_name, p, &zbus, crate_attr));
@@ -1690,21 +1692,27 @@ impl Proxy {
             .as_ref()
             .map(|value| quote! { crate = #value, });
         let proxy_doc = format!("Proxy for the `{iface_name}` interface.");
+        // The `proxy` feature of the `zbus` the generated code is compiled against decides whether
+        // the proxy is generated, through a `zbus` macro that either forwards or drops its input.
+        // The `proxy` feature of this crate can differ from it: Cargo unifies the features of host
+        // dependencies, such as proc-macros and build scripts, separately from the target ones.
         Ok(quote! {
-            #[doc = #proxy_doc]
-            #[#zbus::proxy(
-                name = #iface_name,
-                #crate_path
-                #assume_defaults
-                #default_path
-                #default_service
-                #async_name
-                #blocking_name
-                #gen_async
-                #gen_blocking
-            )]
-            #vis trait #ty {
-                #methods
+            #zbus::__if_proxy_feature! {
+                #[doc = #proxy_doc]
+                #[#zbus::proxy(
+                    name = #iface_name,
+                    #crate_path
+                    #assume_defaults
+                    #default_path
+                    #default_service
+                    #async_name
+                    #blocking_name
+                    #gen_async
+                    #gen_blocking
+                )]
+                #vis trait #ty {
+                    #methods
+                }
             }
         })
     }

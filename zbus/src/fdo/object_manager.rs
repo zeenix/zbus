@@ -17,7 +17,15 @@ use crate::{
     wire::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
 };
 
-/// The type returned by the [`ObjectManagerProxy::get_managed_objects`] method.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "The type returned by the [`ObjectManagerProxy::get_managed_objects`] method."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "The type returned by `ObjectManagerProxy::get_managed_objects` (requires the `proxy`",
+    doc = "feature)."
+)]
 pub type ManagedObjects =
     HashMap<OwnedObjectPath, BTreeMap<OwnedInterfaceName, HashMap<String, OwnedValue>>>;
 
@@ -133,6 +141,7 @@ impl ObjectManager {
 }
 
 /// Proxy for the `org.freedesktop.DBus.ObjectManager` interface.
+#[cfg(feature = "proxy")]
 #[crate::proxy(interface = "org.freedesktop.DBus.ObjectManager")]
 pub trait ObjectManager {
     /// The return value of this method is a dict whose keys are object paths. All returned object

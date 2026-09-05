@@ -5,31 +5,51 @@
 
 #[cfg(unix)]
 use crate::wire::OwnedFd;
-use enumflags2::{BitFlags, bitflags};
+#[cfg(feature = "proxy")]
+use enumflags2::BitFlags;
+use enumflags2::bitflags;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+#[cfg(feature = "proxy")]
 use std::collections::HashMap;
 
 use super::Result;
+use crate::wire::{DeserializeDict, SerializeDict, Type};
+#[cfg(feature = "proxy")]
 use crate::{
     OwnedGuid,
     names::{
         BusName, OwnedBusName, OwnedInterfaceName, OwnedUniqueName, UniqueName, WellKnownName,
     },
     proxy,
-    wire::{DeserializeDict, Optional, SerializeDict, Type},
+    wire::Optional,
 };
 
-/// The flags used by the [`DBusProxy::request_name`] method.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "The flags used by the [`DBusProxy::request_name`] method."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "The flags used by `DBusProxy::request_name` (requires the `proxy` feature)."
+)]
 ///
-/// The default flags (returned by [`BitFlags::default`]) are `AllowReplacement`, `ReplaceExisting`,
-/// and `DoNotQueue`.
+/// The default flags (returned by [`BitFlags::default`](enumflags2::BitFlags::default)) are
+/// `AllowReplacement`, `ReplaceExisting`, and `DoNotQueue`.
 #[bitflags(default = AllowReplacement | ReplaceExisting | DoNotQueue)]
 #[repr(u32)]
 #[derive(Type, Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
 pub enum RequestNameFlags {
     /// If an application A specifies this flag and succeeds in becoming the owner of the name, and
-    /// another application B later calls [`DBusProxy::request_name`] with the `ReplaceExisting`
+    #[cfg_attr(
+        feature = "proxy",
+        doc = "another application B later calls [`DBusProxy::request_name`] with the"
+    )]
+    #[cfg_attr(
+        not(feature = "proxy"),
+        doc = "another application B later calls `DBusProxy::request_name` with the"
+    )]
+    /// `ReplaceExisting`
     /// flag, then application A will lose ownership and receive a `org.freedesktop.DBus.NameLost`
     /// signal, and application B will become the new owner. If `AllowReplacement` is not specified
     /// by application A, or `ReplaceExisting` is not specified by application B, then application
@@ -50,7 +70,14 @@ pub enum RequestNameFlags {
     DoNotQueue = 0x04,
 }
 
-/// The return code of the [`DBusProxy::request_name`] method.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "The return code of the [`DBusProxy::request_name`] method."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "The return code of `DBusProxy::request_name` (requires the `proxy` feature)."
+)]
 #[repr(u32)]
 #[derive(Deserialize_repr, Serialize_repr, Type, Debug, PartialEq, Eq)]
 pub enum RequestNameReply {
@@ -81,7 +108,14 @@ impl std::fmt::Display for RequestNameReply {
     }
 }
 
-/// The return code of the [`DBusProxy::release_name`] method.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "The return code of the [`DBusProxy::release_name`] method."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "The return code of `DBusProxy::release_name` (requires the `proxy` feature)."
+)]
 #[repr(u32)]
 #[derive(Deserialize_repr, Serialize_repr, Type, Debug, PartialEq, Eq)]
 pub enum ReleaseNameReply {
@@ -107,7 +141,14 @@ impl std::fmt::Display for ReleaseNameReply {
     }
 }
 
-/// The return code of the [`DBusProxy::start_service_by_name`] method.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "The return code of the [`DBusProxy::start_service_by_name`] method."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "The return code of `DBusProxy::start_service_by_name` (requires the `proxy` feature)."
+)]
 ///
 /// In zbus 6.0, this will become the return type of `start_service_by_name`.
 /// For now, it's provided separately with a `TryFrom<u32>` implementation
@@ -313,6 +354,7 @@ impl ConnectionCredentials {
 }
 
 /// Proxy for the `org.freedesktop.DBus` interface.
+#[cfg(feature = "proxy")]
 #[proxy(
     default_service = "org.freedesktop.DBus",
     default_path = "/org/freedesktop/DBus",
@@ -425,7 +467,7 @@ pub trait DBus {
     fn interfaces(&self) -> Result<Vec<OwnedInterfaceName>>;
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "proxy"))]
 mod test {
     use super::*;
 

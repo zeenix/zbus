@@ -34,6 +34,7 @@ impl Introspectable {
 }
 
 /// Proxy for the `org.freedesktop.DBus.Introspectable` interface.
+#[cfg(feature = "proxy")]
 #[crate::proxy(interface = "org.freedesktop.DBus.Introspectable", default_path = "/")]
 pub trait Introspectable {
     /// Returns an XML description of the object, including its interfaces (with signals and

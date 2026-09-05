@@ -13,14 +13,16 @@
 
 use proc_macro::TokenStream;
 use syn::DeriveInput;
+#[cfg(feature = "proxy")]
+use syn::ItemTrait;
 #[cfg(feature = "comms")]
-use syn::{ItemImpl, ItemTrait, Meta, Token, parse_macro_input, punctuated::Punctuated};
+use syn::{ItemImpl, Meta, Token, parse_macro_input, punctuated::Punctuated};
 
 #[cfg(feature = "comms")]
 mod error;
 #[cfg(feature = "comms")]
 mod iface;
-#[cfg(feature = "comms")]
+#[cfg(feature = "proxy")]
 mod proxy;
 mod utils;
 
@@ -213,7 +215,7 @@ mod utils;
 /// [`zbus::blocking::SignalIterator`]: https://docs.rs/zbus/latest/zbus/blocking/proxy/struct.SignalIterator.html
 /// [`ObjectPath`]: https://docs.rs/zbus/latest/zbus/wire/struct.ObjectPath.html
 /// [dbus_emits_changed_signal]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
-#[cfg(feature = "comms")]
+#[cfg(feature = "proxy")]
 #[proc_macro_attribute]
 pub fn proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated<Meta, Token![,]>::parse_terminated);
@@ -249,8 +251,18 @@ pub fn proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     methods when this setting is false, as it may lead to deadlocks under certain conditions.
 ///
 /// * `proxy` - If specified, a proxy type will also be generated for the interface. This attribute
-///   supports all the [`macro@proxy`]-specific sub-attributes (e.g `gen_async`). The common
-///   sub-attributes (e.g `name`) are automatically forwarded to the [`macro@proxy`] macro.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "  supports all the [`macro@proxy`]-specific sub-attributes (e.g `gen_async`). The common",
+    doc = "  sub-attributes (e.g `name`) are automatically forwarded to the [`macro@proxy`] macro."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "  supports all the `proxy` macro-specific sub-attributes (e.g `gen_async`). The common",
+    doc = "  sub-attributes (e.g `name`) are automatically forwarded to the `proxy` macro."
+)]
+///   If the `proxy` cargo feature of `zbus` is disabled, the attribute is accepted but no proxy
+///   type is generated.
 ///
 /// * `introspection_docs` - whether to include the documentation in the introspection data
 ///   (Default: `true`). If your interface is well-known or well-documented, you may want to set
@@ -289,11 +301,20 @@ pub fn proxy(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// * `out_args` - When returning multiple values from a method, naming the out arguments become
 ///   important. You can use `out_args` to specify their names.
-///
-/// * `proxy` - Use this to specify the [`macro@proxy`]-specific method sub-attributes (e.g
-///   `object`). The common sub-attributes (e.g `name`) are automatically forworded to the
-///   [`macro@proxy`] macro. Moreover, you can use `visibility` sub-attribute to specify the
-///   visibility of the generated proxy type(s).
+#[cfg_attr(
+    feature = "proxy",
+    doc = "* `proxy` - Use this to specify the [`macro@proxy`]-specific method sub-attributes (e.g",
+    doc = "  `object`). The common sub-attributes (e.g `name`) are automatically forworded to the",
+    doc = "  [`macro@proxy`] macro. Moreover, you can use `visibility` sub-attribute to specify the",
+    doc = "  visibility of the generated proxy type(s)."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "* `proxy` - Use this to specify the `proxy` macro-specific method sub-attributes (e.g",
+    doc = "  `object`). The common sub-attributes (e.g `name`) are automatically forworded to the",
+    doc = "  `proxy` macro. Moreover, you can use `visibility` sub-attribute to specify the",
+    doc = "  visibility of the generated proxy type(s)."
+)]
 ///
 ///   In such case, your method must return a tuple containing
 ///   your out arguments, in the same order as passed to `out_args`.

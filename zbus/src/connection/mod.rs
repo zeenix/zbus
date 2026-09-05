@@ -105,13 +105,30 @@ pub(crate) type MsgBroadcaster = Broadcaster<Result<Message>>;
 ///
 /// For higher-level message handling (typed functions, introspection, documentation reasons etc),
 /// it is recommended to wrap the low-level D-Bus messages into Rust functions with the
-/// [`macro@crate::proxy`] and [`macro@crate::interface`] macros instead of doing it directly on a
-/// `Connection`.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "[`macro@crate::proxy`] and [`macro@crate::interface`] macros instead of doing it",
+    doc = "directly on a `Connection`."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "`proxy` (requires the `proxy` feature) and [`macro@crate::interface`] macros instead",
+    doc = "of doing it directly on a `Connection`."
+)]
 ///
 /// Typically, a connection is made to the session bus with [`Connection::session`], or to the
-/// system bus with [`Connection::system`]. Then the connection is used with [`crate::Proxy`]
-/// instances or the on-demand [`ObjectServer`] instance that can be accessed through
-/// [`Connection::object_server`].
+#[cfg_attr(
+    feature = "proxy",
+    doc = "system bus with [`Connection::system`]. Then the connection is used with",
+    doc = "[`crate::Proxy`] instances or the on-demand [`ObjectServer`] instance that can be",
+    doc = "accessed through [`Connection::object_server`]."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "system bus with [`Connection::system`]. Then the connection is used with `Proxy`",
+    doc = "instances (requires the `proxy` feature) or the on-demand [`ObjectServer`] instance",
+    doc = "that can be accessed through [`Connection::object_server`]."
+)]
 ///
 /// `Connection` implements [`Clone`] and cloning it is a very cheap operation, as the underlying
 /// data is not cloned. This makes it very convenient to share the connection between different
@@ -121,9 +138,17 @@ pub(crate) type MsgBroadcaster = Broadcaster<Result<Message>>;
 /// `Connection` keeps internal queues of incoming message. The default capacity of each of these is
 /// 64. The capacity of the main (unfiltered) queue is configurable through the [`set_max_queued`]
 /// method. When the queue is full, no more messages can be received until room is created for more.
-/// This is why it's important to ensure that all [`crate::MessageStream`] and
-/// [`crate::blocking::MessageIterator`] instances are continuously polled and iterated on,
-/// respectively.
+#[cfg_attr(
+    feature = "blocking-api",
+    doc = "This is why it's important to ensure that all [`crate::MessageStream`] and",
+    doc = "[`crate::blocking::MessageIterator`] instances are continuously polled and iterated on,",
+    doc = "respectively."
+)]
+#[cfg_attr(
+    not(feature = "blocking-api"),
+    doc = "This is why it's important to ensure that all [`crate::MessageStream`] instances are",
+    doc = "continuously polled."
+)]
 ///
 /// For sending messages you can use the [`Connection::send`] method.
 ///
@@ -475,19 +500,35 @@ impl Connection {
     ///
     /// This is the same as [`Connection::request_name`] but allows to specify the flags to use when
     /// requesting the name.
-    ///
-    /// If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up in the
-    /// queue, you can use [`crate::fdo::NameAcquiredStream`] to be notified when the name is
-    /// acquired. A queued name request can be cancelled using [`Connection::release_name`].
-    ///
-    /// If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name can be
-    /// lost if another peer requests the same name. You can use [`crate::fdo::NameLostStream`] to
-    /// be notified when the name is lost
+    #[cfg_attr(
+        feature = "proxy",
+        doc = "If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up",
+        doc = "in the queue, you can use [`crate::fdo::NameAcquiredStream`] to be notified when",
+        doc = "the name is acquired. A queued name request can be cancelled using",
+        doc = "[`Connection::release_name`].",
+        doc = "",
+        doc = "If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name",
+        doc = "can be lost if another peer requests the same name. You can use",
+        doc = "[`crate::fdo::NameLostStream`] to be notified when the name is lost"
+    )]
+    #[cfg_attr(
+        not(feature = "proxy"),
+        doc = "If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up",
+        doc = "in the queue, you can use `fdo::NameAcquiredStream` (requires the `proxy` feature)",
+        doc = "to be notified when the name is acquired. A queued name request can be cancelled",
+        doc = "using [`Connection::release_name`].",
+        doc = "",
+        doc = "If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name",
+        doc = "can be lost if another peer requests the same name. You can use",
+        doc = "`fdo::NameLostStream` (requires the `proxy` feature) to be notified when the name",
+        doc = "is lost"
+    )]
     ///
     /// # Example
     ///
     /// ```
-    /// #
+    /// # // The example waits for name acquisition and loss through the `DBusProxy` signals.
+    /// # #[cfg(feature = "proxy")]
     /// # zbus::block_on(async {
     /// use zbus::{Connection, fdo::{DBusProxy, RequestNameFlags, RequestNameReply}};
     /// use enumflags2::BitFlags;
@@ -540,10 +581,22 @@ impl Connection {
     /// # Caveats
     ///
     /// * Same as that of [`Connection::request_name`].
-    /// * If you wish to track changes to name ownership after this call, make sure that the
-    ///   [`crate::fdo::NameAcquired`] and/or [`crate::fdo::NameLostStream`] instance(s) are created
-    ///   **before** calling this method. Otherwise, you may loose the signal if it's emitted after
-    ///   this call but just before the stream instance get created.
+    #[cfg_attr(
+        feature = "proxy",
+        doc = "* If you wish to track changes to name ownership after this call, make sure that",
+        doc = "  the [`crate::fdo::NameAcquiredStream`] and/or [`crate::fdo::NameLostStream`]",
+        doc = "  instance(s) are created **before** calling this method. Otherwise, you may loose",
+        doc = "  the signal if it's emitted after this call but just before the stream instance",
+        doc = "  get created."
+    )]
+    #[cfg_attr(
+        not(feature = "proxy"),
+        doc = "* If you wish to track changes to name ownership after this call, make sure that",
+        doc = "  the `fdo::NameAcquiredStream` and/or `fdo::NameLostStream` instance(s) (requiring",
+        doc = "  the `proxy` feature) are created **before** calling this method. Otherwise, you",
+        doc = "  may loose the signal if it's emitted after this call but just before the stream",
+        doc = "  instance get created."
+    )]
     pub async fn request_name_with_flags<'w, W>(
         &self,
         well_known_name: W,
@@ -1368,9 +1421,11 @@ async fn acquire_serial_num_semaphore() -> Option<SemaphorePermit<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "proxy")]
     use crate::fdo::DBusProxy;
     use ntest::timeout;
     use std::{pin::pin, time::Duration};
+    #[cfg(feature = "proxy")]
     use test_log::test;
 
     #[cfg(windows)]
@@ -1395,6 +1450,7 @@ mod tests {
         .expect("Unable to connect to session bus");
     }
 
+    #[cfg(feature = "proxy")]
     #[test]
     #[timeout(15000)]
     fn disconnect_on_drop() {
@@ -1403,6 +1459,7 @@ mod tests {
         crate::utils::block_on(test_disconnect_on_drop());
     }
 
+    #[cfg(feature = "proxy")]
     async fn test_disconnect_on_drop() {
         #[derive(Default)]
         struct MyInterface {}

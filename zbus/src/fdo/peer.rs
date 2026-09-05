@@ -45,6 +45,7 @@ impl Peer {
 }
 
 /// Proxy for the `org.freedesktop.DBus.Peer` interface.
+#[cfg(feature = "proxy")]
 #[crate::proxy(interface = "org.freedesktop.DBus.Peer")]
 pub trait Peer {
     /// On receipt, an application should do nothing other than reply as usual. It does not matter

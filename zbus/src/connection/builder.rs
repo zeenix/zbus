@@ -65,10 +65,18 @@ type Interfaces<'a> = HashMap<ObjectPath<'a>, HashMap<InterfaceName<'static>, Ar
 ///
 /// 1. There is no indication given to the caller of [`Self::build`] that the name(s) request was
 ///    enqueued and that the requested name might not be available right after building.
-///
-/// 2. The name may be acquired in between the time the name is requested and the
-///    [`crate::fdo::NameAcquiredStream`] is constructed. As a result the service can miss the
-///    [`crate::fdo::NameAcquired`] signal.
+#[cfg_attr(
+    feature = "proxy",
+    doc = "2. The name may be acquired in between the time the name is requested and the",
+    doc = "   [`crate::fdo::NameAcquiredStream`] is constructed. As a result the service can miss",
+    doc = "   the [`crate::fdo::NameAcquired`] signal."
+)]
+#[cfg_attr(
+    not(feature = "proxy"),
+    doc = "2. The name may be acquired in between the time the name is requested and the",
+    doc = "   `fdo::NameAcquiredStream` (requires the `proxy` feature) is constructed. As a result",
+    doc = "   the service can miss the `NameAcquired` signal."
+)]
 #[derive(Debug)]
 #[must_use]
 pub struct Builder<'a> {

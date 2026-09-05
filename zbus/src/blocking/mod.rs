@@ -27,7 +27,10 @@ mod message_iterator;
 pub use message_iterator::*;
 pub mod object_server;
 pub use object_server::ObjectServer;
+#[cfg(feature = "proxy")]
 pub mod proxy;
+#[cfg(feature = "proxy")]
 pub use proxy::Proxy;
 
+#[cfg(feature = "proxy")]
 pub mod fdo;

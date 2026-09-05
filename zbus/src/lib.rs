@@ -3,9 +3,16 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/z-galaxy/zbus/9f7a90d2b594ddc48b7a5f39fda5e00cd56a7dfb/logo.png"
 )]
-// The README's examples need a D-Bus connection, so it can only be the crate documentation
-// when the D-Bus API is compiled in.
-#![cfg_attr(feature = "comms", doc = include_str!("../README.md"))]
+// The README's examples need a D-Bus connection and a proxy, so it can only be the crate
+// documentation when the client-side D-Bus API is compiled in.
+#![cfg_attr(feature = "proxy", doc = include_str!("../README.md"))]
+#![cfg_attr(
+    all(feature = "comms", not(feature = "proxy")),
+    doc = "# zbus",
+    doc = "",
+    doc = "This build has the client-side D-Bus API (the `proxy` feature) disabled. See the",
+    doc = "[README](https://github.com/z-galaxy/zbus#readme) for an overview of the crate."
+)]
 #![cfg_attr(
     not(feature = "comms"),
     doc = "# zbus\n\nThis build has the D-Bus API (the `comms` feature) disabled: only the \
@@ -25,8 +32,10 @@
 #[cfg(all(doctest, feature = "comms"))]
 mod doctests {
     // Repo README.
+    #[cfg(feature = "proxy")]
     doc_comment::doctest!("../../README.md");
     // Book markdown checks
+    #[cfg(feature = "proxy")]
     doc_comment::doctest!("../../book/src/client.md");
     doc_comment::doctest!("../../book/src/concepts.md");
     // The connection chapter contains a p2p example.
@@ -34,10 +43,13 @@ mod doctests {
     doc_comment::doctest!("../../book/src/connection.md");
     doc_comment::doctest!("../../book/src/contributors.md");
     doc_comment::doctest!("../../book/src/introduction.md");
+    #[cfg(feature = "proxy")]
     doc_comment::doctest!("../../book/src/service.md");
-    #[cfg(feature = "blocking-api")]
+    #[cfg(all(feature = "blocking-api", feature = "proxy"))]
     doc_comment::doctest!("../../book/src/blocking.md");
+    #[cfg(feature = "proxy")]
     doc_comment::doctest!("../../book/src/upgrading-to-6.md");
+    #[cfg(feature = "proxy")]
     doc_comment::doctest!("../../book/src/faq.md");
 }
 
@@ -115,9 +127,9 @@ pub mod match_rule;
 #[cfg(feature = "comms")]
 pub use match_rule::{MatchRule, OwnedMatchRule};
 
-#[cfg(feature = "comms")]
+#[cfg(feature = "proxy")]
 pub mod proxy;
-#[cfg(feature = "comms")]
+#[cfg(feature = "proxy")]
 pub use proxy::Proxy;
 
 #[cfg(feature = "comms")]
@@ -137,13 +149,15 @@ pub mod fdo;
 #[cfg(feature = "blocking-api")]
 pub mod blocking;
 
+#[cfg(feature = "proxy")]
+pub use zbus_macros::proxy;
 #[cfg(feature = "comms")]
-pub use zbus_macros::{DBusError, interface, proxy};
+pub use zbus_macros::{DBusError, interface};
 
-// The `proxy` macro emits the blocking proxy through this macro, so that whether it is generated
-// follows the `blocking-api` feature of the `zbus` the generated code is compiled against. The
-// features of `zbus_macros` can differ from it: Cargo unifies the features of host dependencies,
-// such as proc-macros and build scripts, separately from the target ones.
+// The macros emit feature-dependent code through these macros, so that the decision follows the
+// features of the `zbus` the generated code is compiled against. The features of `zbus_macros`
+// can differ from them: Cargo unifies the features of host dependencies, such as proc-macros and
+// build scripts, separately from the target ones.
 #[cfg(feature = "blocking-api")]
 #[doc(hidden)]
 #[macro_export]
@@ -154,6 +168,18 @@ macro_rules! __if_blocking_api_feature {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __if_blocking_api_feature {
+    ($($item:tt)*) => {};
+}
+#[cfg(feature = "proxy")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __if_proxy_feature {
+    ($($item:tt)*) => { $($item)* };
+}
+#[cfg(not(feature = "proxy"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __if_proxy_feature {
     ($($item:tt)*) => {};
 }
 
