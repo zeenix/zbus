@@ -21,8 +21,6 @@ default = ["comms"]
 # The D-Bus macros: `proxy`, `interface` and `DBusError` (default). The wire-format derives are
 # always compiled.
 comms = ["syn/fold"]
-# Enable blocking API. It only makes sense together with the D-Bus macros.
-blocking-api = ["comms"]
 
 [lib]
 proc-macro = true

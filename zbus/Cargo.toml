@@ -65,7 +65,7 @@ tokio = ["comms", "dep:tokio"]
 vsock = ["dep:vsock", "async-io"]
 tokio-vsock = ["dep:tokio-vsock", "tokio"]
 # Enable blocking API (default).
-blocking-api = ["comms", "zbus_macros/blocking-api"]
+blocking-api = ["comms"]
 # Enables API that is only needed for peer-to-peer (p2p) connections.
 p2p = ["comms", "uuid?/v4"]
 # Enables API that is only needed for bus implementations (enables `p2p`).
