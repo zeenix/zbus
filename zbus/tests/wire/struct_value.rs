@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use zbus::wire::{LE, Str, Structure, Type, Value, as_value, serialized::Context, to_bytes};
+use zbus::{
+    Str, Structure, Type, Value, as_value,
+    wire::{LE, serialized::Context, to_bytes},
+};
 
 #[test]
 fn struct_value() {

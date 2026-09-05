@@ -1,7 +1,4 @@
-use crate::{
-    names::utils::define_name_type_impls,
-    wire::{Str, Type},
-};
+use crate::{Str, Type, names::utils::define_name_type_impls};
 use serde::Serialize;
 
 /// String that identifies an [error name][en] on the bus.

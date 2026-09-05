@@ -1,6 +1,6 @@
 use zbus::{
-    Error, MaxDepthExceeded,
-    wire::{LE, Value, serialized::Context, to_bytes},
+    Error, MaxDepthExceeded, Value,
+    wire::{LE, serialized::Context, to_bytes},
 };
 
 #[test]

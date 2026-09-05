@@ -1,8 +1,8 @@
 use std::{collections::HashSet, marker::PhantomData, sync::Arc};
 
 use crate::{
+    ObjectPath, Str,
     names::{BusName, InterfaceName},
-    wire::{ObjectPath, Str},
 };
 
 use crate::{Connection, Error, Proxy, Result, proxy::ProxyInner};

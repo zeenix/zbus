@@ -1,5 +1,5 @@
 #[cfg(unix)]
-use crate::wire::OwnedFd;
+use crate::OwnedFd;
 use std::ops::Deref;
 
 use crate::wire::serialized::Context;

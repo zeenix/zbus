@@ -3,11 +3,10 @@ use futures_util::{StreamExt, TryStreamExt};
 use std::convert::TryInto;
 use tracing::{debug, instrument};
 use zbus::{
-    Connection, DBusError, Error, Message, MessageStream,
+    Connection, DBusError, Error, Message, MessageStream, Value,
     fdo::{ObjectManagerProxy, PropertiesProxy},
     message,
     proxy::CacheProperties,
-    wire::Value,
 };
 
 use super::{

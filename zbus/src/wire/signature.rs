@@ -11,8 +11,8 @@ impl Basic for Signature {
     const SIGNATURE_STR: &'static str = "g";
 }
 
-impl From<Signature> for crate::wire::Value<'static> {
+impl From<Signature> for crate::Value<'static> {
     fn from(value: Signature) -> Self {
-        crate::wire::Value::Signature(value)
+        crate::Value::Signature(value)
     }
 }

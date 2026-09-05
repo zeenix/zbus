@@ -10,7 +10,7 @@ a struct, you might find yourself wanting to use a struct as a dictionary.
 
 It's possible to do so, using either of the following methods:
 
-1. Using the `SerializeDict` and `DeserializeDict` derive macros from `zbus::wire`. This is the best
+1. Using the `SerializeDict` and `DeserializeDict` derive macros from `zbus`. This is the best
   option for simple cases.
 2. Using the `Serialize` and `Deserialize` derive macros from the `serde` crate. This is the best
   option for more complex cases, where you need more fine-grained control over the serialization
@@ -21,7 +21,7 @@ Here is a simple example using `SerializeDict` and `DeserializeDict`:
 ```rust,noplayground
 use zbus::{
     proxy, interface, fdo::Result,
-    wire::{Type, SerializeDict, DeserializeDict},
+    DeserializeDict, SerializeDict, Type,
 };
 
 #[derive(DeserializeDict, SerializeDict, Type)]
@@ -62,7 +62,7 @@ struct. You can not do that with `DeserializeDict` but you can with `serde::Dese
 
 ```rust,noplayground
 use std::collections::HashMap;
-use zbus::wire::{Type, OwnedValue, as_value::{self, optional}};
+use zbus::{as_value::{self, optional}, OwnedValue, Type};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type)]
@@ -83,15 +83,15 @@ pub struct Dictionary {
 }
 ```
 
-Since the fields have to be transformed from/into `zbus::wire::Value`, make sure to use the
-`with` attribute with the appropriate helper module from the `zbus::wire::as_value` module.
+Since the fields have to be transformed from/into `zbus::Value`, make sure to use the
+`with` attribute with the appropriate helper module from the `zbus::as_value` module.
 
 Moreover, since D-Bus does not have a concept of nullable types, it's important to ensure that
 `skip_serializing_if` and `default` attributes are used for optional fields. Fortunately, you can
 make use of the `default` container attribute if your struct can implemented the `Default` trait:
 
 ```rust,noplayground
-# use zbus::wire::{Type, as_value::{self, optional}};
+# use zbus::{as_value::{self, optional}, Type};
 # use serde::{Deserialize, Serialize};
 #
 #[derive(Default, Deserialize, Serialize, Type)]
@@ -116,7 +116,7 @@ You can mirror that shape by nesting one `*Dict` struct inside another. The oute
 struct as their type:
 
 ```rust,noplayground
-use zbus::wire::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 
 #[derive(DeserializeDict, SerializeDict, Type, PartialEq, Debug, Default, Clone)]
@@ -249,7 +249,7 @@ all types. However, it does come with some caveats and limitations:
     methods.
   3. Both the sender and receiver must agree on use of this encoding. If the sender sends `T`, the
     receiver will not be able to decode it successfully as `Option<T>` and vice versa.
-  4. While `zbus::wire::Value` can be converted into `Option<T>`, the reverse is currently not
+  4. While `zbus::Value` can be converted into `Option<T>`, the reverse is currently not
     possible.
 
 Due to these limitations, `option-as-array` feature is not enabled by default and must be explicitly
@@ -266,7 +266,7 @@ of fields. Names of fields don't matter though. You can make use of [`Value`] or
 you want to encode different data in different fields. Here is a simple example:
 
 ```rust,noplayground
-use zbus::wire::{serialized::Context, to_bytes, Type, LE};
+use zbus::{Type, wire::{serialized::Context, to_bytes, LE}};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]
@@ -291,7 +291,7 @@ Enum encoding can be adjusted by using the [`serde_repr`] crate and by annotatin
 representation of the enum with `repr`:
 
 ```rust,noplayground
-use zbus::wire::{serialized::Context, to_bytes, Type, LE};
+use zbus::{Type, wire::{serialized::Context, to_bytes, LE}};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 
 #[derive(Deserialize_repr, Serialize_repr, Type, PartialEq, Debug)]
@@ -311,7 +311,7 @@ assert_eq!(e, UnitEnum::Variant2);
 Unit enums can also be (de)serialized as strings:
 
 ```rust,noplayground
-use zbus::wire::{serialized::Context, to_bytes, Type, LE};
+use zbus::{Type, wire::{serialized::Context, to_bytes, LE}};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]

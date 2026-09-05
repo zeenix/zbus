@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[cfg(unix)]
-use crate::wire::Fd;
+use crate::Fd;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -171,7 +171,7 @@ where
 
 impl<'a, K, V> TryFrom<Value<'a>> for BTreeMap<K, V>
 where
-    K: crate::wire::Basic + TryFrom<Value<'a>> + std::cmp::Ord,
+    K: crate::Basic + TryFrom<Value<'a>> + std::cmp::Ord,
     V: TryFrom<Value<'a>>,
     K::Error: Into<crate::wire::Error>,
     V::Error: Into<crate::wire::Error>,
@@ -189,7 +189,7 @@ where
 
 impl<'a, K, V, H> TryFrom<Value<'a>> for HashMap<K, V, H>
 where
-    K: crate::wire::Basic + TryFrom<Value<'a>> + std::hash::Hash + std::cmp::Eq,
+    K: crate::Basic + TryFrom<Value<'a>> + std::hash::Hash + std::cmp::Eq,
     V: TryFrom<Value<'a>>,
     H: BuildHasher + Default,
     K::Error: Into<crate::Error>,

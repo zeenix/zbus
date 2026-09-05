@@ -395,7 +395,7 @@ mod tests {
     assert_impl_all!([u8; 0]: Basic);
     assert_impl_all!(std::path::Path: Basic);
     assert_impl_all!(std::path::PathBuf: Basic);
-    assert_impl_all!(crate::wire::Optional<u8>: Basic);
+    assert_impl_all!(crate::Optional<u8>: Basic);
 
     #[cfg(feature = "arrayvec")]
     assert_impl_all!(arrayvec::ArrayString<8>: Basic);

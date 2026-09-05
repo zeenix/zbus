@@ -1,5 +1,8 @@
 use std::vec;
-use zbus::wire::{Array, LE, Type, Value, serialized::Context, to_bytes};
+use zbus::{
+    Array, Type, Value,
+    wire::{LE, serialized::Context, to_bytes},
+};
 
 #[test]
 fn array_value() {
@@ -207,7 +210,7 @@ fn array_value() {
     assert_eq!(TryInto::<Vec<i32>>::try_into(val).unwrap(), vec);
 
     // Empty array should be treated as a unit type, which is encoded as a u8.
-    assert_eq!(<[u64; 0]>::SIGNATURE, &zbus::wire::Signature::U8);
+    assert_eq!(<[u64; 0]>::SIGNATURE, &zbus::Signature::U8);
     let array: [u64; 0] = [];
     let encoded = to_bytes(ctxt, &array).unwrap();
     assert_eq!(encoded.len(), 1);

@@ -1,6 +1,6 @@
 use test_log::test;
 
-use zbus::wire::OwnedObjectPath;
+use zbus::OwnedObjectPath;
 
 // This one we just want to see if it builds, no need to run it. For details see:
 //
@@ -18,6 +18,6 @@ fn issue_121() {
 
         /// Engines property
         #[zbus(property)]
-        fn engines(&self) -> zbus::Result<Vec<zbus::wire::OwnedValue>>;
+        fn engines(&self) -> zbus::Result<Vec<zbus::OwnedValue>>;
     }
 }

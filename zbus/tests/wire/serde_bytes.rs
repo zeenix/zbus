@@ -3,7 +3,10 @@
 fn serde_bytes() {
     use serde::{Deserialize, Serialize};
     use serde_bytes::*;
-    use zbus::wire::{LE, Type, serialized::Context, to_bytes};
+    use zbus::{
+        Type,
+        wire::{LE, serialized::Context, to_bytes},
+    };
 
     let ctxt = Context::new(LE, 0);
     let ay = Bytes::new(&[77u8; 1_000_000]);

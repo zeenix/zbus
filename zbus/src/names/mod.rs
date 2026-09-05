@@ -25,8 +25,8 @@
 //! ```
 //!
 //! [dbn]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names
-//! [`Type`]: trait@crate::wire::Type
-//! [`Value`]: enum@crate::wire::Value
+//! [`Type`]: trait@crate::Type
+//! [`Value`]: enum@crate::Value
 
 mod bus_name;
 pub use bus_name::*;

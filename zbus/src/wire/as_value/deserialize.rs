@@ -8,10 +8,10 @@ use crate::wire::{Signature, Type};
 /// A wrapper to deserialize a value to `T: Type + serde::Deserialize`.
 ///
 /// When the type of a value is well-known, you may avoid the cost and complexity of wrapping to a
-/// generic [`enum@crate::wire::Value`] and instead use this wrapper.
+/// generic [`enum@crate::Value`] and instead use this wrapper.
 ///
 /// ```
-/// # use zbus::wire::{to_bytes, serialized::Context, as_value::{Deserialize, Serialize}, LE};
+/// # use zbus::{as_value::{Deserialize, Serialize}, wire::{LE, serialized::Context, to_bytes}};
 /// #
 /// # let ctxt = Context::new(LE, 0);
 /// # let array = [0, 1, 2];
@@ -82,7 +82,7 @@ impl<'de, T: Type + serde::Deserialize<'de>> Type for Deserialize<'de, T> {
     const SIGNATURE: &'static Signature = &Signature::Variant;
 }
 
-/// Deserialize a value as a [`enum@zbus::wire::Value`].
+/// Deserialize a value as a [`enum@zbus::Value`].
 pub fn deserialize<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
 where
     D: Deserializer<'de>,
@@ -93,7 +93,7 @@ where
     Deserialize::deserialize(deserializer).map(|v| v.0)
 }
 
-/// Deserialize an optional value as a [`enum@zbus::wire::Value`].
+/// Deserialize an optional value as a [`enum@zbus::Value`].
 pub fn deserialize_optional<'de, T, D>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,

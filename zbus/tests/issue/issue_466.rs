@@ -5,12 +5,9 @@ use test_log::test;
 fn issue_466() {
     #[zbus::proxy(interface = "org.Some.Thing1", assume_defaults = true)]
     trait MyGreeter {
-        fn foo(
-            &self,
-            arg: &(u32, zbus::wire::Value<'_>),
-        ) -> zbus::Result<(u32, zbus::wire::OwnedValue)>;
+        fn foo(&self, arg: &(u32, zbus::Value<'_>)) -> zbus::Result<(u32, zbus::OwnedValue)>;
 
         #[zbus(property)]
-        fn bar(&self) -> zbus::Result<(u32, zbus::wire::OwnedValue)>;
+        fn bar(&self) -> zbus::Result<(u32, zbus::OwnedValue)>;
     }
 }

@@ -14,14 +14,8 @@ use super::Result;
 #[cfg(feature = "service")]
 use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
 #[cfg(any(feature = "proxy", feature = "service"))]
-use crate::{
-    names::InterfaceName,
-    wire::{ObjectPath, Value},
-};
-use crate::{
-    names::OwnedInterfaceName,
-    wire::{OwnedObjectPath, OwnedValue},
-};
+use crate::{ObjectPath, Value, names::InterfaceName};
+use crate::{OwnedObjectPath, OwnedValue, names::OwnedInterfaceName};
 
 #[cfg_attr(
     feature = "proxy",

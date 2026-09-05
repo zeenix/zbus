@@ -116,7 +116,7 @@ macro_rules! tuple_impls {
                     signature: &Signature,
                 ) -> crate::Result<Self::Deserializer> {
                     let mut fields_iter = match &signature {
-                        crate::wire::Signature::Structure(fields) => fields.iter(),
+                        crate::Signature::Structure(fields) => fields.iter(),
                         _ => return Err(crate::Error::IncorrectType),
                     };
 

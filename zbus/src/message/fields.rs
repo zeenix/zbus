@@ -6,9 +6,9 @@ use serde::{
 use std::{borrow::Cow, num::NonZeroU32};
 
 use crate::{
+    ObjectPath, Signature, Type, Value,
     message::{FieldCode, Header, Message},
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, Signature, Type, Value},
 };
 
 /// A collection of [`Field`] instances.

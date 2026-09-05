@@ -4,7 +4,7 @@
 //! be useful across various D-Bus applications. This module provides their proxy.
 
 #[cfg(unix)]
-use crate::wire::OwnedFd;
+use crate::OwnedFd;
 #[cfg(feature = "proxy")]
 use enumflags2::BitFlags;
 use enumflags2::bitflags;
@@ -14,15 +14,14 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 
 use super::Result;
-use crate::wire::{DeserializeDict, SerializeDict, Type};
+use crate::{DeserializeDict, SerializeDict, Type};
 #[cfg(feature = "proxy")]
 use crate::{
-    OwnedGuid,
+    Optional, OwnedGuid,
     names::{
         BusName, OwnedBusName, OwnedInterfaceName, OwnedUniqueName, UniqueName, WellKnownName,
     },
     proxy,
-    wire::Optional,
 };
 
 #[cfg_attr(

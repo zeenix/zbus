@@ -4,14 +4,13 @@ use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use tracing::{Instrument, debug, instrument, trace, trace_span};
 
 use crate::{
-    Connection, Error, Result,
+    Connection, Error, ObjectPath, Result, Value,
     async_lock::RwLock,
     connection::WeakConnection,
     fdo,
     fdo::ObjectManager,
     message::{Header, Message},
     names::InterfaceName,
-    wire::{ObjectPath, Value},
 };
 
 mod interface;

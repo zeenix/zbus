@@ -11,7 +11,7 @@ mod time;
 #[cfg(feature = "uuid")]
 mod uuid;
 
-use crate::wire::Signature;
+use crate::Signature;
 
 /// Trait implemented by all serializable types.
 ///
@@ -19,7 +19,7 @@ use crate::wire::Signature;
 /// system] relies on these signatures, our [serialization] and [deserialization] API requires this
 /// trait in addition to [`trait@serde::Serialize`] and [`serde::de::Deserialize`], respectively.
 ///
-/// Implementation is provided for all the [basic types](crate::wire::Basic) and blanket
+/// Implementation is provided for all the [basic types](crate::Basic) and blanket
 /// implementations for common container types, such as, arrays, slices, tuples, [`Vec`] and
 /// [`std::collections::HashMap`]. For easy implementation for custom types, use `Type` derive
 /// macro re-exported by this module.
@@ -38,7 +38,7 @@ pub trait Type {
     ///
     /// ```
     /// use std::collections::HashMap;
-    /// use zbus::wire::{Type, signature::{Child, Signature}};
+    /// use zbus::{Type, Signature, wire::signature::Child};
     ///
     /// assert_eq!(u32::SIGNATURE, &Signature::U32);
     /// assert_eq!(String::SIGNATURE, &Signature::Str);
@@ -91,8 +91,8 @@ macro_rules! impl_type_with_repr {
             repr($sample_ident:ident) = $into_repr:expr,
         }
     }) => {
-        impl $(<$typaram $(: $($tbound)::+)?>)? $crate::wire::Type for $($ty)::+ $(<$typaram>)? {
-            const SIGNATURE: &'static $crate::wire::Signature = <$repr>::SIGNATURE;
+        impl $(<$typaram $(: $($tbound)::+)?>)? $crate::Type for $($ty)::+ $(<$typaram>)? {
+            const SIGNATURE: &'static $crate::Signature = <$repr>::SIGNATURE;
         }
 
         #[cfg(test)]
@@ -167,7 +167,7 @@ macro_rules! impl_type_with_repr {
             $(
                 #[test]
                 fn signature_equals() {
-                    assert_eq!(<Ty as $crate::wire::Type>::SIGNATURE, $signature);
+                    assert_eq!(<Ty as $crate::Type>::SIGNATURE, $signature);
                 }
             )?
         }

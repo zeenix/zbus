@@ -8,9 +8,10 @@ use std::collections::HashMap;
 
 use super::Result;
 use crate::{
+    OwnedValue, Type,
+    as_value::optional,
     names::{BusName, OwnedUniqueName},
     proxy,
-    wire::{OwnedValue, Type, as_value::optional},
 };
 
 /// Proxy for the [`org.freedesktop.DBus.Debug.Stats`][link] interface.

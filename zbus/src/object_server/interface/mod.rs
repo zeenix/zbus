@@ -15,13 +15,12 @@ use std::{
 use async_trait::async_trait;
 
 use crate::{
-    Connection, ObjectServer,
+    Connection, ObjectServer, OwnedValue, Value,
     async_lock::RwLock,
     fdo,
     message::{self, Header, Message},
     names::{InterfaceName, MemberName},
     object_server::SignalEmitter,
-    wire::{OwnedValue, Value},
 };
 
 /// This trait is used to dispatch messages to an interface instance.

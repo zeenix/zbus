@@ -13,7 +13,7 @@ use crate::{
     connection::socket::BoxedSplit, names::WellKnownName, utils::block_on,
 };
 #[cfg(feature = "service")]
-use crate::{object_server::Interface, wire::ObjectPath};
+use crate::{ObjectPath, object_server::Interface};
 
 /// A builder for [`zbus::blocking::Connection`].
 #[derive(Debug)]

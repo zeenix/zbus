@@ -5,10 +5,10 @@ use crate::wire::{Signature, Type};
 /// A wrapper to serialize `T: Type + serde::Serialize` as a value.
 ///
 /// When the type of a value is well-known, you may avoid the cost and complexity of wrapping to a
-/// generic [`enum@crate::wire::Value`] and instead use this wrapper.
+/// generic [`enum@crate::Value`] and instead use this wrapper.
 ///
 /// ```
-/// # use zbus::wire::{to_bytes, serialized::Context, as_value::Serialize, LE};
+/// # use zbus::{as_value::Serialize, wire::{LE, serialized::Context, to_bytes}};
 /// #
 /// # let ctxt = Context::new(LE, 0);
 /// let _ = to_bytes(ctxt, &Serialize(&[0, 1, 2])).unwrap();
@@ -38,10 +38,10 @@ impl<T: Type + serde::Serialize> serde::Serialize for Serialize<'_, T> {
 }
 
 impl<T: Type + serde::Serialize> Type for Serialize<'_, T> {
-    const SIGNATURE: &'static crate::wire::Signature = &crate::wire::Signature::Variant;
+    const SIGNATURE: &'static crate::Signature = &crate::Signature::Variant;
 }
 
-/// Serialize a value as a [`enum@zbus::wire::Value`].
+/// Serialize a value as a [`enum@zbus::Value`].
 pub fn serialize<T, S>(value: &T, ser: S) -> std::result::Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -52,7 +52,7 @@ where
     Serialize(value).serialize(ser)
 }
 
-/// Serialize an optional value as a [`enum@zbus::wire::Value`].
+/// Serialize an optional value as a [`enum@zbus::Value`].
 pub fn serialize_optional<T, S>(value: &Option<T>, ser: S) -> std::result::Result<S::Ok, S::Error>
 where
     S: Serializer,

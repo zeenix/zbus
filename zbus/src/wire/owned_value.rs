@@ -11,7 +11,7 @@ use crate::wire::{
 };
 
 #[cfg(unix)]
-use crate::wire::Fd;
+use crate::Fd;
 
 // FIXME: Replace with a generic impl<T: TryFrom<Value>> TryFrom<OwnedValue> for T?
 // https://github.com/z-galaxy/zbus/issues/138
@@ -129,7 +129,7 @@ where
 
 impl<'k, 'v, K, V> TryFrom<OwnedValue> for BTreeMap<K, V>
 where
-    K: crate::wire::Basic + TryFrom<Value<'k>> + std::cmp::Ord,
+    K: crate::Basic + TryFrom<Value<'k>> + std::cmp::Ord,
     V: TryFrom<Value<'v>>,
     K::Error: Into<crate::wire::Error>,
     V::Error: Into<crate::wire::Error>,
@@ -157,7 +157,7 @@ where
 
 impl<'k, 'v, K, V, H> TryFrom<OwnedValue> for HashMap<K, V, H>
 where
-    K: crate::wire::Basic + TryFrom<Value<'k>> + std::hash::Hash + std::cmp::Eq,
+    K: crate::Basic + TryFrom<Value<'k>> + std::hash::Hash + std::cmp::Eq,
     V: TryFrom<Value<'v>>,
     H: BuildHasher + Default,
     K::Error: Into<crate::Error>,

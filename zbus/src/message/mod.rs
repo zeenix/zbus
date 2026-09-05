@@ -2,10 +2,10 @@
 use std::{borrow::Cow, fmt, sync::Arc};
 
 use crate::{
-    Error, Result,
+    Error, ObjectPath, Result,
     names::{ErrorName, InterfaceName, MemberName},
     utils::padding_for_8_bytes,
-    wire::{Endian, ObjectPath, serialized},
+    wire::{Endian, serialized},
 };
 
 mod builder;
@@ -51,7 +51,7 @@ impl Sequence {
 /// using the low-level API.
 ///
 /// **Note**: The message owns the received FDs and will close them when dropped. You can
-/// deserialize the body (that you get using [`Message::body`]) to [`crate::wire::OwnedFd`] if
+/// deserialize the body (that you get using [`Message::body`]) to [`crate::OwnedFd`] if
 /// you want to keep the FDs around after the containing message is dropped.
 #[derive(Clone)]
 pub struct Message {
@@ -200,11 +200,11 @@ impl Message {
     ///     .build(&send_body)?;
     /// let header = message.header();
     /// let body = message.body();
-    /// let body: zbus::wire::Structure<'_> = body.deserialize()?;
+    /// let body: zbus::Structure<'_> = body.deserialize()?;
     /// let fields = body.fields();
-    /// assert!(matches!(fields[0], zbus::wire::Value::I32(7)));
-    /// assert!(matches!(fields[1], zbus::wire::Value::Structure(_)));
-    /// assert!(matches!(fields[2], zbus::wire::Value::Array(_)));
+    /// assert!(matches!(fields[0], zbus::Value::I32(7)));
+    /// assert!(matches!(fields[1], zbus::Value::Structure(_)));
+    /// assert!(matches!(fields[2], zbus::Value::Array(_)));
     ///
     /// let reply_body = Message::method_return(&header)?.build(&body)?.body();
     /// let reply_value : (i32, (i32, &str), Vec<String>) = reply_body.deserialize()?;
@@ -270,7 +270,7 @@ impl fmt::Debug for Message {
             msg.field("member", &member);
         }
         match self.body().signature() {
-            crate::wire::Signature::Unit => (),
+            crate::Signature::Unit => (),
             s => {
                 msg.field("body", &s);
             }
@@ -334,8 +334,8 @@ impl fmt::Display for Message {
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
-    use crate::wire::Fd;
-    use crate::wire::Signature;
+    use crate::Fd;
+    use crate::Signature;
     #[cfg(unix)]
     use std::os::fd::{AsFd, AsRawFd};
     use test_log::test;

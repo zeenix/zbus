@@ -1,6 +1,9 @@
-use zbus::wire::{
-    serialized::{Context, Data},
-    to_bytes, Value,
+use zbus::{
+    Value,
+    wire::{
+        serialized::{Context, Data},
+        to_bytes,
+    },
 };
 
 pub fn fuzz_for_context(bytes: &[u8], ctx: Context) {

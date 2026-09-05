@@ -281,7 +281,7 @@ mod tests {
     type NonBasicBTreeMap = BTreeMap<Vec<u8>, u8>;
     type PathHashMap = HashMap<std::path::PathBuf, u8>;
     type EmptyArrayHashMap = HashMap<[u8; 0], u8>;
-    type OptionalHashMap = HashMap<crate::wire::Optional<u8>, u8>;
+    type OptionalHashMap = HashMap<crate::Optional<u8>, u8>;
 
     assert_impl_all!(
         BasicHashMap: Type,

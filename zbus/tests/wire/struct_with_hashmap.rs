@@ -1,5 +1,8 @@
 use std::collections::HashMap;
-use zbus::wire::{LE, Type, serialized::Context, to_bytes};
+use zbus::{
+    Type,
+    wire::{LE, serialized::Context, to_bytes},
+};
 
 #[test]
 fn struct_with_hashmap() {

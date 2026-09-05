@@ -1,7 +1,6 @@
 use crate::{
-    Connection, Error, Result,
+    Connection, Error, ObjectPath, Result,
     names::{BusName, InterfaceName, MemberName},
-    wire::ObjectPath,
 };
 
 /// A signal emitter.
@@ -49,7 +48,7 @@ impl<'s> SignalEmitter<'s> {
         I::Error: Into<Error>,
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         self.conn
             .emit_signal(

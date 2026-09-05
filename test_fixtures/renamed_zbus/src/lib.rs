@@ -55,7 +55,7 @@ enum Error {
 }
 
 // The wire derives through the renamed crate.
-#[derive(my_zbus::wire::Type)]
+#[derive(my_zbus::Type)]
 #[zbus(crate = "my_zbus::wire")]
 struct Data {
     field: u32,

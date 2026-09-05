@@ -8,7 +8,7 @@ publish = false
 description = "Compile-only fixture: downstream crate using the wire derives through zbus"
 
 [dependencies]
-# The derives are used through the `zbus::wire` re-export, like the book examples do.
+# The derives are used through the `zbus` re-export, like the book examples do.
 zbus = { path = "../../zbus" }
 serde = { workspace = true, features = ["derive"] }
 

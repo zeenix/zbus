@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zbus::wire::{Value, serialized::Context};
+use zbus::{Value, wire::serialized::Context};
 
 #[test]
 fn struct_byte_array() {
