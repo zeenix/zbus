@@ -19,11 +19,7 @@ use crate::{
 /// [ObjectServer].
 pub struct Properties;
 
-#[interface(
-    name = "org.freedesktop.DBus.Properties",
-    introspection_docs = false,
-    proxy(visibility = "pub")
-)]
+#[interface(name = "org.freedesktop.DBus.Properties", introspection_docs = false)]
 impl Properties {
     /// Get a property value.
     async fn get(
@@ -148,6 +144,33 @@ impl Properties {
     #[rustfmt::skip]
     pub async fn properties_changed(
         emitter: &SignalEmitter<'_>,
+        interface_name: InterfaceName<'_>,
+        changed_properties: HashMap<&str, Value<'_>>,
+        invalidated_properties: Cow<'_, [&str]>,
+    ) -> zbus::Result<()>;
+}
+
+/// Proxy for the `org.freedesktop.DBus.Properties` interface.
+#[crate::proxy(interface = "org.freedesktop.DBus.Properties")]
+pub trait Properties {
+    /// Get a property value.
+    fn get(&self, interface_name: InterfaceName<'_>, property_name: &str) -> Result<OwnedValue>;
+
+    /// Set a property value.
+    fn set(
+        &self,
+        interface_name: InterfaceName<'_>,
+        property_name: &str,
+        value: &Value<'_>,
+    ) -> Result<()>;
+
+    /// Get all properties.
+    fn get_all(&self, interface_name: InterfaceName<'_>) -> Result<HashMap<String, OwnedValue>>;
+
+    /// Emit the `org.freedesktop.DBus.Properties.PropertiesChanged` signal.
+    #[zbus(signal)]
+    fn properties_changed(
+        &self,
         interface_name: InterfaceName<'_>,
         changed_properties: HashMap<&str, Value<'_>>,
         invalidated_properties: Cow<'_, [&str]>,

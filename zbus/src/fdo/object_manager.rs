@@ -86,8 +86,7 @@ pub struct ObjectManager;
 
 #[interface(
     name = "org.freedesktop.DBus.ObjectManager",
-    introspection_docs = false,
-    proxy(visibility = "pub")
+    introspection_docs = false
 )]
 impl ObjectManager {
     /// The return value of this method is a dict whose keys are object paths. All returned object
@@ -128,6 +127,39 @@ impl ObjectManager {
     #[zbus(signal)]
     pub async fn interfaces_removed(
         emitter: &SignalEmitter<'_>,
+        object_path: ObjectPath<'_>,
+        interfaces: Cow<'_, [InterfaceName<'_>]>,
+    ) -> zbus::Result<()>;
+}
+
+/// Proxy for the `org.freedesktop.DBus.ObjectManager` interface.
+#[crate::proxy(interface = "org.freedesktop.DBus.ObjectManager")]
+pub trait ObjectManager {
+    /// The return value of this method is a dict whose keys are object paths. All returned object
+    /// paths are children of the object path implementing this interface, i.e. their object paths
+    /// start with the ObjectManager's object path plus '/'.
+    ///
+    /// Each value is a dict whose keys are interfaces names. Each value in this inner dict is the
+    /// same dict that would be returned by the org.freedesktop.DBus.Properties.GetAll() method for
+    /// that combination of object path and interface. If an interface has no properties, the empty
+    /// dict is returned.
+    fn get_managed_objects(&self) -> Result<ManagedObjects>;
+
+    /// This signal is emitted when either a new object is added or when an existing object gains
+    /// one or more interfaces. The `interfaces_and_properties` argument contains a map with the
+    /// interfaces and properties (if any) that have been added to the given object path.
+    #[zbus(signal)]
+    fn interfaces_added(
+        &self,
+        object_path: ObjectPath<'_>,
+        interfaces_and_properties: HashMap<InterfaceName<'_>, HashMap<&str, Value<'_>>>,
+    ) -> zbus::Result<()>;
+
+    /// This signal is emitted whenever an object is removed or it loses one or more interfaces.
+    /// The `interfaces` parameters contains a list of the interfaces that were removed.
+    #[zbus(signal)]
+    fn interfaces_removed(
+        &self,
         object_path: ObjectPath<'_>,
         interfaces: Cow<'_, [InterfaceName<'_>]>,
     ) -> zbus::Result<()>;
