@@ -9,10 +9,9 @@ use std::{
 use serde::{Deserialize, Serialize, de};
 
 use crate::{
-    Error, Result,
+    Error, ObjectPath, Result, Str, Structure, Type as VariantType,
     message::Type,
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, Str, Structure, Type as VariantType},
 };
 
 mod builder;

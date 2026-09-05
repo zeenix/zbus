@@ -4,9 +4,9 @@
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(crate = "zbus::wire")]
 pub struct PlayList {
@@ -21,9 +21,9 @@ pub struct PlayList {
     Eq,
     serde_repr::Deserialize_repr,
     serde_repr::Serialize_repr,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(crate = "zbus::wire")]
 #[repr(i32)]
@@ -40,9 +40,9 @@ pub enum OddValues {
     Eq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(signature = "s", crate = "zbus::wire")]
 pub enum Status {

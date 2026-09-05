@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
-    Error,
+    Error, ObjectPath, Signature, Type as VariantType,
     message::Fields,
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
     wire::{
-        Endian, ObjectPath, Signature, Type as VariantType,
+        Endian,
         serialized::{self, Context},
     },
 };
@@ -321,8 +321,9 @@ mod tests {
     use crate::message::{Fields, Header, PrimaryHeader, Type};
 
     use crate::{
+        ObjectPath, Signature,
         names::{InterfaceName, MemberName},
-        wire::{ObjectPath, Signature, signature},
+        signature,
     };
     use std::{borrow::Cow, error::Error};
     use test_log::test;

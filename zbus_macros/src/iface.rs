@@ -586,7 +586,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     };
                     let do_set = quote!({
                         #args_from_msg
-                        match #zbus::wire::as_value::deserialize_for_property::<#value_ty>(value) {
+                        match #zbus::as_value::deserialize_for_property::<#value_ty>(value) {
                             ::std::result::Result::Ok(__zbus__value) => {
                                 #value_arg
                                 match #set_call {
@@ -638,7 +638,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     p.ty = Some(get_return_type(output)?.clone());
 
                     let value_convert = quote!(
-                        #zbus::wire::as_value::to_owned_value(&value)
+                        #zbus::as_value::to_owned_value(&value)
                             .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))
                     );
                     let inner = if is_fallible_property {
@@ -665,7 +665,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             if let Ok(prop) = self.#ident(#args_names)#method_await {
                             props.insert(
                                 ::std::string::ToString::to_string(#member_name),
-                                #zbus::wire::as_value::to_owned_value(&prop)
+                                #zbus::as_value::to_owned_value(&prop)
                                     .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))?,
                             );
                         }})
@@ -676,7 +676,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                 ::std::string::ToString::to_string(#member_name),
                                 {
                                     let value = self.#ident(#args_names)#method_await;
-                                    #zbus::wire::as_value::to_owned_value(&value)
+                                    #zbus::as_value::to_owned_value(&value)
                                         .map_err(|e| #zbus::fdo::Error::Failed(e.to_string()))?
                                 },
                             );
@@ -712,7 +712,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                 let mut changed = ::std::collections::HashMap::new();
                                 changed.insert(
                                     #member_name,
-                                    #zbus::wire::as_value::Serialize(&value),
+                                    #zbus::as_value::Serialize(&value),
                                 );
                                 __zbus__signal_emitter.emit(
                                     "org.freedesktop.DBus.Properties",
@@ -877,7 +877,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 __zbus__connection: &#zbus::Connection,
                 __zbus__header: Option<&#zbus::message::Header<'_>>,
                 __zbus__signal_emitter: &#zbus::object_server::SignalEmitter<'_>,
-            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::wire::OwnedValue>> {
+            ) -> ::std::option::Option<#zbus::fdo::Result<#zbus::OwnedValue>> {
                 match __zbus__property_name {
                     #get_dispatch
                     _ => ::std::option::Option::None,
@@ -893,11 +893,11 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 __zbus__signal_emitter: &#zbus::object_server::SignalEmitter<'_>,
             ) -> #zbus::fdo::Result<::std::collections::HashMap<
                 ::std::string::String,
-                #zbus::wire::OwnedValue,
+                #zbus::OwnedValue,
             >> {
                 let mut props: ::std::collections::HashMap<
                     ::std::string::String,
-                    #zbus::wire::OwnedValue,
+                    #zbus::OwnedValue,
                 > = ::std::collections::HashMap::new();
                 #get_all
                 Ok(props)
@@ -907,7 +907,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
             fn set<'call>(
                 &'call self,
                 __zbus__property_name: &'call str,
-                value: &'call #zbus::wire::Value<'_>,
+                value: &'call #zbus::Value<'_>,
                 __zbus__object_server: &'call #zbus::ObjectServer,
                 __zbus__connection: &'call #zbus::Connection,
                 __zbus__header: Option<&'call #zbus::message::Header<'_>>,
@@ -923,7 +923,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
             async fn set_mut(
                 &mut self,
                 __zbus__property_name: &str,
-                value: &#zbus::wire::Value<'_>,
+                value: &#zbus::Value<'_>,
                 __zbus__object_server: &#zbus::ObjectServer,
                 __zbus__connection: &#zbus::Connection,
                 __zbus__header: Option<&#zbus::message::Header<'_>>,
@@ -972,7 +972,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                     indent = level
                 ).unwrap();
                 {
-                    use #zbus::wire::Type;
+                    use #zbus::Type;
 
                     let level = level + 2;
                     #introspect
@@ -1574,7 +1574,7 @@ impl Proxy {
                 quote! {
                     where
                         #generic_type: #zbus::export::serde::de::DeserializeOwned
-                            + #zbus::wire::Type
+                            + #zbus::Type
                 },
             )
         } else {
@@ -1769,7 +1769,7 @@ mod tests {
             "generated code names ::zbus instead of the requested crate: {expanded}"
         );
         assert!(
-            expanded.contains(":: mybus :: wire :: as_value :: deserialize_for_property"),
+            expanded.contains(":: mybus :: as_value :: deserialize_for_property"),
             "generated code lost the value deserialization: {expanded}"
         );
     }

@@ -1,6 +1,6 @@
 /// This type is used for keeping strings in a [`Value`], among other things.
 ///
-/// [`Value`]: crate::wire::Value::Str
+/// [`Value`]: crate::Value::Str
 pub use zcheapstr::CheapStr as Str;
 
 use crate::wire::{Basic, Type};
@@ -11,5 +11,5 @@ impl Basic for Str<'_> {
 }
 
 impl Type for Str<'_> {
-    const SIGNATURE: &'static crate::wire::Signature = &crate::wire::Signature::Str;
+    const SIGNATURE: &'static crate::Signature = &crate::Signature::Str;
 }

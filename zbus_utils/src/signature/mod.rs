@@ -17,7 +17,7 @@ use std::{
 
 /// A D-Bus signature in parsed form.
 ///
-/// This is the type that zbus re-exports as [`zbus::wire::Signature`] and zgvariant as
+/// This is the type that zbus re-exports as [`zbus::Signature`] and zgvariant as
 /// `zgvariant::Signature`, so a signature parsed by one of them is the same value in the other.
 /// Parsing a signature once, into this tree, is what lets their (de)serialization API stay
 /// efficient.
@@ -49,7 +49,7 @@ use std::{
 /// assert_eq!(SIGNATURE.to_string(), "av");
 /// ```
 ///
-/// [`zbus::wire::Signature`]: https://docs.rs/zbus/latest/zbus/wire/enum.Signature.html
+/// [`zbus::Signature`]: https://docs.rs/zbus/latest/zbus/enum.Signature.html
 #[derive(Debug, Default, Clone)]
 pub enum Signature {
     // Basic types

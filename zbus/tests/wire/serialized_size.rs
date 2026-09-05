@@ -1,7 +1,7 @@
 use zbus::wire::{LE, serialized::Context, serialized_size};
 
 #[cfg(unix)]
-use zbus::wire::Fd;
+use zbus::Fd;
 
 #[test]
 fn test_serialized_size() {

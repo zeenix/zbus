@@ -8,10 +8,7 @@ use crate::{
     message::{Message, Type},
     names::OwnedErrorName,
 };
-use crate::{
-    names::InterfaceName,
-    wire::{self, ObjectPath, Signature},
-};
+use crate::{ObjectPath, Signature, names::InterfaceName, wire};
 
 /// The error type for `zbus`.
 ///

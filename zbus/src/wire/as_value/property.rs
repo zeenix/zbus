@@ -864,7 +864,7 @@ mod tests {
     use serde::Deserialize;
 
     use super::*;
-    use crate::wire::{Array, OwnedValue, StructureBuilder, Type};
+    use crate::wire::{Array, OwnedValue, Structure, Type};
 
     fn convert_property_value<T>(value: &Value<'_>) -> T
     where
@@ -897,7 +897,7 @@ mod tests {
             .unwrap();
         let mut outer = Array::new(inner.signature());
         outer.append(Value::Array(inner)).unwrap();
-        let structure = StructureBuilder::new()
+        let structure = Structure::builder()
             .append_field(Value::Array(outer))
             .build()
             .unwrap();
@@ -965,16 +965,16 @@ mod tests {
 
     #[test]
     fn unwraps_variant_structure_and_enum_fields() {
-        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::wire::Type)]
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::Type)]
         struct WithValue(u32, OwnedValue);
 
-        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::wire::Type)]
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::Type)]
         enum NewType {
             First(OwnedValue),
             Second(OwnedValue),
         }
 
-        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::wire::Type)]
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, crate::Type)]
         enum Fields {
             First(u8, OwnedValue),
             Second { y: u8, value: OwnedValue },
@@ -1015,7 +1015,7 @@ mod tests {
     #[test]
     fn deserializes_repr_enums() {
         #[repr(u32)]
-        #[derive(Debug, PartialEq, crate::wire::Type, serde_repr::Deserialize_repr)]
+        #[derive(Debug, PartialEq, crate::Type, serde_repr::Deserialize_repr)]
         enum Kind {
             First = 1,
             Second = 2,
@@ -1030,7 +1030,7 @@ mod tests {
 
     #[test]
     fn deserializes_wire_enum_representations() {
-        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        #[derive(Debug, PartialEq, crate::Type, serde::Deserialize)]
         enum Unit {
             First,
             Second,
@@ -1042,7 +1042,7 @@ mod tests {
             Unit::Second
         );
 
-        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        #[derive(Debug, PartialEq, crate::Type, serde::Deserialize)]
         #[zvariant(signature = "s")]
         #[serde(rename_all = "snake_case")]
         enum StringUnit {
@@ -1056,13 +1056,13 @@ mod tests {
             StringUnit::Second
         );
 
-        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        #[derive(Debug, PartialEq, crate::Type, serde::Deserialize)]
         enum NewType {
             First(f64),
             Second(f64),
         }
 
-        let value = StructureBuilder::new()
+        let value = Structure::builder()
             .append_field(Value::U32(1))
             .append_field(Value::F64(2.5))
             .build()
@@ -1072,18 +1072,18 @@ mod tests {
             NewType::Second(2.5)
         );
 
-        #[derive(Debug, PartialEq, crate::wire::Type, serde::Deserialize)]
+        #[derive(Debug, PartialEq, crate::Type, serde::Deserialize)]
         enum Fields {
             First(u8, u32),
             Second { y: u8, t: u32 },
         }
 
-        let payload = StructureBuilder::new()
+        let payload = Structure::builder()
             .append_field(Value::U8(3))
             .append_field(Value::U32(4))
             .build()
             .unwrap();
-        let value = StructureBuilder::new()
+        let value = Structure::builder()
             .append_field(Value::U32(1))
             .append_field(Value::Structure(payload))
             .build()
@@ -1096,7 +1096,7 @@ mod tests {
 
     #[test]
     fn deserializes_value_containers_and_dict_structs() {
-        #[derive(Debug, PartialEq, crate::wire::DeserializeDict, crate::wire::Type)]
+        #[derive(Debug, PartialEq, crate::DeserializeDict, crate::Type)]
         #[zvariant(signature = "dict")]
         struct DictStruct {
             count: u32,
@@ -1127,7 +1127,7 @@ mod tests {
 
     #[test]
     fn deserializes_empty_structs() {
-        #[derive(serde::Deserialize, crate::wire::Type)]
+        #[derive(serde::Deserialize, crate::Type)]
         struct Empty {}
 
         deserialize_for_property::<Empty>(&Value::U8(0)).unwrap();

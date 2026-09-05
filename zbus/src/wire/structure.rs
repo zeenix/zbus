@@ -12,6 +12,8 @@ use crate::wire::{
 
 /// Use this to efficiently build a [`Structure`].
 ///
+/// Create one with [`Structure::builder`].
+///
 /// [`Structure`]: struct.Structure.html
 #[derive(Debug, Default, PartialEq)]
 pub struct StructureBuilder<'a>(Vec<Value<'a>>);
@@ -175,6 +177,24 @@ pub struct Structure<'a> {
 }
 
 impl<'a> Structure<'a> {
+    /// A builder for a new structure.
+    ///
+    /// ```
+    /// use zbus::Structure;
+    ///
+    /// let name = String::from("hello");
+    /// let structure = Structure::builder()
+    ///     .add_field(name.as_str())
+    ///     .add_field(42u32)
+    ///     .build()?;
+    /// assert_eq!(structure.signature(), "(su)");
+    /// # Ok::<(), zbus::Error>(())
+    /// ```
+    #[must_use]
+    pub fn builder() -> StructureBuilder<'a> {
+        StructureBuilder::new()
+    }
+
     /// Get a reference to all the fields of `self`.
     pub fn fields(&self) -> &[Value<'a>] {
         &self.fields
@@ -312,7 +332,7 @@ macro_rules! tuple_impls {
             {
                 #[inline]
                 fn from(value: ($($name),+,)) -> Self {
-                    StructureBuilder::new()
+                    Self::builder()
                     $(
                         .add_field(value. $n)
                     )+

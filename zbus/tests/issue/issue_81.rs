@@ -1,14 +1,11 @@
 use test_log::test;
 
-use zbus::wire::OwnedObjectPath;
+use zbus::OwnedObjectPath;
 
 #[test]
 #[ignore]
 fn issue_81() {
-    use zbus::{
-        proxy,
-        wire::{OwnedValue, Type},
-    };
+    use zbus::{OwnedValue, Type, proxy};
 
     #[derive(
         Debug, PartialEq, Eq, Clone, Type, OwnedValue, serde::Serialize, serde::Deserialize,

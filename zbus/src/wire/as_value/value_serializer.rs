@@ -10,8 +10,7 @@ use serde::{
 };
 
 use crate::wire::{
-    Array, Dict, OwnedValue, Signature, StructureBuilder, Type, Value,
-    container_depths::ContainerDepths,
+    Array, Dict, OwnedValue, Signature, Structure, Type, Value, container_depths::ContainerDepths,
 };
 
 #[cfg(unix)]
@@ -94,7 +93,7 @@ impl ser::Serializer for &mut ValueSerializer {
             // SAFETY: `value` is the raw descriptor supplied by the Serialize implementation.
             // It is borrowed only for the duration of the immediate clone operation.
             let fd = unsafe { BorrowedFd::borrow_raw(value) }.try_clone_to_owned()?;
-            return Ok(Value::Fd(crate::wire::Fd::Owned(fd)));
+            return Ok(Value::Fd(crate::Fd::Owned(fd)));
         }
 
         self.expect(Signature::I32).map(|()| Value::I32(value))
@@ -136,7 +135,7 @@ impl ser::Serializer for &mut ValueSerializer {
     fn serialize_str(self, value: &str) -> crate::Result<Self::Ok> {
         match self.signature {
             Signature::Str => Ok(Value::Str(value.to_owned().into())),
-            Signature::ObjectPath => Ok(Value::ObjectPath(crate::wire::ObjectPath::try_from(
+            Signature::ObjectPath => Ok(Value::ObjectPath(crate::ObjectPath::try_from(
                 value.to_owned(),
             )?)),
             Signature::Signature => Ok(Value::Signature(value.parse()?)),
@@ -494,12 +493,12 @@ impl StructSerializer {
                     "an enum variant with the expected number of fields".to_owned(),
                 ));
             }
-            let mut builder = StructureBuilder::new();
+            let mut builder = Structure::builder();
             builder.push_value(Value::U32(match self.fields.first() {
                 Some(Value::U32(index)) => *index,
                 _ => unreachable!(),
             }));
-            let mut inner_builder = StructureBuilder::new();
+            let mut inner_builder = Structure::builder();
             for field in inner_fields {
                 inner_builder.push_value(field);
             }
@@ -522,7 +521,7 @@ impl StructSerializer {
         if self.expected == Signature::U8 && self.fields.len() == 1 {
             return Ok(self.fields.pop().expect("unit field is present"));
         }
-        let mut builder = StructureBuilder::new();
+        let mut builder = Structure::builder();
         for field in self.fields {
             builder.push_value(field);
         }
@@ -710,32 +709,32 @@ mod tests {
     use super::*;
     use crate::wire::{LE, serialized::Context, to_bytes};
 
-    #[derive(Debug, PartialEq, serde::Serialize, crate::wire::Type)]
+    #[derive(Debug, PartialEq, serde::Serialize, crate::Type)]
     struct Pair(u32, String);
 
-    #[derive(serde::Serialize, crate::wire::Type)]
+    #[derive(serde::Serialize, crate::Type)]
     struct Empty {}
 
-    #[derive(crate::wire::SerializeDict, crate::wire::Type)]
+    #[derive(crate::SerializeDict, crate::Type)]
     #[zvariant(signature = "dict")]
     struct DictStruct {
         count: u32,
         name: String,
     }
 
-    #[derive(Debug, PartialEq, serde::Serialize, crate::wire::Type)]
+    #[derive(Debug, PartialEq, serde::Serialize, crate::Type)]
     enum Enum {
         First(u32, String),
         Second(u32, String),
     }
 
-    #[derive(serde::Serialize, crate::wire::Type)]
+    #[derive(serde::Serialize, crate::Type)]
     enum UnitEnum {
         First,
         Second,
     }
 
-    #[derive(serde::Serialize, crate::wire::Type)]
+    #[derive(serde::Serialize, crate::Type)]
     #[zvariant(signature = "s")]
     #[serde(rename_all = "snake_case")]
     enum StringEnum {
@@ -744,7 +743,7 @@ mod tests {
     }
 
     #[repr(u32)]
-    #[derive(serde_repr::Serialize_repr, crate::wire::Type)]
+    #[derive(serde_repr::Serialize_repr, crate::Type)]
     enum ReprEnum {
         First = 1,
         Second = 2,

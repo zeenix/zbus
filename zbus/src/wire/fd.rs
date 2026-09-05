@@ -114,7 +114,7 @@ macro_rules! fd_impl {
         }
 
         impl Type for $i {
-            const SIGNATURE: &'static crate::wire::Signature = &crate::wire::Signature::Fd;
+            const SIGNATURE: &'static crate::Signature = &crate::Signature::Fd;
         }
     };
 }

@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, instrument};
 use zbus::{
+    Optional, OwnedValue, Value,
     connection::Connection,
     interface,
     message::{self, Header},
     object_server::{ObjectServer, ResponseDispatchNotifier, SignalEmitter},
-    wire::{Optional, OwnedValue, Value},
 };
 
 use super::types::{ArgStructTest, IP4Adress, MyIfaceError, NextAction, RefType};

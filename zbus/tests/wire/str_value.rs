@@ -1,4 +1,7 @@
-use zbus::wire::{LE, Value, serialized::Context, to_bytes};
+use zbus::{
+    Value,
+    wire::{LE, serialized::Context, to_bytes},
+};
 
 #[test]
 fn str_value() {

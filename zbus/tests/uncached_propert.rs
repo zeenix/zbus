@@ -98,10 +98,7 @@ async fn test_serde_property() -> Result<()> {
 
     use futures_util::StreamExt;
     use serde::{Deserialize, Serialize};
-    use zbus::{
-        names::OwnedUniqueName,
-        wire::{Optional, OwnedValue, Str, Type},
-    };
+    use zbus::{Optional, OwnedValue, Str, Type, names::OwnedUniqueName};
 
     #[derive(Debug, Deserialize, Serialize, Type, PartialEq)]
     #[zvariant(signature = "s")]

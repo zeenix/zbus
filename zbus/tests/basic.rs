@@ -8,10 +8,7 @@ use test_log::test;
 use tracing::{debug, instrument};
 use zbus::block_on;
 
-use zbus::{
-    names::UniqueName,
-    wire::{OwnedValue, Type},
-};
+use zbus::{OwnedValue, Type, names::UniqueName};
 
 use zbus::{
     Connection, Result,
@@ -101,7 +98,7 @@ fn fdpass_systemd() {
 #[cfg(all(unix, not(target_os = "macos")))]
 async fn fdpass_systemd_async() {
     use std::{fs::File, os::unix::io::AsRawFd};
-    use zbus::wire::OwnedFd;
+    use zbus::OwnedFd;
 
     let connection = Connection::system().await.unwrap();
 

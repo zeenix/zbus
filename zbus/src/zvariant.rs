@@ -6,8 +6,9 @@
 //! alias, such as `DynamicTuple(…)`, the removed `Error` variants and the removed GVariant
 //! APIs, such as `Value::Maybe` and `Context::new_gvariant` — are covered by the "Upgrading to
 //! zbus 6.0" chapter of the zbus book. Code written against the `zvariant` crate itself needs
-//! more than this: it switches its dependency to `zbus` and renames `zvariant::` to
-//! `zbus::wire::`, as the same chapter describes. This module is removed in zbus 7.0.
+//! more than this: it switches its dependency to `zbus` and uses the corresponding items from
+//! the `zbus` crate root (or [`crate::wire`] for the low-level encoding and decoding API), as the
+//! same chapter describes. This module is removed in zbus 7.0.
 //!
 //! Importing the module, or naming any of the aliases, produces a deprecation warning:
 //!
@@ -48,20 +49,20 @@ pub use crate::wire::{
     dbus, export, impl_type_with_repr, static_str_type, to_writer, to_writer_for_signature,
 };
 
-/// Deprecated alias of [`crate::wire::Array`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Array` instead")]
+/// Deprecated alias of [`crate::Array`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Array` instead")]
 pub type Array<'a> = wire::Array<'a>;
 
 /// Deprecated alias of [`crate::wire::ArraySeed`].
 #[deprecated(since = "6.0.0", note = "use `zbus::wire::ArraySeed` instead")]
 pub type ArraySeed = wire::ArraySeed;
 
-/// Deprecated alias of [`crate::wire::Dict`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Dict` instead")]
+/// Deprecated alias of [`crate::Dict`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Dict` instead")]
 pub type Dict<'k, 'v> = wire::Dict<'k, 'v>;
 
-/// Deprecated alias of [`crate::wire::DynamicTuple`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::DynamicTuple` instead")]
+/// Deprecated alias of [`crate::DynamicTuple`].
+#[deprecated(since = "6.0.0", note = "use `zbus::DynamicTuple` instead")]
 pub type DynamicTuple<T> = wire::DynamicTuple<T>;
 
 /// Deprecated alias of [`crate::wire::TupleSeed`].
@@ -72,66 +73,66 @@ pub type TupleSeed<'a, T, S> = wire::TupleSeed<'a, T, S>;
 #[deprecated(since = "6.0.0", note = "use `zbus::wire::Endian` instead")]
 pub type Endian = wire::Endian;
 
-/// Deprecated alias of [`crate::wire::Fd`].
+/// Deprecated alias of [`crate::Fd`].
 #[cfg(unix)]
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Fd` instead")]
+#[deprecated(since = "6.0.0", note = "use `zbus::Fd` instead")]
 pub type Fd<'f> = wire::Fd<'f>;
 
-/// Deprecated alias of [`crate::wire::OwnedFd`].
+/// Deprecated alias of [`crate::OwnedFd`].
 #[cfg(unix)]
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::OwnedFd` instead")]
+#[deprecated(since = "6.0.0", note = "use `zbus::OwnedFd` instead")]
 pub type OwnedFd = wire::OwnedFd;
 
-/// Deprecated alias of [`crate::wire::FilePath`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::FilePath` instead")]
+/// Deprecated alias of [`crate::FilePath`].
+#[deprecated(since = "6.0.0", note = "use `zbus::FilePath` instead")]
 pub type FilePath<'f> = wire::FilePath<'f>;
 
-/// Deprecated alias of [`crate::wire::ObjectPath`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::ObjectPath` instead")]
+/// Deprecated alias of [`crate::ObjectPath`].
+#[deprecated(since = "6.0.0", note = "use `zbus::ObjectPath` instead")]
 pub type ObjectPath<'a> = wire::ObjectPath<'a>;
 
-/// Deprecated alias of [`crate::wire::OwnedObjectPath`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::OwnedObjectPath` instead")]
+/// Deprecated alias of [`crate::OwnedObjectPath`].
+#[deprecated(since = "6.0.0", note = "use `zbus::OwnedObjectPath` instead")]
 pub type OwnedObjectPath = wire::OwnedObjectPath;
 
-/// Deprecated alias of [`crate::wire::Optional`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Optional` instead")]
+/// Deprecated alias of [`crate::Optional`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Optional` instead")]
 pub type Optional<T> = wire::Optional<T>;
 
-/// Deprecated alias of [`crate::wire::Signature`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Signature` instead")]
+/// Deprecated alias of [`crate::Signature`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Signature` instead")]
 pub type Signature = wire::Signature;
 
-/// Deprecated alias of [`crate::wire::Str`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Str` instead")]
+/// Deprecated alias of [`crate::Str`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Str` instead")]
 pub type Str<'a> = wire::Str<'a>;
 
-/// Deprecated alias of [`crate::wire::Structure`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Structure` instead")]
+/// Deprecated alias of [`crate::Structure`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Structure` instead")]
 pub type Structure<'a> = wire::Structure<'a>;
 
 /// Deprecated alias of [`crate::wire::StructureBuilder`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::StructureBuilder` instead")]
+#[deprecated(since = "6.0.0", note = "use `zbus::Structure::builder()` instead")]
 pub type StructureBuilder<'a> = wire::StructureBuilder<'a>;
 
 /// Deprecated alias of [`crate::wire::StructureSeed`].
 #[deprecated(since = "6.0.0", note = "use `zbus::wire::StructureSeed` instead")]
 pub type StructureSeed<'a> = wire::StructureSeed<'a>;
 
-/// Deprecated alias of [`crate::wire::OwnedStructure`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::OwnedStructure` instead")]
+/// Deprecated alias of [`crate::OwnedStructure`].
+#[deprecated(since = "6.0.0", note = "use `zbus::OwnedStructure` instead")]
 pub type OwnedStructure = wire::OwnedStructure;
 
 /// Deprecated alias of [`crate::wire::OwnedStructureSeed`].
 #[deprecated(since = "6.0.0", note = "use `zbus::wire::OwnedStructureSeed` instead")]
 pub type OwnedStructureSeed = wire::OwnedStructureSeed;
 
-/// Deprecated alias of [`enum@crate::wire::Value`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::Value` instead")]
+/// Deprecated alias of [`enum@crate::Value`].
+#[deprecated(since = "6.0.0", note = "use `zbus::Value` instead")]
 pub type Value<'a> = wire::Value<'a>;
 
-/// Deprecated alias of [`struct@crate::wire::OwnedValue`].
-#[deprecated(since = "6.0.0", note = "use `zbus::wire::OwnedValue` instead")]
+/// Deprecated alias of [`struct@crate::OwnedValue`].
+#[deprecated(since = "6.0.0", note = "use `zbus::OwnedValue` instead")]
 pub type OwnedValue = wire::OwnedValue;
 
 /// Deprecated alias of [`crate::Error`].

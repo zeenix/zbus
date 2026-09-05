@@ -6,11 +6,10 @@ use core::{
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{
-    Error, Result,
+    Error, NoneValue, OwnedValue, Result, Str, Type, Value,
     names::{
         OwnedUniqueName, OwnedWellKnownName, UniqueName, WellKnownName, utils::impl_str_basic,
     },
-    wire::{NoneValue, OwnedValue, Str, Type, Value},
 };
 use serde::{Deserialize, Serialize, de};
 use zbus_utils::names::BusNameKind;
@@ -195,7 +194,7 @@ impl<'de: 'name, 'name> Deserialize<'de> for BusName<'name> {
 }
 
 impl Type for BusName<'_> {
-    const SIGNATURE: &'static crate::wire::Signature = &crate::wire::Signature::Str;
+    const SIGNATURE: &'static crate::Signature = &crate::Signature::Str;
 }
 
 impl<'name> From<UniqueName<'name>> for BusName<'name> {

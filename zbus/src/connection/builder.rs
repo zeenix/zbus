@@ -28,9 +28,9 @@ use crate::{
 };
 #[cfg(feature = "service")]
 use crate::{
+    ObjectPath,
     names::InterfaceName,
     object_server::{ArcInterface, Interface},
-    wire::ObjectPath,
 };
 
 use super::{

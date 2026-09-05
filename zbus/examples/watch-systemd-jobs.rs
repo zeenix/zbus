@@ -5,7 +5,7 @@
 //! Run with command: `cargo run --example watch-systemd-jobs`
 
 use futures_util::stream::StreamExt;
-use zbus::{Connection, wire::OwnedObjectPath};
+use zbus::{Connection, OwnedObjectPath};
 use zbus_macros::proxy;
 
 fn main() {

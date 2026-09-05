@@ -6,9 +6,9 @@
     Eq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(signature = "s", crate = "zbus::wire")]
 pub enum PlaylistOrdering {
@@ -29,9 +29,9 @@ pub enum PlaylistOrdering {
     Eq,
     serde_repr::Deserialize_repr,
     serde_repr::Serialize_repr,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(crate = "zbus::wire")]
 #[repr(u32)]
@@ -51,9 +51,9 @@ pub enum LoopStatus {
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(crate = "zbus::wire")]
 pub struct Playlist {
@@ -72,9 +72,9 @@ pub struct Playlist {
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    zbus::wire::Type,
-    zbus::wire::Value,
-    zbus::wire::OwnedValue,
+    zbus::Type,
+    zbus::Value,
+    zbus::OwnedValue,
 )]
 #[zvariant(crate = "zbus::wire")]
 pub struct MaybePlaylist {
@@ -85,10 +85,10 @@ pub struct MaybePlaylist {
 }
 
 /// A mapping from metadata attribute names to values.
-pub type MetadataMap = std::collections::HashMap<String, zbus::wire::OwnedValue>;
+pub type MetadataMap = std::collections::HashMap<String, zbus::OwnedValue>;
 
 /// Unique playlist identifier.
-pub type PlaylistId = zbus::wire::OwnedObjectPath;
+pub type PlaylistId = zbus::OwnedObjectPath;
 
 /// Provides access to the media player's playlists.
 ///

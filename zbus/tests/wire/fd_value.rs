@@ -2,7 +2,7 @@
 #[test]
 fn fd_value() {
     use std::os::fd::AsFd;
-    use zbus::wire::{Basic, Fd, LE};
+    use zbus::{Basic, Fd, wire::LE};
 
     let stdout = std::io::stdout();
     let fd = stdout.as_fd();

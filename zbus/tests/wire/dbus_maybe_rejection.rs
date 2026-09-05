@@ -5,10 +5,13 @@
 //! A maybe can enter as the codec's layout signature, or dynamically as the content of a `g`
 //! (signature) or `v` (variant) value.
 
-use zbus::wire::{
-    LE, Signature, Value,
-    serialized::{Context, Data},
-    to_bytes_for_signature,
+use zbus::{
+    Signature, Value,
+    wire::{
+        LE,
+        serialized::{Context, Data},
+        to_bytes_for_signature,
+    },
 };
 
 #[test]

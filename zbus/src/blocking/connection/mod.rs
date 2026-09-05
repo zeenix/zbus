@@ -9,12 +9,11 @@ use std::{io, sync::Arc};
 #[cfg(feature = "service")]
 use crate::blocking::ObjectServer;
 use crate::{
-    DBusError, Error, Result,
+    DBusError, Error, ObjectPath, Result,
     fdo::{ConnectionCredentials, RequestNameFlags, RequestNameReply},
     message::Message,
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     utils::block_on,
-    wire::ObjectPath,
 };
 
 mod builder;
@@ -88,7 +87,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         block_on(
             self.inner
@@ -116,7 +115,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         block_on(
             self.inner
@@ -130,7 +129,7 @@ impl Connection {
     /// given `body`.
     pub fn reply<B>(&self, call: &zbus::message::Header<'_>, body: &B) -> Result<()>
     where
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         block_on(self.inner.reply(call, body))
     }
@@ -148,7 +147,7 @@ impl Connection {
         body: &B,
     ) -> Result<()>
     where
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {

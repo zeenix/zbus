@@ -5,11 +5,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::wire::Type;
+use crate::Type;
 
 /// File name represented as a nul-terminated byte array.
 ///
-/// While `zbus::wire::Type` and `serde::{Serialize, Deserialize}`, are implemented for [`Path`] and
+/// While `zbus::Type` and `serde::{Serialize, Deserialize}`, are implemented for [`Path`] and
 /// [`PathBuf`], unfortunately `serde` serializes them as UTF-8 strings and that limits the number
 /// of possible characters to use on a file path. This is not the desired behavior since file paths
 /// are not guaranteed to contain only UTF-8 characters.
@@ -20,7 +20,7 @@ use crate::wire::Type;
 /// # Examples:
 ///
 /// ```
-/// use zbus::wire::FilePath;
+/// use zbus::FilePath;
 /// use std::path::{Path, PathBuf};
 ///
 /// let path = Path::new("/hello/world\0");
@@ -177,7 +177,7 @@ fn bytes_with_null(bytes: &[u8]) -> Cow<'_, CStr> {
 #[cfg(test)]
 mod file_path_test {
     use super::*;
-    use crate::wire::Signature;
+    use crate::Signature;
     use std::path::{Path, PathBuf};
 
     #[test]

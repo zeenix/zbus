@@ -2,10 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zbus::wire::{
-    LE, OwnedValue, Signature, Type, Value,
+use zbus::{
+    OwnedValue, Signature, Type, Value,
     as_value::{self, optional},
-    serialized::Context,
+    wire::{LE, serialized::Context},
 };
 
 #[test]
@@ -152,7 +152,7 @@ fn derive_with_crate_attr() {
 
 #[test]
 fn signature_macro_uses_detected_crate_path() {
-    use zbus::wire::signature;
+    use zbus::signature;
 
     const DICT: Signature = signature!("a{sv}");
 

@@ -1,7 +1,4 @@
-use crate::{
-    names::utils::define_name_type_impls,
-    wire::{Str, Type},
-};
+use crate::{Str, Type, names::utils::define_name_type_impls};
 use serde::Serialize;
 
 /// String that identifies a [unique bus name][ubn].
@@ -43,19 +40,19 @@ define_name_type_impls! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::{OwnedValue, Value};
+    use crate::{OwnedValue, Value};
 
     #[test]
     fn value_conversion_rejects_empty_name() {
         let value = Value::from("");
         UniqueName::try_from(value).unwrap_err();
         OwnedUniqueName::try_from(Value::from("")).unwrap_err();
-        OwnedUniqueName::try_from(OwnedValue::from(crate::wire::Str::from(""))).unwrap_err();
+        OwnedUniqueName::try_from(OwnedValue::from(crate::Str::from(""))).unwrap_err();
     }
 
     #[test]
     fn optional_value_conversion_maps_empty_name_to_none() {
-        use crate::wire::Optional;
+        use crate::Optional;
 
         // An empty string is the D-Bus sentinel for "no name" and must map to `None`
         // rather than fail validation.
@@ -71,14 +68,14 @@ mod tests {
 
     #[test]
     fn optional_owned_value_conversion_maps_empty_name_to_none() {
-        use crate::wire::Optional;
+        use crate::Optional;
 
         // The sentinel must be recognized before the empty name is validated.
-        let owned = OwnedValue::from(crate::wire::Str::from(""));
+        let owned = OwnedValue::from(crate::Str::from(""));
         let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
         assert!(Option::<OwnedUniqueName>::from(opt).is_none());
 
-        let owned = OwnedValue::from(crate::wire::Str::from(":1.23"));
+        let owned = OwnedValue::from(crate::Str::from(":1.23"));
         let opt = Optional::<OwnedUniqueName>::try_from(owned).unwrap();
         assert_eq!(
             Option::<OwnedUniqueName>::from(opt).unwrap().as_str(),
@@ -88,7 +85,10 @@ mod tests {
 
     #[test]
     fn optional_name_wire_round_trip() {
-        use crate::wire::{LE, Optional, serialized::Context, to_bytes};
+        use crate::{
+            Optional,
+            wire::{LE, serialized::Context, to_bytes},
+        };
 
         let ctxt = Context::new(LE, 0);
 
@@ -112,8 +112,9 @@ mod tests {
     #[test]
     fn optional_owned_name_is_deserialize_owned() {
         use crate::{
+            Optional,
             names::OwnedBusName,
-            wire::{LE, Optional, serialized::Context, to_bytes},
+            wire::{LE, serialized::Context, to_bytes},
         };
         use serde::de::DeserializeOwned;
 

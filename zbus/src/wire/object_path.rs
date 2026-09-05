@@ -18,7 +18,7 @@ use zbus_utils::object_path;
 /// # Examples
 ///
 /// ```
-/// use zbus::wire::ObjectPath;
+/// use zbus::ObjectPath;
 ///
 /// // Valid object paths
 /// let o = ObjectPath::try_from("/").unwrap();
@@ -129,7 +129,7 @@ impl Basic for ObjectPath<'_> {
 }
 
 impl Type for ObjectPath<'_> {
-    const SIGNATURE: &'static crate::wire::Signature = &crate::wire::Signature::ObjectPath;
+    const SIGNATURE: &'static crate::Signature = &crate::Signature::ObjectPath;
 }
 
 impl<'a> TryFrom<&'a [u8]> for ObjectPath<'a> {
@@ -288,7 +288,7 @@ impl std::convert::From<OwnedObjectPath> for ObjectPath<'static> {
     }
 }
 
-impl std::convert::From<OwnedObjectPath> for crate::wire::Value<'_> {
+impl std::convert::From<OwnedObjectPath> for crate::Value<'_> {
     fn from(o: OwnedObjectPath) -> Self {
         o.into_inner().into()
     }

@@ -7,8 +7,8 @@ zbus 6.0 is one dependency where there used to be as many as four. The `zvariant
 
 | Was | Is now |
 | --- | --- |
-| the `zvariant` crate | the [`zbus::wire`] module |
-| the `zvariant_derive` crate | the derives, re-exported from `zbus::wire` |
+| the `zvariant` crate | common types at the `zbus` root; codecs in [`zbus::wire`] |
+| the `zvariant_derive` crate | the derives, re-exported from `zbus` |
 | the `zbus_names` crate | the [`zbus::names`] module |
 
 The D-Bus API — connections, messages, proxies, the object server, `fdo` — now sits behind a
@@ -22,10 +22,12 @@ GVariant support, deprecated in zvariant 5.15, is gone; it lives on in the [zgva
 
 * **You depend on `zbus`.** Bump the version. `zbus::zvariant` is still there as a deprecated
   alias module, so almost everything keeps compiling with a warning; the handful of things that
-  do break are listed [further down][breaks]. Rename to `zbus::wire` at your own pace — the
-  compatibility module goes away in 7.0.
+  do break are listed [further down][breaks]. Move common types and derives to the `zbus` root and
+  direct encoding and decoding calls to `zbus::wire` at your own pace. The compatibility module
+  goes away in 7.0.
 * **You depend on `zvariant` and not on `zbus`.** Replace the dependency (below) and rename
-  `zvariant::` to `zbus::wire::`.
+  common types and derives from `zvariant::` to `zbus::`; use `zbus::wire::` for direct encoding
+  and decoding APIs.
 * **You depend on `zbus_names`.** Replace the dependency and rename `zbus_names::` to
   `zbus::names::`.
 * **You use the `gvariant` feature.** Move to [zgvariant].
@@ -106,16 +108,20 @@ needed it. zbus's own dependency on the macro crate is such a defaults-off one, 
 
 | zbus 5 / zvariant 5 / zbus_names 4 | zbus 6 |
 | --- | --- |
-| `zvariant::X`, `zbus::zvariant::X` | `zbus::wire::X` |
+| Common `zvariant::X`, `zbus::zvariant::X` types and derives | `zbus::X` |
 | `zvariant::serialized::Context` | `zbus::wire::serialized::Context` |
-| `zvariant::as_value`, `zvariant::dbus` | `zbus::wire::as_value`, `zbus::wire::dbus` |
-| `zvariant::signature!` | `zbus::wire::signature!` |
+| `zvariant::as_value`, `zvariant::dbus` | `zbus::as_value`, `zbus::wire::dbus` |
+| `zvariant::signature!` | `zbus::signature!` |
 | `zbus_names::X`, `zbus::names::X` | `zbus::names::X` |
 | `zvariant::Error`, `zvariant::Result` | `zbus::Error`, `zbus::Result` |
 | `zbus_names::Error`, `zbus::names::Error` | `zbus::Error` |
 | `zvariant::MaxDepthExceeded` | `zbus::MaxDepthExceeded` |
 | `#[zvariant(...)]` on a derive | `#[zbus(...)]`; both spellings stay accepted |
 | `#[zvariant(crate = "zvariant")]` | `#[zbus(crate = "zbus::wire")]` |
+
+Encoding and decoding functions, `serialized`, `Endian` and its constants, `DynamicDeserialize`,
+`StructureBuilder`, the `*Seed` types, and `signature::{Child, Fields}` remain under `zbus::wire`.
+Use `zbus::Structure::builder()` to construct structures without importing `StructureBuilder`.
 
 On these derives the `crate` attribute names the module that holds the wire types, so
 point it at `zbus::wire`.
@@ -126,7 +132,7 @@ After the rename the wire API reads like this:
 
 ```rust,noplayground
 use serde::{Deserialize, Serialize};
-use zbus::wire::{serialized::Context, to_bytes, Type, LE};
+use zbus::{Type, wire::{serialized::Context, to_bytes, LE}};
 
 #[derive(Deserialize, Serialize, Type, PartialEq, Debug)]
 struct Struct<'s> {
@@ -299,8 +305,8 @@ And the module does not cover:
   let _ = zbus::zvariant::DynamicTuple((1u32, "a"));
   ```
 
-  Spell it `zbus::wire::DynamicTuple((1u32, "a"))`. `DynamicTuple` and `OwnedStructure` are the
-  two aliased types this bites; `zbus::wire::as_value::Serialize` also has a public tuple field
+  Spell it `zbus::DynamicTuple((1u32, "a"))`. `DynamicTuple` and `OwnedStructure` are the
+  two aliased types this bites; `zbus::as_value::Serialize` also has a public tuple field
   but is re-exported rather than aliased, so it constructs fine either way.
 * Anything that named the crates themselves: `extern crate zvariant;`, a `zvariant = "5"`
   dependency, `#[zbus(crate = "zvariant")]`.
@@ -389,7 +395,7 @@ The `org.freedesktop.DBus.Properties` proxy — `zbus::fdo::PropertiesProxy` and
 sibling — takes the new value by reference:
 
 ```rust,noplayground
-use zbus::{fdo::PropertiesProxy, names::InterfaceName, wire::Value};
+use zbus::{fdo::PropertiesProxy, names::InterfaceName, Value};
 
 async fn mute(proxy: &PropertiesProxy<'_>, iface: InterfaceName<'_>) -> zbus::fdo::Result<()> {
     // Was: proxy.set(iface, "Muted", Value::from(true)).await
@@ -417,7 +423,7 @@ the string as it came, so a malformed name off the wire became a typed name and 
 as a method call with an empty destination, say. `BusName` and `OwnedBusName` already validated.
 
 ```rust,noplayground
-use zbus::{names::UniqueName, wire::{Optional, Value}};
+use zbus::{names::UniqueName, Optional, Value};
 
 // Accepted in 5.x, an `Error::InvalidName` now.
 UniqueName::try_from(Value::from("not.unique")).unwrap_err();
@@ -468,7 +474,7 @@ not do before. Everything else in the D-Bus API (`Connection`, `Message`, `Messa
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated
-`Type`, `Value` and `Signature` types, and the resulting errors ("expected `zbus::wire::Value`,
+`Type`, `Value` and `Signature` types, and the resulting errors ("expected `zbus::Value`,
 found `zvariant::Value`") are confusing. `Signature` is duplicated like the other two: zbus 6
 re-exports it from `zbus_utils`, which no zvariant 5 release uses. Find the culprit with:
 

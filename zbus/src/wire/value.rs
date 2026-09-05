@@ -18,12 +18,12 @@ use serde::{
 };
 
 use crate::wire::{
-    Array, Basic, Dict, DynamicType, ObjectPath, OwnedValue, Signature, Str, Structure,
-    StructureBuilder, Type, array_display_fmt, dict_display_fmt, structure_display_fmt, utils::*,
+    Array, Basic, Dict, DynamicType, ObjectPath, OwnedValue, Signature, Str, Structure, Type,
+    array_display_fmt, dict_display_fmt, structure_display_fmt, utils::*,
 };
 
 #[cfg(unix)]
-use crate::wire::Fd;
+use crate::Fd;
 
 /// A generic container, in the form of an enum that holds exactly one value of any of the other
 /// types.
@@ -34,7 +34,7 @@ use crate::wire::Fd;
 /// # Examples
 ///
 /// ```
-/// use zbus::wire::{to_bytes, serialized::Context, Value, LE};
+/// use zbus::{Value, wire::{LE, serialized::Context, to_bytes}};
 ///
 /// // Create a Value from an i16
 /// let v = Value::new(i16::max_value());
@@ -54,7 +54,7 @@ use crate::wire::Fd;
 ///
 /// ```
 /// use zbus::wire::{to_bytes, serialized::Context, LE};
-/// use zbus::wire::{Structure, Value, Str};
+/// use zbus::{Str, Structure, Value};
 ///
 /// // Create a Value from a tuple this time
 /// let v = Value::new((i16::max_value(), "hello", true));
@@ -182,7 +182,7 @@ impl<'a> Value<'a> {
     /// # Examples
     ///
     /// ```
-    /// use zbus::wire::Value;
+    /// use zbus::Value;
     ///
     /// let s = Value::new("hello");
     /// let u: Value = 51.into();
@@ -382,7 +382,7 @@ impl<'a> Value<'a> {
     /// # Examples
     ///
     /// ```
-    /// use zbus::{Error, Result, wire::Value};
+    /// use zbus::{Error, Result, Value};
     ///
     /// fn value_vec_to_type_vec<'a, T>(values: Vec<Value<'a>>) -> Result<Vec<T>>
     /// where
@@ -434,7 +434,7 @@ impl<'a> Value<'a> {
     /// # Examples
     ///
     /// ```
-    /// use zbus::{Error, Result, wire::Value};
+    /// use zbus::{Error, Result, Value};
     ///
     /// fn value_vec_to_type_vec<'a, T>(values: &'a Vec<Value<'a>>) -> Result<Vec<&'a T>>
     /// where
@@ -695,7 +695,7 @@ impl SignatureSeed<'_> {
             }
         };
 
-        let mut builder = StructureBuilder::new();
+        let mut builder = Structure::builder();
         for field_signature in fields_signatures {
             if let Some(field) = visitor.next_element_seed(ValueSeed::<Value<'_>> {
                 signature: field_signature,
@@ -997,10 +997,7 @@ mod tests {
 
         assert_eq!(
             Value::new((
-                vec![
-                    crate::wire::signature!(""),
-                    crate::wire::signature!("(ysa{sd})"),
-                ],
+                vec![crate::signature!(""), crate::signature!("(ysa{sd})")],
                 vec![
                     ObjectPath::from_static_str("/").unwrap(),
                     ObjectPath::from_static_str("/a/very/looooooooooooooooooooooooo0000o0ng/path")

@@ -1,5 +1,5 @@
 #[cfg(unix)]
-use crate::wire::OwnedFd;
+use crate::OwnedFd;
 use std::{
     borrow::Cow,
     io::{Cursor, Write},
@@ -10,11 +10,11 @@ use std::{
 use enumflags2::BitFlags;
 
 use crate::{
-    Error, Result,
+    DynamicType, Error, ObjectPath, Result, Signature,
     message::{EndianSig, Fields, Flags, Header, Message, PrimaryHeader, Sequence, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
     utils::padding_for_8_bytes,
-    wire::{DynamicType, Endian, ObjectPath, Signature, serialized, serialized::Context},
+    wire::{Endian, serialized, serialized::Context},
 };
 
 use crate::message::header::MAX_MESSAGE_SIZE;

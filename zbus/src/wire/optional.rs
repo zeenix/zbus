@@ -52,7 +52,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use zbus::wire::{serialized::Context, Optional, to_bytes, LE};
+/// use zbus::{Optional, wire::{LE, serialized::Context, to_bytes}};
 ///
 /// // `Null` case.
 /// let ctxt = Context::new(LE, 0);
@@ -88,7 +88,7 @@ impl<T> Type for Optional<T>
 where
     T: Type,
 {
-    const SIGNATURE: &'static crate::wire::Signature = T::SIGNATURE;
+    const SIGNATURE: &'static crate::Signature = T::SIGNATURE;
 }
 
 impl<T> Serialize for Optional<T>

@@ -10,10 +10,7 @@ use super::Error;
 use super::Result;
 #[cfg(feature = "service")]
 use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
-use crate::{
-    names::InterfaceName,
-    wire::{OwnedValue, Value},
-};
+use crate::{OwnedValue, Value, names::InterfaceName};
 
 /// Service-side implementation for the `org.freedesktop.DBus.Properties` interface.
 /// This interface is implemented automatically for any object registered to the

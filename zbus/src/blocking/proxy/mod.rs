@@ -5,13 +5,12 @@ use futures_lite::StreamExt;
 use std::{fmt, ops::Deref};
 
 use crate::{
-    Error, Result,
+    Error, ObjectPath, Result, Value,
     blocking::Connection,
     message::Message,
     names::{BusName, InterfaceName, MemberName, UniqueName},
     proxy::{Defaults, MethodFlags},
     utils::block_on,
-    wire::{ObjectPath, Value},
 };
 
 use crate::fdo;
@@ -168,7 +167,7 @@ impl<'a> Proxy<'a> {
     /// the peer.
     pub fn cached_property<T>(&self, property_name: &str) -> Result<Option<T>>
     where
-        T: serde::de::DeserializeOwned + crate::wire::Type,
+        T: serde::de::DeserializeOwned + crate::Type,
     {
         self.inner().cached_property(property_name)
     }
@@ -190,7 +189,7 @@ impl<'a> Proxy<'a> {
     /// `org.freedesktop.DBus.Properties` interface.
     pub fn get_property<T>(&self, property_name: &str) -> Result<T>
     where
-        T: serde::de::DeserializeOwned + crate::wire::Type,
+        T: serde::de::DeserializeOwned + crate::Type,
     {
         block_on(self.inner().get_property(property_name))
     }
@@ -200,7 +199,7 @@ impl<'a> Proxy<'a> {
     /// Effectively, call the `Set` method of the `org.freedesktop.DBus.Properties` interface.
     pub fn set_property<T>(&self, property_name: &str, value: T) -> fdo::Result<()>
     where
-        T: serde::Serialize + crate::wire::Type,
+        T: serde::Serialize + crate::Type,
     {
         block_on(self.inner().set_property(property_name, value))
     }
@@ -216,7 +215,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         block_on(self.inner().call_method(method_name, body))
     }
@@ -230,7 +229,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
         R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
         block_on(self.inner().call(method_name, body))
@@ -254,7 +253,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
         R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
         block_on(self.inner().call_with_flags(method_name, flags, body))
@@ -267,7 +266,7 @@ impl<'a> Proxy<'a> {
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         block_on(self.inner().call_noreply(method_name, body))
     }
@@ -459,7 +458,7 @@ impl<T> PropertyChanged<'_, T> {
 
 impl<T> PropertyChanged<'_, T>
 where
-    T: serde::de::DeserializeOwned + crate::wire::Type,
+    T: serde::de::DeserializeOwned + crate::Type,
 {
     /// Get the value of the property that changed.
     ///

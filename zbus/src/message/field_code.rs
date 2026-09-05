@@ -1,6 +1,6 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::wire::Type;
+use crate::Type;
 
 /// The message field code.
 ///

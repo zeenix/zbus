@@ -8,19 +8,19 @@ pub trait PropertySetters {
 
     /// ArrayOfVariant property
     #[zbus(property)]
-    fn array_of_variant(&self) -> zbus::Result<Vec<zbus::wire::OwnedValue>>;
+    fn array_of_variant(&self) -> zbus::Result<Vec<zbus::OwnedValue>>;
     #[zbus(property)]
-    fn set_array_of_variant(&self, value: &[zbus::wire::Value<'_>]) -> zbus::Result<()>;
+    fn set_array_of_variant(&self, value: &[zbus::Value<'_>]) -> zbus::Result<()>;
 
     /// DictStrToVariant property
     #[zbus(property)]
     fn dict_str_to_variant(
         &self,
-    ) -> zbus::Result<std::collections::HashMap<String, zbus::wire::OwnedValue>>;
+    ) -> zbus::Result<std::collections::HashMap<String, zbus::OwnedValue>>;
     #[zbus(property)]
     fn set_dict_str_to_variant(
         &self,
-        value: std::collections::HashMap<&str, zbus::wire::Value<'_>>,
+        value: std::collections::HashMap<&str, zbus::Value<'_>>,
     ) -> zbus::Result<()>;
 
     /// StructPair property
@@ -37,16 +37,13 @@ pub trait PropertySetters {
 
     /// StructWithArrayOfVariant property
     #[zbus(property)]
-    fn struct_with_array_of_variant(&self) -> zbus::Result<(Vec<zbus::wire::OwnedValue>,)>;
+    fn struct_with_array_of_variant(&self) -> zbus::Result<(Vec<zbus::OwnedValue>,)>;
     #[zbus(property)]
-    fn set_struct_with_array_of_variant(
-        &self,
-        value: (&[zbus::wire::Value<'_>],),
-    ) -> zbus::Result<()>;
+    fn set_struct_with_array_of_variant(&self, value: (&[zbus::Value<'_>],)) -> zbus::Result<()>;
 
     /// Variant property
     #[zbus(property)]
-    fn variant(&self) -> zbus::Result<zbus::wire::OwnedValue>;
+    fn variant(&self) -> zbus::Result<zbus::OwnedValue>;
     #[zbus(property)]
-    fn set_variant(&self, value: zbus::wire::Value<'_>) -> zbus::Result<()>;
+    fn set_variant(&self, value: zbus::Value<'_>) -> zbus::Result<()>;
 }

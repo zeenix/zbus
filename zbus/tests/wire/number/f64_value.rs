@@ -1,4 +1,7 @@
-use zbus::wire::{Basic, LE, NATIVE_ENDIAN, Value, serialized::Context, to_bytes};
+use zbus::{
+    Basic, Value,
+    wire::{LE, NATIVE_ENDIAN, serialized::Context, to_bytes},
+};
 
 #[test]
 fn f64_value() {

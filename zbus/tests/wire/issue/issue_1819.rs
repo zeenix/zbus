@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use zbus::wire::{
-    DeserializeDict, Dict, LE, SerializeDict, Type, Value, serialized::Context, to_bytes,
+use zbus::{
+    DeserializeDict, Dict, SerializeDict, Type, Value,
+    wire::{LE, serialized::Context, to_bytes},
 };
 
 #[test]

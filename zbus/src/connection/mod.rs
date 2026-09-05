@@ -22,14 +22,13 @@ use ordered_stream::OrderedFuture;
 #[cfg(feature = "service")]
 use crate::ObjectServer;
 use crate::{
-    DBusError, Error, Executor, MatchRule, OwnedGuid, OwnedMatchRule, Result, Task,
+    DBusError, Error, Executor, MatchRule, ObjectPath, OwnedGuid, OwnedMatchRule, Result, Task,
     async_lock::{Mutex, Semaphore, SemaphorePermit},
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
     is_flatpak,
     message::{Flags, Message, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     timeout::timeout,
-    wire::ObjectPath,
 };
 
 mod builder;
@@ -283,7 +282,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         let method = self
             .call_method_raw(
@@ -337,7 +336,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -389,7 +388,7 @@ impl Connection {
         P::Error: Into<Error>,
         I::Error: Into<Error>,
         M::Error: Into<Error>,
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -411,7 +410,7 @@ impl Connection {
     /// given `body`.
     pub async fn reply<B>(&self, call: &zbus::message::Header<'_>, body: &B) -> Result<()>
     where
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
     {
         let _permit = acquire_serial_num_semaphore().await;
 
@@ -434,7 +433,7 @@ impl Connection {
         body: &B,
     ) -> Result<()>
     where
-        B: serde::ser::Serialize + crate::wire::DynamicType,
+        B: serde::ser::Serialize + crate::DynamicType,
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {

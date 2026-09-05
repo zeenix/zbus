@@ -10,7 +10,7 @@ use crate::wire::{
 };
 
 #[cfg(unix)]
-use crate::wire::Fd;
+use crate::Fd;
 
 //
 // Conversions from encodable types to `Value`

@@ -1,7 +1,7 @@
 use ntest::timeout;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
-use zbus::{connection::Builder, proxy::Defaults, wire::Type};
+use zbus::{Type, connection::Builder, proxy::Defaults};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 struct SingleFieldStruct {

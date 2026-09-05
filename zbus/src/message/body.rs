@@ -1,9 +1,6 @@
 use crate::{
-    Message, Result,
-    wire::{
-        Signature, Type,
-        serialized::{self, Data},
-    },
+    Message, Result, Signature, Type,
+    wire::serialized::{self, Data},
 };
 
 /// The body of a message.

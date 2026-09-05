@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use zbus::{
-    DBusError,
-    wire::{DeserializeDict, SerializeDict, Str, Type},
-};
+use zbus::{DBusError, DeserializeDict, SerializeDict, Str, Type};
 
 // Tests the `crate` attribute with a path to the wire module.
 #[derive(Debug, Deserialize, Serialize, Type)]

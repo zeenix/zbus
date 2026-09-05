@@ -1,8 +1,8 @@
 macro_rules! impl_str_basic {
     ($type:ty) => {
-        impl crate::wire::Basic for $type {
-            const SIGNATURE_CHAR: char = <crate::wire::Str<'_>>::SIGNATURE_CHAR;
-            const SIGNATURE_STR: &'static str = <crate::wire::Str<'_>>::SIGNATURE_STR;
+        impl crate::Basic for $type {
+            const SIGNATURE_CHAR: char = <crate::Str<'_>>::SIGNATURE_CHAR;
+            const SIGNATURE_STR: &'static str = <crate::Str<'_>>::SIGNATURE_STR;
         }
     };
 }
@@ -22,9 +22,9 @@ macro_rules! define_name_type_impls {
         validate: $validate_fn:ident $(,)?
     ) => {
         // === impl_str_basic for borrowed type ===
-        impl crate::wire::Basic for $name<'_> {
-            const SIGNATURE_CHAR: char = <crate::wire::Str<'_>>::SIGNATURE_CHAR;
-            const SIGNATURE_STR: &'static str = <crate::wire::Str<'_>>::SIGNATURE_STR;
+        impl crate::Basic for $name<'_> {
+            const SIGNATURE_CHAR: char = <crate::Str<'_>>::SIGNATURE_CHAR;
+            const SIGNATURE_STR: &'static str = <crate::Str<'_>>::SIGNATURE_STR;
         }
 
         impl<'name> $name<'name> {
@@ -43,19 +43,19 @@ macro_rules! define_name_type_impls {
             /// Since the passed string is not checked for correctness, prefer using the
             /// `TryFrom<&str>` implementation.
             pub fn from_str_unchecked(name: &'name str) -> Self {
-                Self(crate::wire::Str::from(name))
+                Self(crate::Str::from(name))
             }
 
             /// Same as `try_from`, except it takes a `&'static str`.
             pub fn from_static_str(name: &'static str) -> crate::Result<Self> {
                 zbus_utils::names::$validate_fn(name.as_bytes())
                     .map_err(crate::Error::InvalidName)?;
-                Ok(Self(crate::wire::Str::from_static(name)))
+                Ok(Self(crate::Str::from_static(name)))
             }
 
             /// Same as `from_str_unchecked`, except it takes a `&'static str`.
             pub const fn from_static_str_unchecked(name: &'static str) -> Self {
-                Self(crate::wire::Str::from_static(name))
+                Self(crate::Str::from_static(name))
             }
 
             /// Same as `from_str_unchecked`, except it takes an owned `String`.
@@ -63,7 +63,7 @@ macro_rules! define_name_type_impls {
             /// Since the passed string is not checked for correctness, prefer using the
             /// `TryFrom<String>` implementation.
             pub fn from_string_unchecked(name: String) -> Self {
-                Self(crate::wire::Str::from(name))
+                Self(crate::Str::from(name))
             }
 
             /// Creates an owned clone of `self`.
@@ -142,13 +142,13 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl<'name> From<$name<'name>> for crate::wire::Str<'name> {
+        impl<'name> From<$name<'name>> for crate::Str<'name> {
             fn from(value: $name<'name>) -> Self {
                 value.0
             }
         }
 
-        impl<'name> crate::wire::NoneValue for $name<'name> {
+        impl<'name> crate::NoneValue for $name<'name> {
             type NoneType = &'name str;
 
             fn null_value() -> Self::NoneType {
@@ -161,7 +161,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::Error;
 
             fn try_from(value: &'s str) -> crate::Result<Self> {
-                let value = crate::wire::Str::from(value);
+                let value = crate::Str::from(value);
                 zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
@@ -180,7 +180,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::Error;
 
             fn try_from(value: String) -> crate::Result<Self> {
-                let value = crate::wire::Str::from(value);
+                let value = crate::Str::from(value);
                 zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
@@ -199,7 +199,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::Error;
 
             fn try_from(value: std::sync::Arc<str>) -> crate::Result<Self> {
-                let value = crate::wire::Str::from(value);
+                let value = crate::Str::from(value);
                 zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
@@ -218,7 +218,7 @@ macro_rules! define_name_type_impls {
             type Error = crate::Error;
 
             fn try_from(value: std::borrow::Cow<'s, str>) -> crate::Result<Self> {
-                let value = crate::wire::Str::from(value);
+                let value = crate::Str::from(value);
                 zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
@@ -233,49 +233,49 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl<'s> TryFrom<crate::wire::Str<'s>> for $name<'s> {
+        impl<'s> TryFrom<crate::Str<'s>> for $name<'s> {
             type Error = crate::Error;
 
-            fn try_from(value: crate::wire::Str<'s>) -> crate::Result<Self> {
+            fn try_from(value: crate::Str<'s>) -> crate::Result<Self> {
                 zbus_utils::names::$validate_fn(value.as_str().as_bytes())
                     .map_err(crate::Error::InvalidName)?;
                 Ok(Self(value))
             }
         }
 
-        impl<'s> TryFrom<crate::wire::Str<'s>> for $owned_name {
+        impl<'s> TryFrom<crate::Str<'s>> for $owned_name {
             type Error = crate::Error;
 
-            fn try_from(value: crate::wire::Str<'s>) -> crate::Result<Self> {
+            fn try_from(value: crate::Str<'s>) -> crate::Result<Self> {
                 Ok(Self::from(<$name<'s>>::try_from(value)?))
             }
         }
 
-        impl<'s> TryFrom<crate::wire::Value<'s>> for $name<'s> {
+        impl<'s> TryFrom<crate::Value<'s>> for $name<'s> {
             type Error = crate::Error;
 
-            fn try_from(value: crate::wire::Value<'s>) -> crate::Result<Self> {
-                let s = crate::wire::Str::try_from(value)?;
+            fn try_from(value: crate::Value<'s>) -> crate::Result<Self> {
+                let s = crate::Str::try_from(value)?;
                 Self::try_from(s)
             }
         }
 
-        impl<'s> From<$name<'s>> for crate::wire::Value<'s> {
+        impl<'s> From<$name<'s>> for crate::Value<'s> {
             fn from(name: $name<'s>) -> Self {
                 name.0.into()
             }
         }
 
-        impl TryFrom<crate::wire::OwnedValue> for $name<'_> {
+        impl TryFrom<crate::OwnedValue> for $name<'_> {
             type Error = crate::Error;
 
-            fn try_from(value: crate::wire::OwnedValue) -> crate::Result<Self> {
-                let s = crate::wire::Str::try_from(value)?;
+            fn try_from(value: crate::OwnedValue) -> crate::Result<Self> {
+                let s = crate::Str::try_from(value)?;
                 Self::try_from(s)
             }
         }
 
-        impl TryFrom<$name<'_>> for crate::wire::OwnedValue {
+        impl TryFrom<$name<'_>> for crate::OwnedValue {
             type Error = crate::Error;
 
             fn try_from(name: $name<'_>) -> crate::Result<Self> {
@@ -286,9 +286,9 @@ macro_rules! define_name_type_impls {
         // === Owned type impls ===
 
         // impl_str_basic for owned type
-        impl crate::wire::Basic for $owned_name {
-            const SIGNATURE_CHAR: char = <crate::wire::Str<'_>>::SIGNATURE_CHAR;
-            const SIGNATURE_STR: &'static str = <crate::wire::Str<'_>>::SIGNATURE_STR;
+        impl crate::Basic for $owned_name {
+            const SIGNATURE_CHAR: char = <crate::Str<'_>>::SIGNATURE_CHAR;
+            const SIGNATURE_STR: &'static str = <crate::Str<'_>>::SIGNATURE_STR;
         }
 
         impl $owned_name {
@@ -366,7 +366,7 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl From<$owned_name> for crate::wire::Str<'_> {
+        impl From<$owned_name> for crate::Str<'_> {
             fn from(value: $owned_name) -> Self {
                 value.into_inner().0
             }
@@ -397,7 +397,7 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl crate::wire::NoneValue for $owned_name {
+        impl crate::NoneValue for $owned_name {
             type NoneType = String;
 
             fn null_value() -> Self::NoneType {
@@ -405,29 +405,29 @@ macro_rules! define_name_type_impls {
             }
         }
 
-        impl TryFrom<crate::wire::Value<'static>> for $owned_name {
+        impl TryFrom<crate::Value<'static>> for $owned_name {
             type Error = crate::Error;
 
-            fn try_from(value: crate::wire::Value<'static>) -> crate::Result<Self> {
+            fn try_from(value: crate::Value<'static>) -> crate::Result<Self> {
                 <$name<'static>>::try_from(value).map(Self::from)
             }
         }
 
-        impl From<$owned_name> for crate::wire::Value<'_> {
+        impl From<$owned_name> for crate::Value<'_> {
             fn from(name: $owned_name) -> Self {
                 name.0.into()
             }
         }
 
-        impl TryFrom<crate::wire::OwnedValue> for $owned_name {
+        impl TryFrom<crate::OwnedValue> for $owned_name {
             type Error = crate::Error;
 
-            fn try_from(value: crate::wire::OwnedValue) -> crate::Result<Self> {
+            fn try_from(value: crate::OwnedValue) -> crate::Result<Self> {
                 <$name<'static>>::try_from(value).map(Self::from)
             }
         }
 
-        impl TryFrom<$owned_name> for crate::wire::OwnedValue {
+        impl TryFrom<$owned_name> for crate::OwnedValue {
             type Error = crate::Error;
 
             fn try_from(name: $owned_name) -> crate::Result<Self> {

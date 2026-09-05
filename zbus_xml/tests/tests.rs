@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use zbus::wire::Signature;
+use zbus::Signature;
 use zbus_xml::{Arg, ArgDirection, Interface, Node, PropertyAccess};
 
 #[test]

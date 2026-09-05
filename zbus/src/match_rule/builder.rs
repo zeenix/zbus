@@ -1,9 +1,8 @@
 use crate::{
-    Error, MatchRule, Result,
+    Error, MatchRule, ObjectPath, Result, Str,
     match_rule::PathSpec,
     message::Type,
     names::{BusName, InterfaceName, MemberName, UniqueName},
-    wire::{ObjectPath, Str},
 };
 
 const MAX_ARGS: u8 = 64;

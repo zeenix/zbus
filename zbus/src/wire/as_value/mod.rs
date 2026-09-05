@@ -1,4 +1,4 @@
-//! Utilities to (de)serialize a value as a [`enum@zbus::wire::Value`].
+//! Utilities to (de)serialize a value as a [`enum@zbus::Value`].
 //!
 //! This is mainly useful for constructing a strongly-typed API for dealing with dictionaries
 //! containing string keys and variant values (`a{sv}` in D-Bus language) See the relevant
@@ -15,7 +15,7 @@ pub use property::deserialize_for_property;
 mod value_serializer;
 pub use value_serializer::to_owned_value;
 
-/// Utilities to (de)serialize an optional value as a [`enum@zbus::wire::Value`].
+/// Utilities to (de)serialize an optional value as a [`enum@zbus::Value`].
 pub mod optional {
     use super::*;
 

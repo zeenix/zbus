@@ -1,12 +1,12 @@
 //! Compile-only fixture: a downstream crate that depends only on `zbus` and uses the wire
 //! derives through it, as the book examples do.
 //!
-//! The derives default to `::zbus::wire` paths, so no `crate` attribute is needed.
+//! The derives default to `::zbus::wire` internally, so no `crate` attribute is needed.
 
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
-use zbus::wire::{DeserializeDict, OwnedValue, SerializeDict, Type, Value};
+use zbus::{DeserializeDict, OwnedValue, SerializeDict, Type, Value};
 
 #[derive(DeserializeDict, SerializeDict, Type)]
 #[zbus(signature = "dict")]
