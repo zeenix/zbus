@@ -775,12 +775,7 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                                 #reply
                             }
                         };
-                        #zbus::object_server::DispatchResult2::Async(::std::boxed::Box::pin(async move {
-                            future.await.map_err(|e| match e {
-                                #zbus::Error::FDO(e) => *e,
-                                e => #zbus::fdo::Error::Failed(::std::format!("{e}")),
-                            })
-                        }))
+                        #zbus::object_server::DispatchResult2::from_handler(future)
                     },
                 };
 
