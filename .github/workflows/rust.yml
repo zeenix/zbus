@@ -110,6 +110,18 @@ jobs:
   linux_test:
     runs-on: ubuntu-latest
     needs: [fmt, clippy]
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every suite builds the workspace with a different feature set, so they run as
+        # separate jobs, in parallel, each with a dependency cache of its own.
+        suite:
+          - all-features
+          - default
+          - async-io
+          - tokio
+          - tokio-async-io
+          - wire
     env:
       RUSTFLAGS: -D warnings
       RUST_BACKTRACE: full
@@ -123,52 +135,41 @@ jobs:
           sed -e s/UID/$UID/ -e s/PATH/abstract/ CI/dbus-session.conf > /tmp/dbus-session-abstract.conf
           sudo apt-get update
           sudo apt-get install -y dbus ibus
+          # Start IBus daemon for IBus test.
+          ibus-daemon -d --xim
+          sleep 2
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Test zbus with zbus_utils/gvariant enabled (zgvariant coexistence)
+        with:
+          # The dependencies are compiled with a different feature set in every suite, so a
+          # shared cache would only ever hold the set of the suite that saved it.
+          key: ${{ matrix.suite }}
+          cache-on-failure: true
+      - name: Test all workspace features together
+        if: matrix.suite == 'all-features'
         run: |
-          # Simulates the graph a zgvariant 2.0 dependency creates: it turns the shared crate's
-          # `gvariant` feature on, and Cargo unification hands zbus the extra signature and
-          # format variants it must keep rejecting.
-          cargo --locked test -p zbus --no-default-features --features zbus_utils/gvariant
-          # The same graph with the D-Bus API on: the message header carries a body signature
-          # that must be rejected too.
-          cargo --locked test -p zbus --no-default-features --features zbus_utils/gvariant,async-io
-      - name: Build and Test
-        run: |
-          dbus-run-session --config-file /tmp/dbus-session-abstract.conf -- cargo --locked test --release --verbose -- basic_connection
-          # Start IBus daemon for IBus test.
-          ibus-daemon -d --xim
-          sleep 2
-          # Test all workspace features together.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --all-features \
               -- --skip fdpass_systemd
-          # Test the full zbus suite with async-io but without Tokio.
+      - name: Test the default features over an abstract socket
+        if: matrix.suite == 'default'
+        run: |
+          dbus-run-session --config-file /tmp/dbus-session-abstract.conf -- \
+            cargo --locked test --release --verbose -- basic_connection
+      - name: Test the full zbus suite with async-io but without Tokio
+        if: matrix.suite == 'async-io'
+        run: |
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose -p zbus \
               --features uuid,url,time,chrono,option-as-array,vsock,bus-impl \
               -- --skip fdpass_systemd
-          # Test tokio support.
-          dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose --tests -p zbus --no-default-features \
-              --features tokio-vsock,proxy,service -- --skip fdpass_systemd
-          # Test tokio and async-io enabled together (additive features): the backend is then
-          # chosen at run time. `vsock` is included as it pulls in `async-io` alongside `tokio`.
-          dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
-              -- --skip fdpass_systemd
-          # The executor doctest drives the connection from tokio's scheduler, so it has to build
-          # without the default async-io runtime. `-p zbus` is load-bearing: a workspace-wide
-          # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
-          dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
-              --features tokio,service connection::Connection::executor
-          # The doc examples with the proxy or service API disabled, with and without the blocking
-          # API.
+      - name: Test the doc examples with the proxy or service API disabled
+        if: matrix.suite == 'async-io'
+        run: |
+          # With and without the blocking API.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc -p zbus --no-default-features \
               --features async-io,proxy
@@ -181,15 +182,57 @@ jobs:
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc -p zbus --no-default-features \
               --features async-io,blocking-api,service
-          # The wire-format-only build. No D-Bus API, so no session bus is needed.
+      - name: Test tokio support
+        if: matrix.suite == 'tokio'
+        run: |
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --tests -p zbus --no-default-features \
+              --features tokio-vsock,proxy,service -- --skip fdpass_systemd
+          # The executor doctest drives the connection from tokio's scheduler, so it has to build
+          # without the default async-io runtime. `-p zbus` is load-bearing: a workspace-wide
+          # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose --doc -p zbus --no-default-features \
+              --features tokio,service connection::Connection::executor
+      - name: Test tokio and async-io enabled together
+        if: matrix.suite == 'tokio-async-io'
+        run: |
+          # The features are additive, so the backend is then chosen at run time. `vsock` is
+          # included as it pulls in `async-io` alongside `tokio`.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
+              -- --skip fdpass_systemd
+      - name: Test the wire-format-only build
+        if: matrix.suite == 'wire'
+        run: |
+          # No D-Bus API, so no session bus is needed.
           cargo --locked test --release --verbose -p zbus --no-default-features
           cargo --locked test --release --verbose -p zbus --no-default-features \
             --features arrayvec,camino,chrono,enumflags2,heapless \
             --features option-as-array,serde_bytes,time,url,uuid
+      - name: Test zbus with zbus_utils/gvariant enabled (zgvariant coexistence)
+        if: matrix.suite == 'wire'
+        run: |
+          # Simulates the graph a zgvariant 2.0 dependency creates: it turns the shared crate's
+          # `gvariant` feature on, and Cargo unification hands zbus the extra signature and
+          # format variants it must keep rejecting.
+          cargo --locked test -p zbus --no-default-features --features zbus_utils/gvariant
+          # The same graph with the D-Bus API on: the message header carries a body signature
+          # that must be rejected too.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test -p zbus --no-default-features --features zbus_utils/gvariant,async-io
 
   windows_test:
     runs-on: windows-latest
     needs: [fmt, clippy]
+    strategy:
+      fail-fast: false
+      matrix:
+        # The two suites build zbus with different feature sets, so they run as separate jobs,
+        # in parallel, each with a dependency cache of its own.
+        suite:
+          - default
+          - no-default-features
     env:
       RUSTFLAGS: -D warnings
       RUST_BACKTRACE: full
@@ -228,11 +271,22 @@ jobs:
           toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Test
+        with:
+          # The dependencies are compiled with a different feature set in every suite, so a
+          # shared cache would only ever hold the set of the suite that saved it.
+          key: ${{ matrix.suite }}
+          cache-on-failure: true
+      - name: Test the default features
+        if: matrix.suite == 'default'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Start-Process C:\vcpkg\installed\x64-windows\tools\dbus\dbus-daemon.exe '--config-file=CI/win32-session.conf --address=autolaunch:'
           cargo --locked test
+      - name: Test the tokio-only and wire-format-only builds
+        if: matrix.suite == 'no-default-features'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Start-Process C:\vcpkg\installed\x64-windows\tools\dbus\dbus-daemon.exe '--config-file=CI/win32-session.conf --address=autolaunch:'
           # The tokio-only build. `-p zbus` is load-bearing: a workspace-wide
           # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
           # `--tests` because the doc examples assume the async-io runtime.
