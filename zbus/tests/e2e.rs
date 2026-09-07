@@ -20,7 +20,7 @@ use zbus::{block_on, connection, object_server::InterfaceRef};
 use iface_and_proxy::{
     client::my_iface_test,
     iface::{MyIface, MyIfaceSignals},
-    types::NextAction,
+    types::{MyIfaceError, NextAction},
 };
 
 #[test]
@@ -174,6 +174,31 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
         .await
         .unwrap();
     debug!("`PropertiesChanged` emitted for `Count` property.");
+
+    // A getter failing inside the `PropertiesChanged` helper hands its error back typed, both
+    // for a standard and for a custom error.
+    let err = iface
+        .get()
+        .await
+        .locked_prop_changed(iface.signal_emitter())
+        .await
+        .expect_err("`LockedProp` getter should fail");
+    assert!(matches!(err, zbus::Error::DBus(_)));
+    assert_eq!(
+        zbus::fdo::Error::from(err),
+        zbus::fdo::Error::AccessDenied("locked".to_string())
+    );
+    let err = iface
+        .get()
+        .await
+        .custom_locked_prop_changed(iface.signal_emitter())
+        .await
+        .expect_err("`CustomLockedProp` getter should fail");
+    assert!(matches!(err, zbus::Error::DBus(_)));
+    assert_eq!(
+        MyIfaceError::from(err),
+        MyIfaceError::SomethingWentWrong("locked".to_string())
+    );
 
     loop {
         iface.alert_count(51).await.unwrap();

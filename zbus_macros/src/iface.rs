@@ -518,22 +518,6 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                 let sk_member_name = case::snake_or_kebab_case(&member_name, true);
                 let prop_changed_method_name = format_ident!("{sk_member_name}_changed");
                 let prop_invalidate_method_name = format_ident!("{sk_member_name}_invalidate");
-                let prop_value_method_name = format_ident!("__zbus_{sk_member_name}_value");
-                // Emits `PropertiesChanged` for the property, with `value` in scope holding its
-                // current value.
-                let emit_changed = quote!({
-                    let mut changed = ::std::collections::HashMap::new();
-                    changed.insert(#member_name, #zbus::as_value::Serialize(&value));
-                    __zbus__signal_emitter.emit(
-                        "org.freedesktop.DBus.Properties",
-                        "PropertiesChanged",
-                        &(
-                            #zbus::names::InterfaceName::from_static_str_unchecked(#iface_name),
-                            changed,
-                            ::std::borrow::Cow::<[&str]>::Borrowed(&[]),
-                        ),
-                    ).await
-                });
 
                 p.doc_comments.extend(doc_comments);
                 if has_inputs {
@@ -579,19 +563,18 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             let #value_param_name = __zbus__value;
                         }
                     };
-                    // Each arm yields `Result<(), BoxDBusError>`. The getter's own error must
-                    // reach the caller unchanged, so the value is fetched through the hidden
-                    // method rather than the public `*_changed` helper, which returns
-                    // `zbus::Result`.
+                    // Each arm yields `Result<(), BoxDBusError>`. A getter's failure inside the
+                    // `*_changed` helper is carried by `Error::DBus`, which the conversion boxes
+                    // as is, so its error name reaches the caller of `Set` unchanged.
                     let prop_changed_method = match p.emits_changed_signal {
                         PropertyEmitsChangedSignal::True => {
                             quote!({
-                                match self.#prop_value_method_name(&__zbus__signal_emitter).await {
-                                    ::std::result::Result::Ok(value) => #emit_changed.map_err(|e| {
+                                self
+                                    .#prop_changed_method_name(&__zbus__signal_emitter)
+                                    .await
+                                    .map_err(|e| {
                                         #zbus::object_server::IntoDBusError::into_dbus_error(e)
-                                    }),
-                                    ::std::result::Result::Err(e) => ::std::result::Result::Err(e),
-                                }
+                                    })
                             })
                         }
                         PropertyEmitsChangedSignal::Invalidates => {
@@ -718,55 +701,53 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
 
                     get_all.extend(q);
 
-                    let prop_value = if is_fallible_property {
+                    let prop_value_handled = if is_fallible_property {
                         quote!(match self.#ident(#args_names)#method_await {
-                            ::std::result::Result::Ok(value) => ::std::result::Result::Ok(value),
-                            ::std::result::Result::Err(e) => ::std::result::Result::Err(
-                                #zbus::object_server::IntoDBusError::into_dbus_error(e),
-                            ),
+                            ::std::result::Result::Ok(value) => value,
+                            ::std::result::Result::Err(e) => {
+                                return ::std::result::Result::Err(
+                                    #zbus::object_server::IntoDBusError::into_error(e),
+                                );
+                            }
                         })
                     } else {
-                        quote!(::std::result::Result::Ok(self.#ident(#args_names)#method_await))
+                        quote!(self.#ident(#args_names)#method_await)
                     };
 
                     if p.emits_changed_signal == PropertyEmitsChangedSignal::True {
-                        let prop_ty = p.ty.as_ref().unwrap();
                         let changed_doc = format!(
                             "Emit the “PropertiesChanged” signal with the new value for the\n\
                              `{member_name}` property.\n\n\
                              This method should be called if a property value changes outside\n\
                              its setter method."
                         );
-                        // The value is fetched through a hidden method so that the generated
-                        // setter can emit the signal too while keeping the getter's error
-                        // typed. The public helper returns `zbus::Result`, which cannot carry
-                        // an arbitrary `DBusError`, so it reports the getter's failure as
-                        // `Error::Failure` with the error's name and description as its text.
                         let prop_changed_method = quote!(
-                            #[doc(hidden)]
-                            pub async fn #prop_value_method_name(
-                                &self,
-                                __zbus__signal_emitter: &#zbus::object_server::SignalEmitter<'_>,
-                            ) -> ::std::result::Result<#prop_ty, #zbus::BoxDBusError> {
-                                let __zbus__header = ::std::option::Option::None::<&#zbus::message::Header<'_>>;
-                                let __zbus__connection = __zbus__signal_emitter.connection();
-                                let __zbus__object_server = __zbus__connection.object_server();
-                                #args_from_msg
-                                #prop_value
-                            }
-
                             #[doc = #changed_doc]
                             pub async fn #prop_changed_method_name(
                                 &self,
                                 __zbus__signal_emitter: &#zbus::object_server::SignalEmitter<'_>,
                             ) -> #zbus::Result<()> {
-                                let value = self
-                                    .#prop_value_method_name(__zbus__signal_emitter)
-                                    .await
-                                    .map_err(|e| #zbus::Error::Failure(
-                                        ::std::string::ToString::to_string(&e),
-                                    ))?;
-                                #emit_changed
+                                let __zbus__header = ::std::option::Option::None::<&#zbus::message::Header<'_>>;
+                                let __zbus__connection = __zbus__signal_emitter.connection();
+                                let __zbus__object_server = __zbus__connection.object_server();
+                                #args_from_msg
+                                let value = #prop_value_handled;
+                                let mut changed = ::std::collections::HashMap::new();
+                                changed.insert(
+                                    #member_name,
+                                    #zbus::as_value::Serialize(&value),
+                                );
+                                __zbus__signal_emitter.emit(
+                                    "org.freedesktop.DBus.Properties",
+                                    "PropertiesChanged",
+                                    &(
+                                        #zbus::names::InterfaceName::from_static_str_unchecked(
+                                            #iface_name,
+                                        ),
+                                        changed,
+                                        ::std::borrow::Cow::<[&str]>::Borrowed(&[]),
+                                    ),
+                                ).await
                             }
                         );
 

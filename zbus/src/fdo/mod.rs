@@ -56,6 +56,8 @@ pub use stats::StatsProxy;
 
 #[cfg(all(test, feature = "proxy", feature = "service"))]
 mod tests {
+    use std::sync::Arc;
+
     use crate::{DBusError, Error, fdo, interface, message::Message, names::WellKnownName};
     use futures_util::StreamExt;
     use ntest::timeout;
@@ -81,6 +83,17 @@ mod tests {
         assert_eq!(e, fdo::Error::TimedOut("so long".to_string()),);
         assert_eq!(e.name(), "org.freedesktop.DBus.Error.TimedOut");
         assert_eq!(e.description(), Some("so long"));
+    }
+
+    #[test]
+    fn error_from_dbus_variant() {
+        let e = Error::DBus(Arc::new(fdo::Error::TimedOut("so long".to_string())));
+        assert_eq!(
+            e.to_string(),
+            "org.freedesktop.DBus.Error.TimedOut: so long"
+        );
+        let e: fdo::Error = e.into();
+        assert_eq!(e, fdo::Error::TimedOut("so long".to_string()));
     }
 
     #[test]

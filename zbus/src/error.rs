@@ -77,6 +77,12 @@ pub enum Error {
     /// A [`fdo::Error`] transformed into [`Error`].
     #[cfg(feature = "comms")]
     FDO(Box<fdo::Error>),
+    /// A [`DBusError`](crate::DBusError) of any other type.
+    ///
+    /// This is how the failure of a property getter reaches the caller of the
+    /// `PropertiesChanged` emission helper that `#[interface]` generates for the property.
+    #[cfg(feature = "comms")]
+    DBus(Arc<dyn crate::DBusError + Send + Sync>),
     /// The requested name was already claimed by another peer.
     NameTaken,
     /// Invalid [match rule][MR] string.
@@ -130,6 +136,10 @@ impl PartialEq for Error {
             (Self::Unsupported, Self::Unsupported) => true,
             #[cfg(feature = "comms")]
             (Self::FDO(s), Self::FDO(o)) => s == o,
+            #[cfg(feature = "comms")]
+            (Self::DBus(s), Self::DBus(o)) => {
+                s.name() == o.name() && s.description() == o.description()
+            }
             (Self::NameTaken, Self::NameTaken) => true,
             (Self::InvalidMatchRule, Self::InvalidMatchRule) => true,
             (Self::InvalidSerial, Self::InvalidSerial) => true,
@@ -150,6 +160,8 @@ impl error::Error for Error {
             Error::Utf8(e) => Some(e),
             #[cfg(feature = "comms")]
             Error::FDO(e) => Some(e),
+            #[cfg(feature = "comms")]
+            Error::DBus(_) => None,
             #[cfg(feature = "comms")]
             Error::Connection(e, _) => Some(e),
             Error::Failure(_) => None,
@@ -230,6 +242,8 @@ impl fmt::Display for Error {
             Error::Unsupported => write!(f, "Connection support is lacking"),
             #[cfg(feature = "comms")]
             Error::FDO(e) => write!(f, "{e}"),
+            #[cfg(feature = "comms")]
+            Error::DBus(e) => write!(f, "{e}"),
             Error::NameTaken => write!(f, "name already taken on the bus"),
             Error::InvalidMatchRule => write!(f, "Invalid match rule string"),
             Error::MissingParameter(p) => {
@@ -284,6 +298,8 @@ impl Error {
             Error::InvalidReply => Some("invalid reply"),
             #[cfg(feature = "comms")]
             Error::MethodError(_, desc, _) => desc.as_deref(),
+            #[cfg(feature = "comms")]
+            Error::DBus(e) => e.description(),
             Error::MissingField => Some("a required field is missing from message headers"),
             Error::InvalidGUID => Some("invalid GUID"),
             Error::Unsupported => Some("connection support is lacking"),
