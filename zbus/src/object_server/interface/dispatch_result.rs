@@ -69,6 +69,7 @@ impl<'a> DispatchResult2<'a> {
 fn handler_error(e: Error) -> BoxDBusError {
     match e {
         Error::FDO(e) => e,
+        Error::DBus(e) => Box::new(e),
         e => Box::new(fdo::Error::Failed(e.to_string())),
     }
 }

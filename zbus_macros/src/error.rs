@@ -156,6 +156,10 @@ pub fn expand_derive(input: DeriveInput) -> Result<TokenStream, Error> {
                                 let e = ::std::convert::AsRef::as_ref(e);
                                 (#zbus::DBusError::name(e), #zbus::DBusError::description(e))
                             }
+                            #zbus::Error::DBus(e) => {
+                                let e = ::std::convert::AsRef::as_ref(e);
+                                (#zbus::DBusError::name(e), #zbus::DBusError::description(e))
+                            }
                             _ => return Self::#ident(value),
                         };
                         match name.as_str() {
@@ -240,6 +244,9 @@ fn gen_reply_for_variant(
                     match #error_field {
                         #zbus::Error::MethodError(name, desc, _) => {
                             ::std::clone::Clone::clone(desc)
+                        }
+                        #zbus::Error::DBus(e) => {
+                            #zbus::DBusError::description(e).map(::std::string::ToString::to_string)
                         }
                         _ => None,
                     }

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 use crate::{
     Error, Result, fdo,
@@ -40,7 +40,33 @@ impl fmt::Display for dyn DBusError + Send + Sync {
     }
 }
 
+impl fmt::Debug for dyn DBusError + Send + Sync {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DBusError")
+            .field("name", &self.name())
+            .field("description", &self.description())
+            .finish()
+    }
+}
+
 impl<E> DBusError for Box<E>
+where
+    E: DBusError + ?Sized,
+{
+    fn create_reply(&self, msg: &Header<'_>) -> Result<Message> {
+        (**self).create_reply(msg)
+    }
+
+    fn name(&self) -> ErrorName<'_> {
+        (**self).name()
+    }
+
+    fn description(&self) -> Option<&str> {
+        (**self).description()
+    }
+}
+
+impl<E> DBusError for Arc<E>
 where
     E: DBusError + ?Sized,
 {
@@ -63,9 +89,14 @@ impl From<fdo::Error> for BoxDBusError {
     }
 }
 
-/// A plain [`Error`] is not a D-Bus error; it is reported the way [`fdo::Error`] reports it.
+/// A D-Bus error carried by an [`Error`] is boxed as is. Any other [`Error`] is not a D-Bus
+/// error; it is reported the way [`fdo::Error`] reports it.
 impl From<Error> for BoxDBusError {
     fn from(e: Error) -> Self {
-        Box::new(fdo::Error::from(e))
+        match e {
+            Error::FDO(e) => e,
+            Error::DBus(e) => Box::new(e),
+            e => Box::new(fdo::Error::from(e)),
+        }
     }
 }

@@ -177,6 +177,12 @@ pub trait Interface: Any + Send + Sync {
 #[doc(hidden)]
 pub trait IntoDBusError {
     fn into_dbus_error(self) -> BoxDBusError;
+
+    /// The failure as an [`Error`], for a caller that is not replying to a D-Bus call.
+    ///
+    /// A getter's failure reaches the caller of the generated `PropertiesChanged` emission
+    /// helper this way, as [`Error::DBus`].
+    fn into_error(self) -> Error;
 }
 
 impl<E> IntoDBusError for E
@@ -186,11 +192,19 @@ where
     fn into_dbus_error(self) -> BoxDBusError {
         Box::new(self)
     }
+
+    fn into_error(self) -> Error {
+        Error::DBus(Arc::new(self))
+    }
 }
 
 impl IntoDBusError for Error {
     fn into_dbus_error(self) -> BoxDBusError {
         self.into()
+    }
+
+    fn into_error(self) -> Error {
+        self
     }
 }
 
