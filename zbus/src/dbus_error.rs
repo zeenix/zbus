@@ -1,5 +1,7 @@
+use std::fmt;
+
 use crate::{
-    Result,
+    Error, Result, fdo,
     message::{Header, Message},
     names::ErrorName,
 };
@@ -23,4 +25,47 @@ pub trait DBusError {
 
     // The optional description for the error.
     fn description(&self) -> Option<&str>;
+}
+
+/// A [`DBusError`] of any concrete type.
+///
+/// This is how the object server carries a property getter's or setter's failure, whatever error
+/// type the handler fails with. The box is only allocated on failure.
+pub type BoxDBusError = Box<dyn DBusError + Send + Sync>;
+
+impl fmt::Display for dyn DBusError + Send + Sync {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let description = self.description().unwrap_or("no description");
+        write!(f, "{}: {description}", self.name())
+    }
+}
+
+impl<E> DBusError for Box<E>
+where
+    E: DBusError + ?Sized,
+{
+    fn create_reply(&self, msg: &Header<'_>) -> Result<Message> {
+        (**self).create_reply(msg)
+    }
+
+    fn name(&self) -> ErrorName<'_> {
+        (**self).name()
+    }
+
+    fn description(&self) -> Option<&str> {
+        (**self).description()
+    }
+}
+
+impl From<fdo::Error> for BoxDBusError {
+    fn from(e: fdo::Error) -> Self {
+        Box::new(e)
+    }
+}
+
+/// A plain [`Error`] is not a D-Bus error; it is reported the way [`fdo::Error`] reports it.
+impl From<Error> for BoxDBusError {
+    fn from(e: Error) -> Self {
+        Box::new(fdo::Error::from(e))
+    }
 }
