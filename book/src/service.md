@@ -309,8 +309,10 @@ trait, and should cover most common use cases. However, when a custom error type
 from the method as an error reply, it can be created using `derive(zbus::DBusError)`, and used in
 the returned `Result<T, E>`.
 
-Property methods may also return errors, but they must be [`zbus::fdo::Error`]. Most often you'll
-want to use [`zbus::fdo::Error::UnknownProperty`] variant.
+Property getters and setters follow the same rule as methods: the error is any type that
+implements [`zbus::DBusError`], so a custom `derive(zbus::DBusError)` type works there too.
+[`zbus::fdo::Error`] covers the common cases; [`zbus::fdo::Error::UnknownProperty`] is the one
+you'll reach for most often.
 
 ### Sending signals
 

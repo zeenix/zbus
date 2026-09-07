@@ -15,7 +15,7 @@ use std::{
 use async_trait::async_trait;
 
 use crate::{
-    Connection, ObjectServer, OwnedValue, Value,
+    BoxDBusError, Connection, DBusError, Error, ObjectServer, OwnedValue, Value,
     async_lock::RwLock,
     fdo,
     message::{self, Header, Message},
@@ -71,6 +71,8 @@ pub trait Interface: Any + Send + Sync {
 
     /// Get a property value. Returns `None` if the property doesn't exist.
     ///
+    /// A getter may fail with any D-Bus error, hence the boxed error type.
+    ///
     /// Note: The header parameter will be None when the getter is not being called as part
     /// of D-Bus communication (for example, when it is called as part of initial object setup,
     /// before it is registered on the bus, or when we manually send out property changed
@@ -82,9 +84,12 @@ pub trait Interface: Any + Send + Sync {
         connection: &Connection,
         header: Option<&message::Header<'_>>,
         emitter: &SignalEmitter<'_>,
-    ) -> Option<fdo::Result<OwnedValue>>;
+    ) -> Option<Result<OwnedValue, BoxDBusError>>;
 
     /// Return all the properties.
+    ///
+    /// A property whose getter fails is left out, so this only fails when a value cannot be
+    /// serialized.
     async fn get_all(
         &self,
         object_server: &ObjectServer,
@@ -97,7 +102,8 @@ pub trait Interface: Any + Send + Sync {
     ///
     /// Return [`DispatchResult2::NotFound`] if the property doesn't exist, or
     /// [`DispatchResult2::RequiresMut`] if `set_mut` should be used instead. The default
-    /// implementation just returns `RequiresMut`.
+    /// implementation just returns `RequiresMut`. The [`DispatchResult2::Async`] future fails
+    /// with whatever D-Bus error the setter fails with.
     fn set<'call>(
         &'call self,
         property_name: &'call str,
@@ -120,7 +126,8 @@ pub trait Interface: Any + Send + Sync {
 
     /// Set a property value.
     ///
-    /// Returns `None` if the property doesn't exist.
+    /// Returns `None` if the property doesn't exist. A setter may fail with any D-Bus error,
+    /// hence the boxed error type.
     ///
     /// This will only be invoked if `set` returned `RequiresMut`.
     async fn set_mut(
@@ -131,7 +138,7 @@ pub trait Interface: Any + Send + Sync {
         connection: &Connection,
         header: Option<&Header<'_>>,
         emitter: &SignalEmitter<'_>,
-    ) -> Option<fdo::Result<()>>;
+    ) -> Option<Result<(), BoxDBusError>>;
 
     /// Call a method.
     ///
@@ -160,6 +167,31 @@ pub trait Interface: Any + Send + Sync {
 
     /// Write introspection XML to the writer, with the given indentation level.
     fn introspect_to_writer(&self, writer: &mut dyn Write, level: usize);
+}
+
+/// Conversion of a property handler's failure into the boxed error [`Interface`] carries.
+///
+/// The `#[interface]` macro applies it to whatever a getter or setter returns. Any `'static`
+/// [`DBusError`] is boxed as is. A plain [`Error`] is not a D-Bus error, so it is reported the
+/// way [`fdo::Error`] reports it.
+#[doc(hidden)]
+pub trait IntoDBusError {
+    fn into_dbus_error(self) -> BoxDBusError;
+}
+
+impl<E> IntoDBusError for E
+where
+    E: DBusError + Send + Sync + 'static,
+{
+    fn into_dbus_error(self) -> BoxDBusError {
+        Box::new(self)
+    }
+}
+
+impl IntoDBusError for Error {
+    fn into_dbus_error(self) -> BoxDBusError {
+        self.into()
+    }
 }
 
 /// A type for a reference-counted Interface trait-object, with associated run-time details and a

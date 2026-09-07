@@ -2,12 +2,12 @@ use std::{future::Future, pin::Pin};
 
 use zbus::message::Flags;
 
-use crate::{Connection, DynamicType, Error, fdo, log::trace, message::Message};
+use crate::{BoxDBusError, Connection, DynamicType, Error, fdo, log::trace, message::Message};
 
 /// A helper type returned by [`Interface`](`crate::object_server::Interface`) callbacks.
 ///
-/// The [`Async`](DispatchResult2::Async) variant uses [`fdo::Result`] so that D-Bus error names are
-/// preserved without nesting through intermediate [`crate::Error`] conversions.
+/// The [`Async`](DispatchResult2::Async) variant carries a boxed [`DBusError`](crate::DBusError)
+/// so that any D-Bus error name can be reported, not just the fixed set in [`fdo::Error`].
 ///
 /// This is an unstable type — compatibility may break in minor version bumps.
 pub enum DispatchResult2<'a> {
@@ -20,7 +20,7 @@ pub enum DispatchResult2<'a> {
     RequiresMut,
 
     /// The method was found and will be completed by running this Future.
-    Async(Pin<Box<dyn Future<Output = fdo::Result<()>> + Send + 'a>>),
+    Async(Pin<Box<dyn Future<Output = Result<(), BoxDBusError>> + Send + 'a>>),
 }
 
 impl<'a> DispatchResult2<'a> {
@@ -40,7 +40,7 @@ impl<'a> DispatchResult2<'a> {
                     Err(e) => conn.reply_dbus_error(&hdr, e).await,
                 }
                 .map(|_seq| ())
-                .map_err(|e| fdo::Error::Failed(e.to_string()))
+                .map_err(handler_error)
             } else {
                 trace!("No reply expected for {:?} by the caller.", msg);
                 Ok(())
@@ -66,9 +66,9 @@ impl<'a> DispatchResult2<'a> {
 /// A [`DBusError`](crate::DBusError) is passed through unchanged. Anything else becomes
 /// `org.freedesktop.DBus.Error.Failed` with the error's text as its description.
 #[cold]
-fn handler_error(e: Error) -> fdo::Error {
+fn handler_error(e: Error) -> BoxDBusError {
     match e {
-        Error::FDO(e) => *e,
-        e => fdo::Error::Failed(e.to_string()),
+        Error::FDO(e) => e,
+        e => Box::new(fdo::Error::Failed(e.to_string())),
     }
 }

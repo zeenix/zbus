@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    Connection, Error, ObjectPath, Result,
+    BoxDBusError, Connection, Error, ObjectPath, Result,
     async_lock::RwLock,
     connection::WeakConnection,
     fdo,
@@ -20,7 +20,9 @@ mod interface;
 pub(crate) use interface::ArcInterface;
 #[doc(hidden)]
 pub use interface::introspect_doc_comment;
-pub use interface::{DispatchResult2, Interface, InterfaceDeref, InterfaceDerefMut, InterfaceRef};
+pub use interface::{
+    DispatchResult2, Interface, InterfaceDeref, InterfaceDerefMut, InterfaceRef, IntoDBusError,
+};
 
 mod signal_emitter;
 pub use signal_emitter::SignalEmitter;
@@ -409,7 +411,7 @@ impl ObjectServer {
         connection: &Connection,
         msg: &Message,
         hdr: &Header<'_>,
-    ) -> fdo::Result<()> {
+    ) -> std::result::Result<(), BoxDBusError> {
         let member = hdr
             .member()
             .ok_or_else(|| fdo::Error::Failed("Missing member".into()))?;
@@ -422,9 +424,7 @@ impl ObjectServer {
         trace!("acquired read lock on interface `{}`", iface_name);
         match read_lock.call(self, connection, msg, member.as_ref()) {
             DispatchResult2::NotFound => {
-                return Err(fdo::Error::UnknownMethod(format!(
-                    "Unknown method '{member}'"
-                )));
+                return Err(fdo::Error::UnknownMethod(format!("Unknown method '{member}'")).into());
             }
             DispatchResult2::Async(f) => {
                 return f.await;
@@ -443,9 +443,7 @@ impl ObjectServer {
             }
         }
         drop(write_lock);
-        Err(fdo::Error::UnknownMethod(format!(
-            "Unknown method '{member}'"
-        )))
+        Err(fdo::Error::UnknownMethod(format!("Unknown method '{member}'")).into())
     }
 
     async fn dispatch_method_call_try(
@@ -453,7 +451,7 @@ impl ObjectServer {
         connection: &Connection,
         msg: &Message,
         hdr: &Header<'_>,
-    ) -> fdo::Result<()> {
+    ) -> std::result::Result<(), BoxDBusError> {
         let path = hdr
             .path()
             .ok_or_else(|| fdo::Error::Failed("Missing object path".into()))?;

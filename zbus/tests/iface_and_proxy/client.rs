@@ -218,6 +218,67 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
         ))),
     );
 
+    // A property getter failing with a custom `DBusError` should surface its error name too.
+    let err = proxy.fail_property_custom_error().await.unwrap_err();
+    let Error::MethodError(name, ..) = &err else {
+        panic!("Expected Error::MethodError, got {err:?}");
+    };
+    assert_eq!(
+        name.as_str(),
+        "org.freedesktop.MyIface.Error.SomethingWentWrong"
+    );
+    assert_eq!(
+        MyIfaceError::from(err),
+        MyIfaceError::SomethingWentWrong("oops".to_string())
+    );
+
+    // Property setters (both `&self` and `&mut self`) failing with a custom `DBusError` should
+    // likewise surface their error name to the client.
+    proxy.set_custom_error_prop(60).await?;
+    let err = proxy
+        .set_custom_error_prop(61)
+        .await
+        .expect_err("Setting value above 60 should fail");
+    assert_eq!(
+        MyIfaceError::from(err),
+        MyIfaceError::SomethingWentWrong(
+            "Provided value is 61; values above 60 not accepted".to_string()
+        )
+    );
+
+    proxy.set_custom_error_mut_prop(60).await?;
+    let err = proxy
+        .set_custom_error_mut_prop(61)
+        .await
+        .expect_err("Setting value above 60 should fail");
+    assert_eq!(
+        MyIfaceError::from(err),
+        MyIfaceError::SomethingWentWrong(
+            "Provided value is 61; values above 60 not accepted".to_string()
+        )
+    );
+
+    // A successful set is followed by the getter for the `PropertiesChanged` emission. A getter
+    // failing there must keep its own error name in the `Set` reply, for a standard error and a
+    // custom one alike.
+    let err = proxy
+        .set_locked_prop(1)
+        .await
+        .expect_err("Setting a locked property should fail");
+    let Error::FDO(fdo_err) = err else {
+        panic!("Expected Error::FDO, got {err:?}");
+    };
+    assert!(matches!(*fdo_err, zbus::fdo::Error::AccessDenied(_)));
+    assert_eq!(fdo_err.name(), "org.freedesktop.DBus.Error.AccessDenied");
+    let err = proxy
+        .set_custom_locked_prop(1)
+        .await
+        .expect_err("Setting a locked property should fail");
+    assert_eq!(
+        MyIfaceError::from(err),
+        MyIfaceError::SomethingWentWrong("locked".to_string())
+    );
+
     assert_eq!(proxy.optional_property().await?, Some(42).into());
 
     let xml = proxy.inner().introspect().await?;

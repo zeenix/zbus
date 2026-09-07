@@ -9,7 +9,10 @@ use std::{borrow::Cow, collections::HashMap};
 use super::Error;
 use super::Result;
 #[cfg(feature = "service")]
-use crate::{Connection, ObjectServer, interface, message::Header, object_server::SignalEmitter};
+use crate::{
+    BoxDBusError, Connection, ObjectServer, interface, message::Header,
+    object_server::SignalEmitter,
+};
 use crate::{OwnedValue, Value, names::InterfaceName};
 
 /// Service-side implementation for the `org.freedesktop.DBus.Properties` interface.
@@ -30,7 +33,7 @@ impl Properties {
         #[zbus(object_server)] server: &ObjectServer,
         #[zbus(header)] header: Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> Result<OwnedValue> {
+    ) -> std::result::Result<OwnedValue, BoxDBusError> {
         let path = header.path().ok_or(crate::Error::MissingField)?;
         let root = server.root().read().await;
         let iface = root
@@ -47,9 +50,7 @@ impl Properties {
             .get(property_name, server, conn, Some(&header), &emitter)
             .await;
         res.unwrap_or_else(|| {
-            Err(Error::UnknownProperty(format!(
-                "Unknown property '{property_name}'"
-            )))
+            Err(Error::UnknownProperty(format!("Unknown property '{property_name}'")).into())
         })
     }
 
@@ -64,7 +65,7 @@ impl Properties {
         #[zbus(connection)] connection: &Connection,
         #[zbus(header)] header: Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), BoxDBusError> {
         let path = header.path().ok_or(crate::Error::MissingField)?;
         let root = server.root().read().await;
         let iface = root
@@ -84,9 +85,9 @@ impl Properties {
         ) {
             zbus::object_server::DispatchResult2::RequiresMut => {}
             zbus::object_server::DispatchResult2::NotFound => {
-                return Err(Error::UnknownProperty(format!(
-                    "Unknown property '{property_name}'"
-                )));
+                return Err(
+                    Error::UnknownProperty(format!("Unknown property '{property_name}'")).into(),
+                );
             }
             zbus::object_server::DispatchResult2::Async(f) => {
                 return f.await;
@@ -106,9 +107,7 @@ impl Properties {
             )
             .await;
         res.unwrap_or_else(|| {
-            Err(Error::UnknownProperty(format!(
-                "Unknown property '{property_name}'"
-            )))
+            Err(Error::UnknownProperty(format!("Unknown property '{property_name}'")).into())
         })
     }
 
