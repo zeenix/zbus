@@ -56,22 +56,16 @@ fn msg_de(c: &mut Criterion) {
 
 fn empty_message() -> Message {
     Message::method_call("/org/freedesktop/DBus/Something", "Ping")
-        .unwrap()
         .destination("org.freedesktop.DBus.Something")
-        .unwrap()
         .interface("org.freedesktop.DBus.Something")
-        .unwrap()
         .build(&())
         .unwrap()
 }
 
 fn big_boy_message(big_boy: &BigBoy<'_>) -> Message {
     Message::method_call("/org/freedesktop/DBus/Something", "Ping")
-        .unwrap()
         .destination("org.freedesktop.DBus.Something")
-        .unwrap()
         .interface("org.freedesktop.DBus.Something")
-        .unwrap()
         .build(&big_boy)
         .unwrap()
 }

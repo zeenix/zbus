@@ -23,11 +23,8 @@ async fn issue_68_async() {
     let client_conn = Connection::session().await.unwrap();
     let destination = conn.unique_name().map(UniqueName::<'_>::from).unwrap();
     let msg = Message::method_call("/org/freedesktop/Issue68", "Ping")
-        .unwrap()
         .destination(destination)
-        .unwrap()
         .interface("org.freedesktop.Issue68")
-        .unwrap()
         .build(&())
         .unwrap();
     let serial = msg.primary_header().serial_num();

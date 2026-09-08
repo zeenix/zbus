@@ -303,7 +303,6 @@ fn test_interface() {
             let c = zbus::Connection::session().await.unwrap();
             let s = c.object_server();
             let m = zbus::message::Message::method_call("/", "StrU32")
-                .unwrap()
                 .build(&(42,))
                 .unwrap();
             let _ = t.call(s, &c, &m, "StrU32".try_into().unwrap());
@@ -379,7 +378,6 @@ mod signal_from_message {
             "org.freedesktop.zbus_macros.Test",
             "SignalU8",
         )
-        .expect("Failed to create signal message builder")
         .build(&(1u8,))
         .expect("Failed to build signal message");
 
@@ -400,7 +398,6 @@ mod signal_from_message {
             "org.freedesktop.zbus_macros.Test",
             "SignalString",
         )
-        .expect("Failed to create signal message builder")
         .build(&(String::from("test"),))
         .expect("Failed to build signal message");
 
@@ -421,7 +418,6 @@ mod signal_from_message {
             "org.freedesktop.zbus_macros.Test",
             "SignalU8",
         )
-        .expect("Failed to create signal message builder")
         .build(&(String::from("test"),))
         .expect("Failed to build signal message");
 

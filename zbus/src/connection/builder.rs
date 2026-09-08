@@ -535,9 +535,7 @@ impl<'a> Builder<'a> {
     ///     .await
     ///     .unwrap();
     /// let hello = Message::method_call("/org/freedesktop/DBus", "Hello")
-    ///     .unwrap()
     ///     .destination("org.freedesktop.DBus")
-    ///     .unwrap()
     ///     .build(&())
     ///     .unwrap();
     /// client.send(&hello).await.unwrap();

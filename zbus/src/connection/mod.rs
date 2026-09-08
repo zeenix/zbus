@@ -343,7 +343,7 @@ impl Connection {
             .map_err(Into::into)?;
         let method_name = method_name.try_into().map_err(Into::into)?;
         let msg = self
-            .method_call_builder(destination, path, interface, method_name, flags)?
+            .method_call_builder(destination, path, interface, method_name, flags)
             .build(body)?;
 
         self.send_method_call(msg, flags).await
@@ -360,22 +360,22 @@ impl Connection {
         interface: Option<InterfaceName<'b>>,
         method_name: MemberName<'b>,
         flags: BitFlags<Flags>,
-    ) -> Result<message::Builder<'b>> {
-        let mut builder = Message::method_call(path, method_name)?;
+    ) -> message::Builder<'b> {
+        let mut builder = Message::method_call(path, method_name);
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?
+            builder = builder.sender(sender)
         }
         if let Some(destination) = destination {
-            builder = builder.destination(destination)?
+            builder = builder.destination(destination)
         }
         if let Some(interface) = interface {
-            builder = builder.interface(interface)?
+            builder = builder.interface(interface)
         }
         for flag in flags {
-            builder = builder.with_flags(flag)?;
+            builder = builder.with_flags(flag);
         }
 
-        Ok(builder)
+        builder
     }
 
     /// Send a method call message and register for its reply, unless none is expected.
@@ -429,7 +429,7 @@ impl Connection {
         let interface = interface.try_into().map_err(Into::into)?;
         let signal_name = signal_name.try_into().map_err(Into::into)?;
         let m = self
-            .signal_builder(destination, path, interface, signal_name)?
+            .signal_builder(destination, path, interface, signal_name)
             .build(body)?;
 
         self.send(&m).await
@@ -444,16 +444,16 @@ impl Connection {
         path: ObjectPath<'b>,
         interface: InterfaceName<'b>,
         signal_name: MemberName<'b>,
-    ) -> Result<message::Builder<'b>> {
-        let mut builder = Message::signal(path, interface, signal_name)?;
+    ) -> message::Builder<'b> {
+        let mut builder = Message::signal(path, interface, signal_name);
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?;
+            builder = builder.sender(sender);
         }
         if let Some(destination) = destination {
-            builder = builder.destination(destination)?;
+            builder = builder.destination(destination);
         }
 
-        Ok(builder)
+        builder
     }
 
     /// Reply to a message.
@@ -495,14 +495,13 @@ impl Connection {
     ///
     /// The body is written through a trait object so that this is compiled once rather than once
     /// per body type.
-    fn reply_message(
-        &self,
-        builder: Result<message::Builder<'_>>,
+    fn reply_message<'b>(
+        &'b self,
+        mut builder: message::Builder<'b>,
         build: &mut dyn FnMut(message::Builder<'_>) -> Result<Message>,
     ) -> Result<Message> {
-        let mut builder = builder?;
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?;
+            builder = builder.sender(sender);
         }
         build(builder)
     }
@@ -1752,8 +1751,8 @@ mod p2p_tests {
                 Endian::Little => Endian::Big,
                 Endian::Big => Endian::Little,
             };
-            let method = Message::method_call("/", "Test")?
-                .interface("org.zbus.p2p")?
+            let method = Message::method_call("/", "Test")
+                .interface("org.zbus.p2p")
                 .endian(endian)
                 .build(&64u64)?;
             client1.send(&method).await?;

@@ -21,9 +21,9 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     // Use low-level API for `TestResponseNotify` because we need to ensure that the signal is
     // always received after the response.
     let mut stream = MessageStream::from(&conn);
-    let method = Message::method_call("/org/freedesktop/MyService", "TestResponseNotify")?
-        .interface("org.freedesktop.MyIface")?
-        .destination("org.freedesktop.MyService")?
+    let method = Message::method_call("/org/freedesktop/MyService", "TestResponseNotify")
+        .interface("org.freedesktop.MyIface")
+        .destination("org.freedesktop.MyService")
         .build(&())?;
     let serial = method.primary_header().serial_num();
     conn.send(&method).await?;

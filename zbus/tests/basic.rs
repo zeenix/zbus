@@ -19,11 +19,8 @@ use zbus::{
 #[test]
 fn msg() {
     let m = Message::method_call("/org/freedesktop/DBus", "GetMachineId")
-        .unwrap()
         .destination("org.freedesktop.DBus")
-        .unwrap()
         .interface("org.freedesktop.DBus.Peer")
-        .unwrap()
         .build(&())
         .unwrap();
     let hdr = m.header();

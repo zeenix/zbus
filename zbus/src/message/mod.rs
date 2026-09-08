@@ -68,7 +68,9 @@ pub(super) struct Inner {
 
 impl Message {
     /// Create a builder for a message of type [`Type::MethodCall`].
-    pub fn method_call<'b, 'p: 'b, 'm: 'b, P, M>(path: P, method_name: M) -> Result<Builder<'b>>
+    ///
+    /// An invalid path or method name is reported by [`Builder::build`].
+    pub fn method_call<'b, 'p: 'b, 'm: 'b, P, M>(path: P, method_name: M) -> Builder<'b>
     where
         P: TryInto<ObjectPath<'p>>,
         M: TryInto<MemberName<'m>>,
@@ -76,16 +78,18 @@ impl Message {
         M::Error: Into<Error>,
     {
         Builder::new(Type::MethodCall)
-            .path(path)?
+            .path(path)
             .member(method_name)
     }
 
     /// Create a builder for a message of type [`Type::Signal`].
+    ///
+    /// An invalid path, interface name or signal name is reported by [`Builder::build`].
     pub fn signal<'b, 'p: 'b, 'i: 'b, 'm: 'b, P, I, M>(
         path: P,
         iface: I,
         signal_name: M,
-    ) -> Result<Builder<'b>>
+    ) -> Builder<'b>
     where
         P: TryInto<ObjectPath<'p>>,
         I: TryInto<InterfaceName<'i>>,
@@ -95,24 +99,26 @@ impl Message {
         M::Error: Into<Error>,
     {
         Builder::new(Type::Signal)
-            .path(path)?
-            .interface(iface)?
+            .path(path)
+            .interface(iface)
             .member(signal_name)
     }
 
     /// Create a builder for a message of type [`Type::MethodReturn`].
-    pub fn method_return(reply_to: &Header<'_>) -> Result<Builder<'static>> {
+    pub fn method_return(reply_to: &Header<'_>) -> Builder<'static> {
         Builder::new(Type::MethodReturn).reply_to(reply_to)
     }
 
     /// Create a builder for a message of type [`Type::Error`].
-    pub fn error<'b, 'e: 'b, E>(reply_to: &Header<'_>, name: E) -> Result<Builder<'b>>
+    ///
+    /// An invalid error name is reported by [`Builder::build`].
+    pub fn error<'b, 'e: 'b, E>(reply_to: &Header<'_>, name: E) -> Builder<'b>
     where
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {
         Builder::new(Type::Error)
-            .reply_to(reply_to)?
+            .reply_to(reply_to)
             .error_name(name)
     }
 
@@ -194,9 +200,9 @@ impl Message {
     /// # use zbus::message::Message;
     /// # (|| -> zbus::Result<()> {
     /// let send_body = (7i32, (2i32, "foo"), vec!["bar"]);
-    /// let message = Message::method_call("/", "ping")?
-    ///     .destination("zbus.test")?
-    ///     .interface("zbus.test")?
+    /// let message = Message::method_call("/", "ping")
+    ///     .destination("zbus.test")
+    ///     .interface("zbus.test")
     ///     .build(&send_body)?;
     /// let header = message.header();
     /// let body = message.body();
@@ -206,7 +212,7 @@ impl Message {
     /// assert!(matches!(fields[1], zbus::Value::Structure(_)));
     /// assert!(matches!(fields[2], zbus::Value::Array(_)));
     ///
-    /// let reply_body = Message::method_return(&header)?.build(&body)?.body();
+    /// let reply_body = Message::method_return(&header).build(&body)?.body();
     /// let reply_value : (i32, (i32, &str), Vec<String>) = reply_body.deserialize()?;
     ///
     /// assert_eq!(reply_value.0, 7);
@@ -348,9 +354,7 @@ mod tests {
         #[cfg(unix)]
         let stdout = std::io::stdout();
         let m = Message::method_call("/", "do")
-            .unwrap()
             .sender(":1.72")
-            .unwrap()
             .build(&(
                 #[cfg(unix)]
                 Fd::from(&stdout),
@@ -377,12 +381,10 @@ mod tests {
 
         assert_eq!(m.to_string(), "Method call do from :1.72");
         let r = Message::method_return(&m.header())
-            .unwrap()
             .build(&("all fine!"))
             .unwrap();
         assert_eq!(r.to_string(), "Method return");
         let e = Message::error(&m.header(), "org.freedesktop.zbus.Error")
-            .unwrap()
             .build(&("kaboom!", 32))
             .unwrap();
         assert_eq!(e.to_string(), "Error org.freedesktop.zbus.Error: kaboom!");
