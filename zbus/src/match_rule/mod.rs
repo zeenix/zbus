@@ -273,7 +273,7 @@ impl<'m> MatchRule<'m> {
 
         // The arg0 namespace.
         if let Some(arg0_ns) = self.arg0ns() {
-            if let Ok(arg0) = msg.body().deserialize_unchecked::<BusName<'_>>() {
+            if let Ok(arg0) = msg.body().deserialize_ignore_signature::<BusName<'_>>() {
                 match arg0.strip_prefix(arg0_ns.as_str()) {
                     None => return Ok(false),
                     Some(s) if !s.is_empty() && !s.starts_with('.') => return Ok(false),
