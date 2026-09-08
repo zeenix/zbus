@@ -282,7 +282,7 @@ impl<'a> Borrow<ObjectPath<'a>> for OwnedObjectPath {
     }
 }
 
-impl std::convert::From<OwnedObjectPath> for ObjectPath<'static> {
+impl std::convert::From<OwnedObjectPath> for ObjectPath<'_> {
     fn from(o: OwnedObjectPath) -> Self {
         o.into_inner()
     }

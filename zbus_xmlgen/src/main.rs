@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             service,
             object_path,
         } => DBusInfo::new(
-            connection::Builder::address(&*address)?.build()?,
+            connection::Builder::address(&*address).build()?,
             service,
             object_path,
         )?,
@@ -146,9 +146,7 @@ impl DBusInfo<'_> {
 
         let xml = IntrospectableProxy::builder(&connection)
             .destination(service.clone())
-            .expect("invalid destination")
             .path(path.clone())
-            .expect("invalid path")
             .build()
             .unwrap()
             .introspect()?;

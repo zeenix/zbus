@@ -72,7 +72,6 @@ fn test_proxy() {
         let connection = zbus::Connection::session().await.unwrap();
         let proxy = test::TestProxy::builder(&connection)
             .path("/org/freedesktop/zbus_macros/test")
-            .unwrap()
             .cache_properties(CacheProperties::No)
             .build()
             .await
@@ -304,7 +303,6 @@ fn test_interface() {
             let c = zbus::Connection::session().await.unwrap();
             let s = c.object_server();
             let m = zbus::message::Message::method_call("/", "StrU32")
-                .unwrap()
                 .build(&(42,))
                 .unwrap();
             let _ = t.call(s, &c, &m, "StrU32".try_into().unwrap());
@@ -380,7 +378,6 @@ mod signal_from_message {
             "org.freedesktop.zbus_macros.Test",
             "SignalU8",
         )
-        .expect("Failed to create signal message builder")
         .build(&(1u8,))
         .expect("Failed to build signal message");
 
@@ -401,7 +398,6 @@ mod signal_from_message {
             "org.freedesktop.zbus_macros.Test",
             "SignalString",
         )
-        .expect("Failed to create signal message builder")
         .build(&(String::from("test"),))
         .expect("Failed to build signal message");
 
@@ -422,7 +418,6 @@ mod signal_from_message {
             "org.freedesktop.zbus_macros.Test",
             "SignalU8",
         )
-        .expect("Failed to create signal message builder")
         .build(&(String::from("test"),))
         .expect("Failed to build signal message");
 
@@ -474,18 +469,14 @@ fn test_proxy_object_list() {
     }
 
     let connection = zbus::blocking::connection::Builder::session()
-        .unwrap()
         .serve_at(OBJECT_LIST.paths[1].as_ref(), OBJECT_LIST.clone())
-        .unwrap()
         .build()
         .unwrap();
     let destination = connection.unique_name().unwrap().clone();
 
     let proxy = ObjectListProxyBlocking::builder(&connection)
         .path(OBJECT_LIST.paths[1].as_ref())
-        .unwrap()
         .destination(&destination)
-        .unwrap()
         .build()
         .unwrap();
 

@@ -43,9 +43,7 @@ async fn issue104_async() {
 
     let secret = Secret;
     let conn = conn::Builder::session()
-        .unwrap()
         .serve_at("/org/freedesktop/secrets", secret)
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -64,9 +62,7 @@ async fn issue104_async() {
 
         let proxy = SecretProxy::builder(&conn)
             .destination(UniqueName::from(service_name))
-            .unwrap()
             .path("/org/freedesktop/secrets")
-            .unwrap()
             .build()
             .await
             .unwrap();

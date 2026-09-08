@@ -33,13 +33,13 @@ pub use builder::Builder;
 /// // Let's take the most typical example of match rule to subscribe to properties' changes:
 /// let rule = MatchRule::builder()
 ///     .msg_type(zbus::message::Type::Signal)
-///     .sender("org.freedesktop.DBus")?
-///     .interface("org.freedesktop.DBus.Properties")?
-///     .member("PropertiesChanged")?
-///     .add_arg("org.zbus")?
+///     .sender("org.freedesktop.DBus")
+///     .interface("org.freedesktop.DBus.Properties")
+///     .member("PropertiesChanged")
+///     .add_arg("org.zbus")
 ///     // Sometimes it's useful to match empty strings (null check).
-///     .add_arg("")?
-///     .build();
+///     .add_arg("")
+///     .build()?;
 /// let rule_str = rule.to_string();
 /// assert_eq!(
 ///     rule_str,
@@ -58,11 +58,11 @@ pub use builder::Builder;
 /// // Now for the `ObjectManager::InterfacesAdded` signal.
 /// let rule = MatchRule::builder()
 ///     .msg_type(zbus::message::Type::Signal)
-///     .sender("org.zbus")?
-///     .interface("org.freedesktop.DBus.ObjectManager")?
-///     .member("InterfacesAdded")?
-///     .arg_path(0, "/org/zbus/NewPath")?
-///     .build();
+///     .sender("org.zbus")
+///     .interface("org.freedesktop.DBus.ObjectManager")
+///     .member("InterfacesAdded")
+///     .arg_path(0, "/org/zbus/NewPath")
+///     .build()?;
 /// let rule_str = rule.to_string();
 /// assert_eq!(
 ///     rule_str,
@@ -329,11 +329,8 @@ impl<'m> MatchRule<'m> {
         Builder::new()
             .msg_type(Type::Signal)
             .sender("org.freedesktop.DBus")
-            .unwrap()
             .interface("org.freedesktop.DBus")
-            .unwrap()
             .member(signal_name)
-            .unwrap()
     }
 }
 
@@ -440,31 +437,33 @@ impl<'m> TryFrom<&'m str> for MatchRule<'m> {
                     };
                     builder.msg_type(msg_type)
                 }
-                "sender" => builder.sender(value)?,
-                "interface" => builder.interface(value)?,
-                "member" => builder.member(value)?,
-                "path" => builder.path(value)?,
-                "path_namespace" => builder.path_namespace(value)?,
-                "destination" => builder.destination(value)?,
-                "arg0namespace" => builder.arg0ns(value)?,
+                // Each component is converted here, rather than left to the builder, so that an
+                // invalid rule string is reported by the component that's actually at fault.
+                "sender" => builder.sender(BusName::try_from(value)?),
+                "interface" => builder.interface(InterfaceName::try_from(value)?),
+                "member" => builder.member(MemberName::try_from(value)?),
+                "path" => builder.path(ObjectPath::try_from(value)?),
+                "path_namespace" => builder.path_namespace(ObjectPath::try_from(value)?),
+                "destination" => builder.destination(UniqueName::try_from(value)?),
+                "arg0namespace" => builder.arg0ns(builder::validate_arg0ns(value.into())?),
                 key if key.starts_with("arg") => {
                     if let Some(trailing_idx) = key.find("path") {
                         let idx = key[3..trailing_idx]
                             .parse::<u8>()
                             .map_err(|_| Error::InvalidMatchRule)?;
-                        builder.arg_path(idx, value)?
+                        builder.arg_path(idx, ObjectPath::try_from(value)?)
                     } else {
                         let idx = key[3..]
                             .parse::<u8>()
                             .map_err(|_| Error::InvalidMatchRule)?;
-                        builder.arg(idx, value)?
+                        builder.arg(idx, value)
                     }
                 }
                 _ => return Err(Error::InvalidMatchRule),
             };
         }
 
-        Ok(builder.build())
+        builder.build()
     }
 }
 

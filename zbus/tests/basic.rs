@@ -19,11 +19,8 @@ use zbus::{
 #[test]
 fn msg() {
     let m = Message::method_call("/org/freedesktop/DBus", "GetMachineId")
-        .unwrap()
         .destination("org.freedesktop.DBus")
-        .unwrap()
         .interface("org.freedesktop.DBus.Peer")
-        .unwrap()
         .build(&())
         .unwrap();
     let hdr = m.header();
@@ -427,7 +424,7 @@ async fn ibus_connection() {
 
 #[cfg(all(unix, feature = "ibus"))]
 async fn test_ibus_connection() -> Result<()> {
-    let connection = zbus::connection::Builder::ibus()?.build().await?;
+    let connection = zbus::connection::Builder::ibus().build().await?;
 
     // Just verify we can get a unique name.
     assert!(connection.unique_name().is_some());

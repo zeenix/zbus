@@ -39,23 +39,19 @@ async fn issue_356() {
 
     // Create the service connection with both interfaces registered
     let connection = Builder::session()
-        .unwrap()
         .serve_at(
             &adapter_path,
             Adapter {
                 name: "TestAdapter".to_string(),
             },
         )
-        .unwrap()
         .serve_at(
             &device_path,
             Device {
                 adapter_path: adapter_path.clone(),
             },
         )
-        .unwrap()
         .name("org.test.Issue356")
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -63,9 +59,7 @@ async fn issue_356() {
     // Create a proxy for the Device interface using the auto-generated DeviceProxy
     let device_proxy = DeviceProxy::builder(&connection)
         .destination("org.test.Issue356")
-        .unwrap()
         .path(&device_path)
-        .unwrap()
         .build()
         .await
         .unwrap();

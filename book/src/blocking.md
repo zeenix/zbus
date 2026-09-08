@@ -84,7 +84,6 @@ let args = signal.args().unwrap();
 
 let location = LocationProxyBlocking::builder(&conn)
     .path(args.new())
-    .unwrap()
     .build()
     .unwrap();
 println!(
@@ -190,9 +189,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         done: event_listener::Event::new(),
     };
     let done_listener = greeter.done.listen();
-    let _handle = connection::Builder::session()?
-        .name("org.zbus.MyGreeter")?
-        .serve_at("/org/zbus/MyGreeter", greeter)?
+    let _handle = connection::Builder::session()
+        .name("org.zbus.MyGreeter")
+        .serve_at("/org/zbus/MyGreeter", greeter)
         .build()?;
 
     done_listener.wait();

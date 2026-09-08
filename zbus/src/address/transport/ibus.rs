@@ -56,7 +56,7 @@ impl Ibus {
     /// #
     /// # block_on(async {
     /// // This method is used internally by the connection builder
-    /// let _conn = Builder::ibus()?.build().await?;
+    /// let _conn = Builder::ibus().build().await?;
     /// # Ok::<(), zbus::Error>(())
     /// # }).unwrap();
     /// ```

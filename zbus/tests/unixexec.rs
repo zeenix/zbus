@@ -12,7 +12,7 @@ fn unixexec_connection_async() {
 }
 
 async fn test_unixexec_connection() -> Result<()> {
-    let connection = Builder::address("unixexec:path=systemd-stdio-bridge")?
+    let connection = Builder::address("unixexec:path=systemd-stdio-bridge")
         .build()
         .await?;
 

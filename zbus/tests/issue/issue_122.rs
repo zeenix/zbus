@@ -49,9 +49,7 @@ fn issue_122() {
 
     let destination = conn.unique_name().map(UniqueName::<'_>::from).unwrap();
     let msg = Message::method_call("/does/not/matter", "ZBusIssue122")
-        .unwrap()
         .destination(destination)
-        .unwrap()
         .build(&())
         .unwrap();
     conn.send(&msg).unwrap();

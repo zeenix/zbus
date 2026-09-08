@@ -328,8 +328,8 @@ pub fn create_proxy(
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
                     let obj_destination = destination.try_into().map_err(::std::convert::Into::into)?;
                     Self::builder(conn)
-                        .path(obj_path)?
-                        .destination(obj_destination)?
+                        .path(obj_path)
+                        .destination(obj_destination)
                         .build()#wait
                 }
             }
@@ -344,7 +344,7 @@ pub fn create_proxy(
                 {
                     let obj_dest = destination.try_into().map_err(::std::convert::Into::into)?;
                     Self::builder(conn)
-                        .destination(obj_dest)?
+                        .destination(obj_dest)
                         .build()#wait
                 }
             }
@@ -359,7 +359,7 @@ pub fn create_proxy(
                 {
                     let obj_path = path.try_into().map_err(::std::convert::Into::into)?;
                     Self::builder(conn)
-                        .path(obj_path)?
+                        .path(obj_path)
                         .build()#wait
                 }
             }
@@ -628,7 +628,7 @@ fn gen_proxy_method_call(
 
         let proxy_build = quote! {
             #proxy_path::builder(&self.0.connection())
-                .path(object_path)?
+                .path(object_path)
                 .build()
                 #wait
         };
@@ -802,8 +802,8 @@ fn gen_proxy_property(
             };
             let proxy_build = quote! {
                 #proxy_path::builder(&self.0.connection())
-                    .destination(self.0.destination().to_owned())?
-                    .path(object_path)?
+                    .destination(self.0.destination().to_owned())
+                    .path(object_path)
                     .build()
                     #wait
             };

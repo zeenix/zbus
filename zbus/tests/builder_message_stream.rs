@@ -25,10 +25,7 @@ fn build_message_stream_does_not_drop_pipelined_hello_async_io() {
         let guid = Guid::generate();
 
         build_message_stream_does_not_drop_pipelined_hello(
-            Builder::async_io_unix_stream(s0)
-                .server(guid)
-                .unwrap()
-                .p2p(),
+            Builder::async_io_unix_stream(s0).server(guid).p2p(),
             Builder::async_io_unix_stream(s1),
         )
         .await;
@@ -44,7 +41,7 @@ fn build_message_stream_does_not_drop_pipelined_hello_tokio() {
         let guid = Guid::generate();
 
         build_message_stream_does_not_drop_pipelined_hello(
-            Builder::tokio_unix_stream(s0).server(guid).unwrap().p2p(),
+            Builder::tokio_unix_stream(s0).server(guid).p2p(),
             Builder::tokio_unix_stream(s1),
         )
         .await;

@@ -21,13 +21,10 @@ async fn create_benchmark_connection_pair() -> (zbus::Connection, zbus::Connecti
     let guid = zbus::Guid::generate();
 
     let server = zbus::connection::Builder::authenticated_socket(server_socket, guid.clone())
-        .unwrap()
         .p2p()
         .serve_at(BENCHMARK_PATH, BenchmarkInterface)
-        .unwrap()
         .build();
     let client = zbus::connection::Builder::authenticated_socket(client_socket, guid)
-        .unwrap()
         .p2p()
         .method_timeout(std::time::Duration::from_secs(30))
         .build();

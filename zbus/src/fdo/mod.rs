@@ -69,13 +69,10 @@ mod tests {
     #[test]
     fn error_from_zerror() {
         let m = Message::method_call("/", "foo")
-            .unwrap()
             .destination(":1.2")
-            .unwrap()
             .build(&())
             .unwrap();
         let m = Message::error(&m.header(), "org.freedesktop.DBus.Error.TimedOut")
-            .unwrap()
             .build(&("so long"))
             .unwrap();
         let e: Error = m.into();
@@ -185,10 +182,9 @@ mod tests {
             zbus::MatchRule::builder()
                 .msg_type(zbus::message::Type::Signal)
                 .interface("org.freedesktop.DBus.ObjectManager")
-                .unwrap()
                 .path("/org/zbus/NoObjectManagerSignalsBeforeHello")
-                .unwrap()
-                .build(),
+                .build()
+                .unwrap(),
             &conn,
             None,
         )
@@ -205,16 +201,12 @@ mod tests {
             }
         }
         let _conn = zbus::conn::Builder::session()
-            .unwrap()
             .name("org.zbus.NoObjectManagerSignalsBeforeHello")
-            .unwrap()
             .serve_at("/org/zbus/NoObjectManagerSignalsBeforeHello/Obj", TestObj)
-            .unwrap()
             .serve_at(
                 "/org/zbus/NoObjectManagerSignalsBeforeHello",
                 super::ObjectManager,
             )
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -257,11 +249,8 @@ mod tests {
         impl TestObj {}
 
         let _service_conn = zbus::conn::Builder::session()
-            .unwrap()
             .name("org.zbus.PeerArbitraryPathTest")
-            .unwrap()
             .serve_at("/registered", TestObj)
-            .unwrap()
             .build()
             .await
             .unwrap();

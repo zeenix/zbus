@@ -36,11 +36,8 @@ async fn issue_310() {
         fn connected_network(&self) -> zbus::Result<OwnedObjectPath>;
     }
     let connection = Builder::session()
-        .unwrap()
         .serve_at("/net/connman/iwd/0/33", Station(0))
-        .unwrap()
         .name("net.connman.iwd")
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -70,7 +67,6 @@ async fn issue_310() {
 
     let station = StationProxy::builder(&connection)
         .path("/net/connman/iwd/0/33")
-        .unwrap()
         .build()
         .await
         .unwrap();

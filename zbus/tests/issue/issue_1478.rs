@@ -33,7 +33,7 @@ async fn connection_error_async() {
     addresses.push(VSOCK_ADDRESS);
 
     for addr in addresses {
-        let res = connection::Builder::address(addr).unwrap().build().await;
+        let res = connection::Builder::address(addr).build().await;
 
         let Err(Error::Connection(_, error_addr)) = res else {
             panic!("expected a connection error, got {res:?}");

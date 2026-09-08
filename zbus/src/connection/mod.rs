@@ -343,7 +343,7 @@ impl Connection {
             .map_err(Into::into)?;
         let method_name = method_name.try_into().map_err(Into::into)?;
         let msg = self
-            .method_call_builder(destination, path, interface, method_name, flags)?
+            .method_call_builder(destination, path, interface, method_name, flags)
             .build(body)?;
 
         self.send_method_call(msg, flags).await
@@ -360,22 +360,22 @@ impl Connection {
         interface: Option<InterfaceName<'b>>,
         method_name: MemberName<'b>,
         flags: BitFlags<Flags>,
-    ) -> Result<message::Builder<'b>> {
-        let mut builder = Message::method_call(path, method_name)?;
+    ) -> message::Builder<'b> {
+        let mut builder = Message::method_call(path, method_name);
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?
+            builder = builder.sender(sender)
         }
         if let Some(destination) = destination {
-            builder = builder.destination(destination)?
+            builder = builder.destination(destination)
         }
         if let Some(interface) = interface {
-            builder = builder.interface(interface)?
+            builder = builder.interface(interface)
         }
         for flag in flags {
-            builder = builder.with_flags(flag)?;
+            builder = builder.with_flags(flag);
         }
 
-        Ok(builder)
+        builder
     }
 
     /// Send a method call message and register for its reply, unless none is expected.
@@ -429,7 +429,7 @@ impl Connection {
         let interface = interface.try_into().map_err(Into::into)?;
         let signal_name = signal_name.try_into().map_err(Into::into)?;
         let m = self
-            .signal_builder(destination, path, interface, signal_name)?
+            .signal_builder(destination, path, interface, signal_name)
             .build(body)?;
 
         self.send(&m).await
@@ -444,16 +444,16 @@ impl Connection {
         path: ObjectPath<'b>,
         interface: InterfaceName<'b>,
         signal_name: MemberName<'b>,
-    ) -> Result<message::Builder<'b>> {
-        let mut builder = Message::signal(path, interface, signal_name)?;
+    ) -> message::Builder<'b> {
+        let mut builder = Message::signal(path, interface, signal_name);
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?;
+            builder = builder.sender(sender);
         }
         if let Some(destination) = destination {
-            builder = builder.destination(destination)?;
+            builder = builder.destination(destination);
         }
 
-        Ok(builder)
+        builder
     }
 
     /// Reply to a message.
@@ -495,14 +495,13 @@ impl Connection {
     ///
     /// The body is written through a trait object so that this is compiled once rather than once
     /// per body type.
-    fn reply_message(
-        &self,
-        builder: Result<message::Builder<'_>>,
+    fn reply_message<'b>(
+        &'b self,
+        mut builder: message::Builder<'b>,
         build: &mut dyn FnMut(message::Builder<'_>) -> Result<Message>,
     ) -> Result<Message> {
-        let mut builder = builder?;
         if let Some(sender) = self.unique_name() {
-            builder = builder.sender(sender)?;
+            builder = builder.sender(sender);
         }
         build(builder)
     }
@@ -701,13 +700,11 @@ impl Connection {
 
         let acquired_match_rule = MatchRule::fdo_signal_builder("NameAcquired")
             .arg(0, well_known_name.as_ref())
-            .unwrap()
-            .build();
+            .build()?;
         let mut acquired_stream = self.add_match(acquired_match_rule.into(), None).await?;
         let lost_match_rule = MatchRule::fdo_signal_builder("NameLost")
             .arg(0, well_known_name.as_ref())
-            .unwrap()
-            .build();
+            .build()?;
         let mut lost_stream = self.add_match(lost_match_rule.into(), None).await?;
         let reply = self
             .call_method(
@@ -952,10 +949,10 @@ impl Connection {
     /// #
     /// #[tokio::main]
     /// async fn main() {
-    ///     let builder = Builder::session().unwrap().internal_executor(false);
+    ///     let builder = Builder::session().internal_executor(false);
     /// #   // This is only for testing a deadlock that used to happen with this combo.
     /// #   #[cfg(feature = "service")]
-    /// #   let builder = builder.serve_at("/some/iface", SomeIface).unwrap();
+    /// #   let builder = builder.serve_at("/some/iface", SomeIface);
     ///     let conn = builder.build().await.unwrap();
     ///     {
     ///        let conn = conn.clone();
@@ -1022,9 +1019,11 @@ impl Connection {
                         Some(conn) => {
                             let mut builder = MatchRule::builder().msg_type(Type::MethodCall);
                             if let Some(unique_name) = conn.unique_name() {
-                                builder = builder.destination(&**unique_name).expect("unique name");
+                                builder = builder.destination(&**unique_name);
                             }
-                            let rule = builder.build();
+                            let rule = builder
+                                .build()
+                                .expect("a unique name is a valid destination");
                             match conn.add_match(rule.into(), None).await {
                                 Ok(stream) => stream,
                                 Err(e) => {
@@ -1266,12 +1265,12 @@ impl Connection {
 
     /// Create a `Connection` to the session/user message bus.
     pub async fn session() -> Result<Self> {
-        Builder::session()?.build().await
+        Builder::session().build().await
     }
 
     /// Create a `Connection` to the system-wide message bus.
     pub async fn system() -> Result<Self> {
-        Builder::system()?.build().await
+        Builder::system().build().await
     }
 
     /// Return a listener, notified on various connection activity.
@@ -1394,9 +1393,9 @@ impl Connection {
     /// # #[cfg(feature = "service")]
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn Error>> {
-    /// let conn = Builder::session()?
-    ///     .name("foo.bar.baz")?
-    ///     .serve_at("/foo/bar/baz", MyInterface)?
+    /// let conn = Builder::session()
+    ///     .name("foo.bar.baz")
+    ///     .serve_at("/foo/bar/baz", MyInterface)
     ///     .build()
     ///     .await?;
     ///
@@ -1552,11 +1551,8 @@ mod tests {
         }
         let name = "dev.peelz.foobar";
         let connection = Builder::session()
-            .unwrap()
             .name(name)
-            .unwrap()
             .serve_at("/dev/peelz/FooBar", MyInterface::default())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1634,11 +1630,8 @@ mod tests {
         let name = "dev.peelz.TestGracefulShutdown";
         let obj = "/dev/peelz/TestGracefulShutdown";
         let connection = Builder::session()
-            .unwrap()
             .name(name)
-            .unwrap()
             .serve_at(obj, interface)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1752,8 +1745,8 @@ mod p2p_tests {
                 Endian::Little => Endian::Big,
                 Endian::Big => Endian::Little,
             };
-            let method = Message::method_call("/", "Test")?
-                .interface("org.zbus.p2p")?
+            let method = Message::method_call("/", "Test")
+                .interface("org.zbus.p2p")
                 .endian(endian)
                 .build(&64u64)?;
             client1.send(&method).await?;
@@ -1800,7 +1793,6 @@ mod p2p_tests {
             (
                 Builder::async_io_tcp_stream(p0)
                     .server(guid)
-                    .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
                 Builder::async_io_tcp_stream(p1).p2p(),
@@ -1817,7 +1809,6 @@ mod p2p_tests {
             (
                 Builder::tokio_tcp_stream(p0)
                     .server(guid)
-                    .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
                 Builder::tokio_tcp_stream(p1).p2p(),
@@ -1866,7 +1857,7 @@ mod p2p_tests {
             Builder::tokio_unix_stream(p0),
         );
 
-        futures_util::try_join!(b1.p2p().build(), b0.server(guid).unwrap().p2p().build(),)
+        futures_util::try_join!(b1.p2p().build(), b0.server(guid).p2p().build(),)
     }
 
     // With both backends compiled in, exercise the async-io one end to end. `utils::block_on`
@@ -1918,11 +1909,7 @@ mod p2p_tests {
 
         futures_util::try_join!(
             Builder::async_io_unix_stream(p1).p2p().build(),
-            Builder::async_io_unix_stream(p0)
-                .server(guid)
-                .unwrap()
-                .p2p()
-                .build(),
+            Builder::async_io_unix_stream(p0).server(guid).p2p().build(),
         )
     }
 
@@ -1959,14 +1946,14 @@ mod p2p_tests {
             #[cfg(feature = "tokio-vsock")]
             let builder = Builder::tokio_vsock_stream(server.unwrap()?);
             builder
-                .server(guid)?
+                .server(guid)
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build()
                 .await
         };
 
-        let client = crate::connection::Builder::address(addr.as_str())?
+        let client = crate::connection::Builder::address(addr.as_str())
             .p2p()
             .build();
 
@@ -2001,7 +1988,6 @@ mod p2p_tests {
         futures_util::try_join!(
             Builder::async_io_vsock_stream(server)
                 .server(guid)
-                .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
@@ -2024,7 +2010,6 @@ mod p2p_tests {
         futures_util::try_join!(
             Builder::tokio_vsock_stream(server)
                 .server(guid)
-                .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
@@ -2050,13 +2035,11 @@ mod p2p_tests {
 
         let guid = crate::Guid::generate();
         let conn1 = Builder::authenticated_socket(a, guid.clone())
-            .unwrap()
             .p2p()
             .build()
             .await
             .unwrap();
         let conn2 = Builder::authenticated_socket(b, guid)
-            .unwrap()
             .p2p()
             .build()
             .await

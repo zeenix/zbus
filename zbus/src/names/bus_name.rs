@@ -209,6 +209,18 @@ impl<'name> From<WellKnownName<'name>> for BusName<'name> {
     }
 }
 
+impl<'name> From<&UniqueName<'name>> for BusName<'name> {
+    fn from(name: &UniqueName<'name>) -> Self {
+        BusName::Unique(name.clone())
+    }
+}
+
+impl<'name> From<&WellKnownName<'name>> for BusName<'name> {
+    fn from(name: &WellKnownName<'name>) -> Self {
+        BusName::WellKnown(name.clone())
+    }
+}
+
 impl<'s> TryFrom<Str<'s>> for BusName<'s> {
     type Error = Error;
 

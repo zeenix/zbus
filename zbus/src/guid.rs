@@ -197,6 +197,12 @@ impl<'unowned, 'owned: 'unowned> From<&'owned OwnedGuid> for Guid<'unowned> {
     }
 }
 
+impl<'g> From<&Guid<'g>> for Guid<'g> {
+    fn from(guid: &Guid<'g>) -> Self {
+        guid.clone()
+    }
+}
+
 impl From<Guid<'_>> for OwnedGuid {
     fn from(guid: Guid<'_>) -> Self {
         OwnedGuid(guid.to_owned())

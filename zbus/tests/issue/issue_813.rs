@@ -63,7 +63,7 @@ fn issue_813() {
             #[cfg(feature = "tokio")]
             let builder = Builder::tokio_unix_stream(p0);
             let _conn = builder
-                .server(guid)?
+                .server(guid)
                 .p2p()
                 .serve_at(
                     "/org/zbus/Issue813",
@@ -71,8 +71,8 @@ fn issue_813() {
                         event: server_event,
                         call_count: 0,
                     },
-                )?
-                .name("org.zbus.Issue813")?
+                )
+                .name("org.zbus.Issue813")
                 .build()
                 .await?;
             client_listener.await;
@@ -86,9 +86,9 @@ fn issue_813() {
             );
             let mut bytes: Vec<u8> = commands.bytes().collect();
             let fd = std::io::stdin();
-            let msg = zbus::message::Message::method_call("/org/zbus/Issue813", "PassFd")?
-                .destination("org.zbus.Issue813")?
-                .interface("org.zbus.Issue813")?
+            let msg = zbus::message::Message::method_call("/org/zbus/Issue813", "PassFd")
+                .destination("org.zbus.Issue813")
+                .interface("org.zbus.Issue813")
                 .build(&(Fd::from(fd.as_fd())))?;
             let msg_data = msg.data();
             let mut fds = vec![];
