@@ -63,9 +63,7 @@ async fn issue_356() {
     // Create a proxy for the Device interface using the auto-generated DeviceProxy
     let device_proxy = DeviceProxy::builder(&connection)
         .destination("org.test.Issue356")
-        .unwrap()
         .path(&device_path)
-        .unwrap()
         .build()
         .await
         .unwrap();

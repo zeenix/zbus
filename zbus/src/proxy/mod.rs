@@ -584,9 +584,9 @@ impl<'a> Proxy<'a> {
         I::Error: Into<Error>,
     {
         Builder::new(conn)
-            .destination(destination)?
-            .path(path)?
-            .interface(interface)?
+            .destination(destination)
+            .path(path)
+            .interface(interface)
             .build()
             .await
     }
@@ -608,9 +608,9 @@ impl<'a> Proxy<'a> {
         I::Error: Into<Error>,
     {
         Builder::new(&conn)
-            .destination(destination)?
-            .path(path)?
-            .interface(interface)?
+            .destination(destination)
+            .path(path)
+            .interface(interface)
             .build()
             .await
     }
@@ -641,8 +641,8 @@ impl<'a> Proxy<'a> {
     /// result.
     pub async fn introspect(&self) -> fdo::Result<String> {
         let proxy = IntrospectableProxy::builder(&self.inner.inner_without_borrows.conn)
-            .destination(&self.inner.destination)?
-            .path(&self.inner.path)?
+            .destination(&self.inner.destination)
+            .path(&self.inner.path)
             .build()
             .await?;
 
@@ -651,31 +651,25 @@ impl<'a> Proxy<'a> {
 
     fn properties_proxy(&self) -> PropertiesProxy<'_> {
         PropertiesProxy::builder(&self.inner.inner_without_borrows.conn)
-            // Safe because already checked earlier
             .destination(self.inner.destination.as_ref())
-            .unwrap()
-            // Safe because already checked earlier
             .path(self.inner.path.as_ref())
-            .unwrap()
             // does not have properties
             .cache_properties(CacheProperties::No)
             .build_internal()
-            .unwrap()
+            // Safe because the destination and path were already checked.
+            .expect("invalid properties proxy")
             .into()
     }
 
     fn owned_properties_proxy(&self) -> PropertiesProxy<'static> {
         PropertiesProxy::builder(&self.inner.inner_without_borrows.conn)
-            // Safe because already checked earlier
             .destination(self.inner.destination.to_owned())
-            .unwrap()
-            // Safe because already checked earlier
             .path(self.inner.path.to_owned())
-            .unwrap()
             // does not have properties
             .cache_properties(CacheProperties::No)
             .build_internal()
-            .unwrap()
+            // Safe because the destination and path were already checked.
+            .expect("invalid properties proxy")
             .into()
     }
 
@@ -1403,9 +1397,9 @@ mod tests {
 
         let well_known = "org.freedesktop.zbus.async.ProxySignalStreamTest";
         let proxy: Proxy<'_> = Builder::new(&conn)
-            .destination(well_known)?
-            .path("/does/not/matter")?
-            .interface("does.not.matter")?
+            .destination(well_known)
+            .path("/does/not/matter")
+            .interface("does.not.matter")
             .build()
             .await?;
         let mut owner_changed_stream = proxy.receive_owner_changed().await?;
@@ -1503,8 +1497,8 @@ mod tests {
 
         let test_proxy = TestProxy::new(&client_conn).await?;
         let test_prop_proxy = PropertiesProxy::builder(&client_conn)
-            .destination("org.zbus.Test.MR501")?
-            .path("/org/zbus/Test")?
+            .destination("org.zbus.Test.MR501")
+            .path("/org/zbus/Test")
             .build()
             .await?;
 

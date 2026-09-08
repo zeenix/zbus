@@ -146,9 +146,7 @@ impl DBusInfo<'_> {
 
         let xml = IntrospectableProxy::builder(&connection)
             .destination(service.clone())
-            .expect("invalid destination")
             .path(path.clone())
-            .expect("invalid path")
             .build()
             .unwrap()
             .introspect()?;

@@ -257,8 +257,8 @@ async fn main() -> Result<()> {
     client.set_desktop_id("org.freedesktop.zbus").await?;
 
     let props = zbus::fdo::PropertiesProxy::builder(&conn)
-        .destination("org.freedesktop.GeoClue2")?
-        .path(client.inner().path())?
+        .destination("org.freedesktop.GeoClue2")
+        .path(client.inner().path())
         .build()
         .await?;
     let mut props_changed = props.receive_properties_changed().await?;
@@ -283,7 +283,7 @@ async fn main() -> Result<()> {
                 let args = signal.args()?;
 
                 let location = LocationProxy::builder(&conn)
-                    .path(args.new())?
+                    .path(args.new())
                     .build()
                     .await?;
                 println!(

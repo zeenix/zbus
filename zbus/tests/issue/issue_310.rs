@@ -70,7 +70,6 @@ async fn issue_310() {
 
     let station = StationProxy::builder(&connection)
         .path("/net/connman/iwd/0/33")
-        .unwrap()
         .build()
         .await
         .unwrap();

@@ -84,7 +84,6 @@ let args = signal.args().unwrap();
 
 let location = LocationProxyBlocking::builder(&conn)
     .path(args.new())
-    .unwrap()
     .build()
     .unwrap();
 println!(

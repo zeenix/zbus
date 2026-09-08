@@ -178,7 +178,7 @@ mod utils;
 /// let connection = Connection::session()?;
 /// // Use `builder` to override the default arguments, `new` otherwise.
 /// let proxy = SomeIfaceProxyBlocking::builder(&connection)
-///                .destination("org.another.Service")?
+///                .destination("org.another.Service")
 ///                .cache_properties(zbus::proxy::CacheProperties::No)
 ///                .build()?;
 /// let _ = proxy.do_this("foo", 32, &Value::new(true));

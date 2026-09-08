@@ -22,6 +22,11 @@ pub enum CacheProperties {
 }
 
 /// Builder for proxies.
+///
+/// Each setter takes the value it is given, whether that's an already parsed name or a string
+/// that still needs parsing, and converts it right away, but it never fails: the first error a
+/// setter hits is recorded — a later call doesn't clear it — and reported by [`Builder::build`],
+/// so a chain of setters never needs a `?` in between.
 #[derive(Debug)]
 pub struct Builder<'a, T = ()> {
     conn: Connection,
@@ -31,6 +36,7 @@ pub struct Builder<'a, T = ()> {
     proxy_type: PhantomData<T>,
     cache: CacheProperties,
     uncached_properties: Option<HashSet<Str<'a>>>,
+    error: Option<Error>,
 }
 
 impl<T> Clone for Builder<'_, T> {
@@ -43,39 +49,58 @@ impl<T> Clone for Builder<'_, T> {
             cache: self.cache,
             uncached_properties: self.uncached_properties.clone(),
             proxy_type: PhantomData,
+            error: self.error.clone(),
         }
     }
 }
 
 impl<'a, T> Builder<'a, T> {
     /// Set the proxy destination address.
-    pub fn destination<D>(mut self, destination: D) -> Result<Self>
+    ///
+    /// An invalid destination is reported by [`Builder::build`].
+    pub fn destination<D>(mut self, destination: D) -> Self
     where
         D: TryInto<BusName<'a>>,
         D::Error: Into<Error>,
     {
-        self.destination = Some(destination.try_into().map_err(Into::into)?);
-        Ok(self)
+        match destination.try_into() {
+            Ok(destination) => self.destination = Some(destination),
+            Err(e) => self.record(e.into()),
+        }
+
+        self
     }
 
     /// Set the proxy path.
-    pub fn path<P>(mut self, path: P) -> Result<Self>
+    ///
+    /// An invalid path is reported by [`Builder::build`].
+    pub fn path<P>(mut self, path: P) -> Self
     where
         P: TryInto<ObjectPath<'a>>,
         P::Error: Into<Error>,
     {
-        self.path = Some(path.try_into().map_err(Into::into)?);
-        Ok(self)
+        match path.try_into() {
+            Ok(path) => self.path = Some(path),
+            Err(e) => self.record(e.into()),
+        }
+
+        self
     }
 
     /// Set the proxy interface.
-    pub fn interface<I>(mut self, interface: I) -> Result<Self>
+    ///
+    /// An invalid interface name is reported by [`Builder::build`].
+    pub fn interface<I>(mut self, interface: I) -> Self
     where
         I: TryInto<InterfaceName<'a>>,
         I::Error: Into<Error>,
     {
-        self.interface = Some(interface.try_into().map_err(Into::into)?);
-        Ok(self)
+        match interface.try_into() {
+            Ok(interface) => self.interface = Some(interface),
+            Err(e) => self.record(e.into()),
+        }
+
+        self
     }
 
     /// Set the properties caching mode.
@@ -95,6 +120,11 @@ impl<'a, T> Builder<'a, T> {
     }
 
     pub(crate) fn build_internal(self) -> Result<Proxy<'a>> {
+        // The error a setter recorded comes first, then the missing pieces.
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+
         let conn = self.conn;
         let destination = self
             .destination
@@ -120,8 +150,8 @@ impl<'a, T> Builder<'a, T> {
     ///
     /// # Errors
     ///
-    /// If the builder is lacking the necessary parameters to build a proxy,
-    /// [`Error::MissingParameter`] is returned.
+    /// The first error recorded by a setter, then [`Error::MissingParameter`] if the builder is
+    /// lacking the necessary parameters to build a proxy.
     pub async fn build(self) -> Result<T>
     where
         T: From<Proxy<'a>> + super::Defaults,
@@ -141,6 +171,13 @@ impl<'a, T> Builder<'a, T> {
 
         Ok(proxy.into())
     }
+
+    /// Record `error`, unless an earlier setter already recorded one.
+    fn record(&mut self, error: Error) {
+        if self.error.is_none() {
+            self.error = Some(error);
+        }
+    }
 }
 
 impl<T> Builder<'_, T>
@@ -158,6 +195,7 @@ where
             cache: CacheProperties::default(),
             uncached_properties: None,
             proxy_type: PhantomData,
+            error: None,
         }
     }
 }
@@ -176,13 +214,11 @@ mod tests {
     async fn builder_async() {
         let conn = Connection::session().await.unwrap();
 
+        // Strings are converted for us.
         let builder = Builder::<Proxy<'_>>::new(&conn)
             .destination("org.freedesktop.DBus")
-            .unwrap()
             .path("/some/path")
-            .unwrap()
             .interface("org.freedesktop.Interface")
-            .unwrap()
             .cache_properties(CacheProperties::No);
         assert!(matches!(
             builder.clone().destination.unwrap(),
@@ -190,5 +226,46 @@ mod tests {
         ));
         let proxy = builder.build().await.unwrap();
         assert!(matches!(proxy.inner.destination, BusName::Unique(_)));
+
+        // As are already parsed values, without any error handling on the way.
+        let destination = BusName::try_from("org.freedesktop.DBus").unwrap();
+        let path = ObjectPath::try_from("/some/path").unwrap();
+        let interface = InterfaceName::try_from("org.freedesktop.Interface").unwrap();
+        let proxy = Builder::<Proxy<'_>>::new(&conn)
+            .destination(&destination)
+            .path(path.clone())
+            .interface(interface.clone())
+            .build()
+            .await
+            .unwrap();
+        assert_eq!(proxy.inner.path, path);
+        assert_eq!(proxy.inner.interface, interface);
+
+        // An invalid value is only reported by `build`.
+        let err = Builder::<Proxy<'_>>::new(&conn)
+            .destination("not a bus name")
+            .path("/some/path")
+            .interface("org.freedesktop.Interface")
+            .build()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            BusName::try_from("not a bus name").unwrap_err().to_string(),
+        );
+
+        // Setting the field again, even to a valid value, doesn't clear the error it recorded.
+        let err = Builder::<Proxy<'_>>::new(&conn)
+            .destination("not a bus name")
+            .destination("org.freedesktop.DBus")
+            .path("/some/path")
+            .interface("org.freedesktop.Interface")
+            .build()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            BusName::try_from("not a bus name").unwrap_err().to_string(),
+        );
     }
 }

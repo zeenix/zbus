@@ -64,9 +64,7 @@ async fn issue104_async() {
 
         let proxy = SecretProxy::builder(&conn)
             .destination(UniqueName::from(service_name))
-            .unwrap()
             .path("/org/freedesktop/secrets")
-            .unwrap()
             .build()
             .await
             .unwrap();

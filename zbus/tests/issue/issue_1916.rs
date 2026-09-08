@@ -41,9 +41,7 @@ async fn issue_1916_async() {
         async move {
             zbus::fdo::IntrospectableProxy::builder(&client_conn)
                 .destination(dest)
-                .unwrap()
                 .path(path)
-                .unwrap()
                 .build()
                 .await
                 .unwrap()

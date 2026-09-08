@@ -72,7 +72,6 @@ fn test_proxy() {
         let connection = zbus::Connection::session().await.unwrap();
         let proxy = test::TestProxy::builder(&connection)
             .path("/org/freedesktop/zbus_macros/test")
-            .unwrap()
             .cache_properties(CacheProperties::No)
             .build()
             .await
@@ -483,9 +482,7 @@ fn test_proxy_object_list() {
 
     let proxy = ObjectListProxyBlocking::builder(&connection)
         .path(OBJECT_LIST.paths[1].as_ref())
-        .unwrap()
         .destination(&destination)
-        .unwrap()
         .build()
         .unwrap();
 

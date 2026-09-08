@@ -47,8 +47,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     drop(stream);
 
     let root_introspect_proxy = zbus::fdo::IntrospectableProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/")?
+        .destination("org.freedesktop.MyService")
+        .path("/")
         .build()
         .await?;
     debug!("Created: {:?}", root_introspect_proxy);
@@ -89,8 +89,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     );
 
     let proxy = MyIfaceProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/org/freedesktop/MyService")?
+        .destination("org.freedesktop.MyService")
+        .path("/org/freedesktop/MyService")
         // the server isn't yet running
         .cache_properties(CacheProperties::No)
         .build()
@@ -109,8 +109,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     );
 
     let props_proxy = PropertiesProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/org/freedesktop/MyService")?
+        .destination("org.freedesktop.MyService")
+        .path("/org/freedesktop/MyService")
         .build()
         .await?;
     debug!("Created: {:?}", props_proxy);
@@ -331,8 +331,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
 
     #[cfg(feature = "object-manager")]
     let obj_manager_proxy = ObjectManagerProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/zbus/test")?
+        .destination("org.freedesktop.MyService")
+        .path("/zbus/test")
         .build()
         .await?;
     #[cfg(feature = "object-manager")]
@@ -382,8 +382,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
     assert!(proxy.inner().call_method("CreateObj", &()).await.is_err());
 
     let my_obj_proxy = MyIfaceProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/zbus/test/MyObj")?
+        .destination("org.freedesktop.MyService")
+        .path("/zbus/test/MyObj")
         .build()
         .await?;
     debug!("Created: {:?}", my_obj_proxy);
@@ -444,8 +444,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
         .call_method("CreateObjInside", &("CreatedInside"))
         .await?;
     let created_inside_proxy = MyIfaceProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/zbus/test/CreatedInside")?
+        .destination("org.freedesktop.MyService")
+        .path("/zbus/test/CreatedInside")
         .build()
         .await?;
     created_inside_proxy.ping().await?;
@@ -458,8 +458,8 @@ pub async fn my_iface_test(conn: Connection, event: Event) -> zbus::Result<u32> 
         .call_method("CreateObjInsideMut", &("CreatedInsideMut"))
         .await?;
     let created_inside_mut_proxy = MyIfaceProxy::builder(&conn)
-        .destination("org.freedesktop.MyService")?
-        .path("/zbus/test/CreatedInsideMut")?
+        .destination("org.freedesktop.MyService")
+        .path("/zbus/test/CreatedInsideMut")
         .build()
         .await?;
     created_inside_mut_proxy.ping().await?;

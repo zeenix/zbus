@@ -65,7 +65,6 @@ async fn test_uncached_property() -> Result<()> {
     let client_conn = zbus::Connection::session().await.unwrap();
     let client = UncachedPropertyTestProxy::builder(&client_conn)
         .destination(dest)
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -172,7 +171,7 @@ async fn test_serde_property() -> Result<()> {
         .await?;
     let client_conn = zbus::Connection::session().await?;
     let client = SerdePropertyTestProxy::builder(&client_conn)
-        .destination(service.unique_name().unwrap())?
+        .destination(service.unique_name().unwrap())
         .build()
         .await?;
 
