@@ -318,6 +318,67 @@ The compatibility module is removed in zbus 7.0.
 Seven more things break in 6.0 without being a consequence of the crate merge. They reach code
 that never mentioned `zvariant` or `zbus_names`.
 
+### Builder setters defer their errors to `build()`
+
+Every builder setter generic over `TryInto` (a D-Bus name, an object path, a GUID, an address)
+used to convert its argument on the spot and return `Result<Self>`, forcing a `?` after every
+call in the chain even when the argument was an already-typed value that could not fail to
+convert. Setters now return `Self` and the builder records the first error one of them hits;
+`build()` returns that error, so a whole chain built from string arguments needs exactly one
+`?`, at the end. Nothing clears a recorded error, so calling a setter again with a valid value
+does not rescue a chain that has already passed an invalid one.
+
+Before, this no longer compiles:
+
+```rust,compile_fail,noplayground
+use zbus::Message;
+
+fn make_message() -> zbus::Result<Message> {
+    Message::method_call("/org/zbus/Test", "Test")?
+        .destination("org.zbus.Test")?
+        .build(&())
+}
+```
+
+After:
+
+```rust,noplayground
+use zbus::Message;
+
+fn make_message() -> zbus::Result<Message> {
+    Message::method_call("/org/zbus/Test", "Test")
+        .destination("org.zbus.Test")
+        .build(&())
+}
+```
+
+This covers `message::Builder` and the `Message::method_call`, `Message::signal`,
+`Message::error` and `Message::method_return` constructors that create it; `proxy::Builder`;
+`connection::Builder` and its `session`, `system`, `ibus`, `address` and `authenticated_socket`
+constructors; and the blocking proxy and connection builders. `match_rule::Builder::build()`
+moves the other way: it used to be infallible and now returns `Result<MatchRule<'_>>`, since it
+is the one builder whose fields were already fully validated by the time `build()` ran.
+
+To migrate:
+
+* Remove the `?` (or `.unwrap()`/`.expect(...)`) after every builder setter call.
+* Remove the `?` after `Message::method_call`, `Message::signal`, `Message::error` and
+  `Message::method_return`.
+* Remove the `?` after the `connection::Builder` constructors (`session`, `system`, `ibus`,
+  `address`, `authenticated_socket`) and after `server`, `serve_at`, `name` and `unique_name`.
+* Add a `?` after `MatchRule::builder()...build()`, which is now fallible.
+
+| Before | After |
+| --- | --- |
+| `.path("/org/zbus/Foo")?` | `.path("/org/zbus/Foo")` |
+| `Message::method_call("/", "Ping")?` | `Message::method_call("/", "Ping")` |
+| `MatchRule::builder().build()` | `MatchRule::builder().build()?` |
+
+A stale `?` left after a setter fails to compile with "the `?` operator can only be applied to
+values that implement `Try`", pointing straight at the call site to clean up. A missing `?`
+after `MatchRule::builder()...build()` fails the opposite way, with a type mismatch between
+`MatchRule` and whatever type the rest of the function expected. Both are one-line fixes.
+
 ### Property methods use Serde traits
 
 Property APIs now use the same Serde traits and `Type` bounds as regular methods. Client-side
