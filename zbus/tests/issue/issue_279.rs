@@ -15,11 +15,7 @@ async fn issue_279() {
     let guid = zbus::Guid::generate();
     let (p0, p1) = UnixStream::pair().unwrap();
 
-    let server = Builder::tokio_unix_stream(p0)
-        .server(guid)
-        .unwrap()
-        .p2p()
-        .build();
+    let server = Builder::tokio_unix_stream(p0).server(guid).p2p().build();
     let client = Builder::tokio_unix_stream(p1).p2p().build();
     let (client, server) = try_join!(client, server).unwrap();
     let mut stream = MessageStream::from(client);

@@ -1484,16 +1484,13 @@ mod tests {
         }
 
         let test_iface = TestIface;
-        let server_conn = connection::Builder::session()?
-            .name("org.zbus.Test.MR501")?
-            .serve_at("/org/zbus/Test", test_iface)?
+        let server_conn = connection::Builder::session()
+            .name("org.zbus.Test.MR501")
+            .serve_at("/org/zbus/Test", test_iface)
             .build()
             .await?;
 
-        let client_conn = connection::Builder::session()?
-            .max_queued(1)
-            .build()
-            .await?;
+        let client_conn = connection::Builder::session().max_queued(1).build().await?;
 
         let test_proxy = TestProxy::new(&client_conn).await?;
         let test_prop_proxy = PropertiesProxy::builder(&client_conn)

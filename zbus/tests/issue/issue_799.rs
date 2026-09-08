@@ -27,11 +27,8 @@ fn concurrent_interface_methods() {
         let listener = event.listen();
         let iface = Iface(event);
         let conn = zbus::connection::Builder::session()
-            .unwrap()
             .name("org.zbus.test.issue799")
-            .unwrap()
             .serve_at("/org/zbus/test/issue799", iface)
-            .unwrap()
             .build()
             .await
             .unwrap();

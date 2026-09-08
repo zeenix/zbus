@@ -82,9 +82,14 @@ type Interfaces<'a> = HashMap<ObjectPath<'a>, HashMap<InterfaceName<'static>, Ar
     doc = "   `fdo::NameAcquiredStream` (requires the `proxy` feature) is constructed. As a result",
     doc = "   the service can miss the `NameAcquired` signal."
 )]
+///
+/// The constructors and setters take the same loosely typed values as the rest of the API and
+/// convert them right away, but they never fail: the first error one hits is recorded — a later
+/// call doesn't clear it — and reported by [`Builder::build`].
 #[derive(Debug)]
 #[must_use]
 pub struct Builder<'a> {
+    // `None` only when a constructor recorded an error instead of working out a target.
     target: Option<Target>,
     max_queued: Option<usize>,
     // This is only set for p2p server case or pre-authenticated sockets.
@@ -101,17 +106,28 @@ pub struct Builder<'a> {
     request_name_flags: BitFlags<RequestNameFlags>,
     method_timeout: Option<std::time::Duration>,
     user_id: Option<u32>,
+    error: Option<Error>,
 }
 
 impl<'a> Builder<'a> {
     /// Create a builder for the session/user message bus connection.
-    pub fn session() -> Result<Self> {
-        Ok(Self::new(Target::Address(Address::session()?)))
+    ///
+    /// A failure to find the session bus address is reported by [`Builder::build`].
+    pub fn session() -> Self {
+        match Address::session() {
+            Ok(address) => Self::new(Target::Address(address)),
+            Err(e) => Self::with_error(e),
+        }
     }
 
     /// Create a builder for the system-wide message bus connection.
-    pub fn system() -> Result<Self> {
-        Ok(Self::new(Target::Address(Address::system()?)))
+    ///
+    /// A failure to find the system bus address is reported by [`Builder::build`].
+    pub fn system() -> Self {
+        match Address::system() {
+            Ok(address) => Self::new(Target::Address(address)),
+            Err(e) => Self::with_error(e),
+        }
     }
 
     /// Create a builder for an IBus connection.
@@ -125,7 +141,7 @@ impl<'a> Builder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
+    /// [`Builder::build`] returns an error if:
     /// - The `ibus` command is not found or fails to execute
     /// - The IBus daemon is not running
     /// - The command output cannot be parsed as a valid D-Bus address
@@ -138,7 +154,7 @@ impl<'a> Builder<'a> {
     /// # use zbus::block_on;
     /// #
     /// # block_on(async {
-    /// let conn = Builder::ibus()?
+    /// let conn = Builder::ibus()
     ///     .build()
     ///     .await?;
     ///
@@ -150,11 +166,10 @@ impl<'a> Builder<'a> {
     /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
     /// ```
     #[cfg(all(unix, feature = "ibus"))]
-    pub fn ibus() -> Result<Self> {
+    pub fn ibus() -> Self {
         use crate::address::transport::{Ibus, Transport};
-        Ok(Self::new(Target::Address(Address::from(Transport::Ibus(
-            Ibus::new(),
-        )))))
+
+        Self::new(Target::Address(Address::from(Transport::Ibus(Ibus::new()))))
     }
 
     /// Create a builder for a connection that will use the given [D-Bus bus address].
@@ -172,7 +187,7 @@ impl<'a> Builder<'a> {
     /// let addr = "unix:\
     ///     path=/home/zeenix/.cache/ibus/dbus-ET0Xzrk9,\
     ///     guid=fdd08e811a6c7ebe1fef0d9e647230da";
-    /// let conn = Builder::address(addr)?
+    /// let conn = Builder::address(addr)
     ///     .build()
     ///     .await?;
     ///
@@ -188,15 +203,18 @@ impl<'a> Builder<'a> {
     /// current session using `ibus address` command. For a more convenient way to connect to IBus,
     /// see `Builder::ibus`, available with the `ibus` feature.
     ///
+    /// An invalid address is reported by [`Builder::build`].
+    ///
     /// [D-Bus bus address]: https://dbus.freedesktop.org/doc/dbus-specification.html#addresses
-    pub fn address<A>(address: A) -> Result<Self>
+    pub fn address<A>(address: A) -> Self
     where
         A: TryInto<Address>,
         A::Error: Into<Error>,
     {
-        Ok(Self::new(Target::Address(
-            address.try_into().map_err(Into::into)?,
-        )))
+        match address.try_into() {
+            Ok(address) => Self::new(Target::Address(address)),
+            Err(e) => Self::with_error(e.into()),
+        }
     }
 
     /// Create a builder for a connection that will use the given unix stream with `async-io`.
@@ -285,16 +303,21 @@ impl<'a> Builder<'a> {
     ///
     /// This is similar to [`Builder::socket`], except that the socket is either already
     /// authenticated or does not require authentication.
-    pub fn authenticated_socket<S, G>(socket: S, guid: G) -> Result<Self>
+    ///
+    /// An invalid GUID is reported by [`Builder::build`].
+    pub fn authenticated_socket<S, G>(socket: S, guid: G) -> Self
     where
         S: Into<BoxedSplit>,
         G: TryInto<Guid<'a>>,
         G::Error: Into<Error>,
     {
         let mut builder = Self::new(Target::AuthenticatedSocket(socket.into()));
-        builder.guid = Some(guid.try_into().map_err(Into::into)?);
+        match guid.try_into() {
+            Ok(guid) => builder.guid = Some(guid),
+            Err(e) => builder.record(e.into()),
+        }
 
-        Ok(builder)
+        builder
     }
 
     /// Specify the mechanism to use during authentication.
@@ -336,15 +359,20 @@ impl<'a> Builder<'a> {
     /// **NOTE:** This method is redundant when using [`Builder::authenticated_socket`] since the
     /// latter already sets the GUID for the connection and zbus doesn't differentiate between a
     /// server and a client connection, except for authentication.
+    ///
+    /// An invalid GUID is reported by [`Builder::build`].
     #[cfg(feature = "p2p")]
-    pub fn server<G>(mut self, guid: G) -> Result<Self>
+    pub fn server<G>(mut self, guid: G) -> Self
     where
         G: TryInto<Guid<'a>>,
         G::Error: Into<Error>,
     {
-        self.guid = Some(guid.try_into().map_err(Into::into)?);
+        match guid.try_into() {
+            Ok(guid) => self.guid = Some(guid),
+            Err(e) => self.record(e.into()),
+        }
 
-        Ok(self)
+        self
     }
 
     /// Set the capacity of the main (unfiltered) queue.
@@ -360,7 +388,7 @@ impl<'a> Builder<'a> {
     /// # use zbus::block_on;
     /// #
     /// # block_on(async {
-    /// let conn = Builder::session()?
+    /// let conn = Builder::session()
     ///     .max_queued(30)
     ///     .build()
     ///     .await?;
@@ -398,17 +426,26 @@ impl<'a> Builder<'a> {
     ///
     /// Standard interfaces (Peer, Introspectable, Properties) are added on your behalf. If you
     /// attempt to add yours, [`Builder::build()`] will fail.
+    ///
+    /// An invalid path is reported by [`Builder::build`].
     #[cfg(feature = "service")]
-    pub fn serve_at<P, I>(mut self, path: P, iface: I) -> Result<Self>
+    pub fn serve_at<P, I>(mut self, path: P, iface: I) -> Self
     where
         I: Interface,
         P: TryInto<ObjectPath<'a>>,
         P::Error: Into<Error>,
     {
-        let path = path.try_into().map_err(Into::into)?;
-        let entry = self.interfaces.entry(path).or_default();
-        entry.insert(I::name(), ArcInterface::new(iface));
-        Ok(self)
+        match path.try_into() {
+            Ok(path) => {
+                self.interfaces
+                    .entry(path)
+                    .or_default()
+                    .insert(I::name(), ArcInterface::new(iface));
+            }
+            Err(e) => self.record(e.into()),
+        }
+
+        self
     }
 
     /// Register a well-known name for this connection on the bus.
@@ -428,15 +465,21 @@ impl<'a> Builder<'a> {
     ///
     /// The methods [`Builder::allow_name_replacements`] and [`Builder::replace_existing_names`]
     /// allow to set the [`zbus::fdo::RequestNameFlags`] used to request the name.
-    pub fn name<W>(mut self, well_known_name: W) -> Result<Self>
+    ///
+    /// An invalid name is reported by [`Builder::build`].
+    pub fn name<W>(mut self, well_known_name: W) -> Self
     where
         W: TryInto<WellKnownName<'a>>,
         W::Error: Into<Error>,
     {
-        let well_known_name = well_known_name.try_into().map_err(Into::into)?;
-        self.names.insert(well_known_name);
+        match well_known_name.try_into() {
+            Ok(well_known_name) => {
+                self.names.insert(well_known_name);
+            }
+            Err(e) => self.record(e.into()),
+        }
 
-        Ok(self)
+        self
     }
 
     /// Whether the [`zbus::fdo::RequestNameFlags::AllowReplacement`] flag will be set when
@@ -464,8 +507,10 @@ impl<'a> Builder<'a> {
     ///
     /// It will panic if the connection is to a message bus as it's the bus that assigns
     /// peers their unique names.
+    ///
+    /// An invalid name is reported by [`Builder::build`].
     #[cfg(feature = "bus-impl")]
-    pub fn unique_name<U>(mut self, unique_name: U) -> Result<Self>
+    pub fn unique_name<U>(mut self, unique_name: U) -> Self
     where
         U: TryInto<crate::names::UniqueName<'a>>,
         U::Error: Into<Error>,
@@ -473,10 +518,12 @@ impl<'a> Builder<'a> {
         if !self.p2p {
             panic!("unique name can only be set for peer-to-peer connections");
         }
-        let name = unique_name.try_into().map_err(Into::into)?;
-        self.unique_name = Some(name);
+        match unique_name.try_into() {
+            Ok(unique_name) => self.unique_name = Some(unique_name),
+            Err(e) => self.record(e.into()),
+        }
 
-        Ok(self)
+        self
     }
 
     /// Set a timeout for method calls.
@@ -493,6 +540,9 @@ impl<'a> Builder<'a> {
     /// Build the connection, consuming the builder.
     ///
     /// # Errors
+    ///
+    /// Returns the first error recorded by a constructor or setter, then any error from
+    /// connecting, authenticating or setting the connection up.
     ///
     /// Until server-side bus connection is supported, attempting to build such a connection will
     /// result in a [`Error::Unsupported`] error.
@@ -514,6 +564,10 @@ impl<'a> Builder<'a> {
     ///
     /// This method is only available when the `bus-impl` feature is enabled.
     ///
+    /// # Errors
+    ///
+    /// The same errors as [`Builder::build`].
+    ///
     /// # Example
     ///
     /// ```
@@ -530,7 +584,6 @@ impl<'a> Builder<'a> {
     ///
     /// // Bus client sends a method call right away (simulates pipelining after auth).
     /// let client = Builder::authenticated_socket(c1, guid.clone())
-    ///     .unwrap()
     ///     .build()
     ///     .await
     ///     .unwrap();
@@ -542,7 +595,6 @@ impl<'a> Builder<'a> {
     ///
     /// // Server builds *after* the client has already sent.
     /// let mut stream = Builder::authenticated_socket(c2, guid)
-    ///     .unwrap()
     ///     .p2p()
     ///     .build_message_stream()
     ///     .await
@@ -567,9 +619,13 @@ impl<'a> Builder<'a> {
     }
 
     async fn build_inner(
-        self,
+        mut self,
         activate_msg_stream: bool,
     ) -> Result<(Connection, Option<ActiveReceiver<Result<Message>>>)> {
+        if let Some(error) = self.error.take() {
+            return Err(error);
+        }
+
         let executor = Executor::new();
         #[cfg(feature = "async-io")]
         let internal_executor = self.internal_executor;
@@ -646,8 +702,18 @@ impl<'a> Builder<'a> {
     }
 
     fn new(target: Target) -> Self {
+        Self::from_parts(Some(target), None)
+    }
+
+    /// Create a builder that has no target to connect to, only the error that kept a constructor
+    /// from working one out.
+    fn with_error(error: Error) -> Self {
+        Self::from_parts(None, Some(error))
+    }
+
+    fn from_parts(target: Option<Target>, error: Option<Error>) -> Self {
         Self {
-            target: Some(target),
+            target,
             #[cfg(feature = "p2p")]
             p2p: false,
             max_queued: None,
@@ -662,6 +728,14 @@ impl<'a> Builder<'a> {
             request_name_flags: BitFlags::default(),
             method_timeout: None,
             user_id: None,
+            error,
+        }
+    }
+
+    /// Record `error`, unless an earlier constructor or setter already recorded one.
+    fn record(&mut self, error: Error) {
+        if self.error.is_none() {
+            self.error = Some(error);
         }
     }
 
@@ -741,8 +815,8 @@ impl<'a> Builder<'a> {
     async fn target_connect(&mut self) -> Result<(BoxedSplit, Option<OwnedGuid>, bool)> {
         let mut authenticated = false;
         let mut guid = None;
-        // SAFETY: `self.target` is always `Some` from the beginning and this method is only called
-        // once.
+        // SAFETY: `self.target` is `None` only when a constructor recorded an error, which
+        // `build` returns before it gets here, and this method is only called once.
         let split = match self.target.take().unwrap() {
             #[cfg(all(unix, feature = "tokio"))]
             Target::TokioUnixStream(stream) => stream.into(),
@@ -804,4 +878,48 @@ fn start_internal_executor(executor: &Executor<'static>, internal_executor: bool
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use test_log::test;
+
+    use super::{Address, Builder};
+    use crate::{Error, names::WellKnownName, utils::block_on};
+
+    // Syntactically valid, so that the builder records no error for the target itself.
+    const ADDRESS: &str = "unix:path=/tmp/zbus-connection-builder-tests";
+
+    #[test]
+    fn strings() {
+        // An invalid string is only reported by `build`.
+        let error = block_on(Builder::address("not an address").build()).unwrap_err();
+        assert_eq!(error, Address::try_from("not an address").unwrap_err());
+
+        let error = block_on(Builder::address(ADDRESS).name("not a name").build()).unwrap_err();
+        assert_eq!(error, WellKnownName::try_from("not a name").unwrap_err());
+    }
+
+    #[test]
+    fn typed_values() {
+        // No `Result` anywhere before `build`.
+        let address = Address::try_from(ADDRESS).unwrap();
+        let name = WellKnownName::try_from("org.zbus.Test").unwrap();
+        let error = block_on(Builder::address(address).name(name).build()).unwrap_err();
+        // No setter recorded an error, so the build got as far as connecting.
+        assert!(matches!(error, Error::Connection(..)));
+    }
+
+    #[test]
+    fn a_later_valid_call_keeps_the_first_error() {
+        // Calling the setter again, even with a valid name, doesn't clear the error it recorded.
+        let error = block_on(
+            Builder::address(ADDRESS)
+                .name("not a name")
+                .name("org.zbus.Test")
+                .build(),
+        )
+        .unwrap_err();
+        assert_eq!(error, WellKnownName::try_from("not a name").unwrap_err());
+    }
 }

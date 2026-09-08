@@ -949,10 +949,10 @@ impl Connection {
     /// #
     /// #[tokio::main]
     /// async fn main() {
-    ///     let builder = Builder::session().unwrap().internal_executor(false);
+    ///     let builder = Builder::session().internal_executor(false);
     /// #   // This is only for testing a deadlock that used to happen with this combo.
     /// #   #[cfg(feature = "service")]
-    /// #   let builder = builder.serve_at("/some/iface", SomeIface).unwrap();
+    /// #   let builder = builder.serve_at("/some/iface", SomeIface);
     ///     let conn = builder.build().await.unwrap();
     ///     {
     ///        let conn = conn.clone();
@@ -1265,12 +1265,12 @@ impl Connection {
 
     /// Create a `Connection` to the session/user message bus.
     pub async fn session() -> Result<Self> {
-        Builder::session()?.build().await
+        Builder::session().build().await
     }
 
     /// Create a `Connection` to the system-wide message bus.
     pub async fn system() -> Result<Self> {
-        Builder::system()?.build().await
+        Builder::system().build().await
     }
 
     /// Return a listener, notified on various connection activity.
@@ -1393,9 +1393,9 @@ impl Connection {
     /// # #[cfg(feature = "service")]
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn Error>> {
-    /// let conn = Builder::session()?
-    ///     .name("foo.bar.baz")?
-    ///     .serve_at("/foo/bar/baz", MyInterface)?
+    /// let conn = Builder::session()
+    ///     .name("foo.bar.baz")
+    ///     .serve_at("/foo/bar/baz", MyInterface)
     ///     .build()
     ///     .await?;
     ///
@@ -1551,11 +1551,8 @@ mod tests {
         }
         let name = "dev.peelz.foobar";
         let connection = Builder::session()
-            .unwrap()
             .name(name)
-            .unwrap()
             .serve_at("/dev/peelz/FooBar", MyInterface::default())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1633,11 +1630,8 @@ mod tests {
         let name = "dev.peelz.TestGracefulShutdown";
         let obj = "/dev/peelz/TestGracefulShutdown";
         let connection = Builder::session()
-            .unwrap()
             .name(name)
-            .unwrap()
             .serve_at(obj, interface)
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -1799,7 +1793,6 @@ mod p2p_tests {
             (
                 Builder::async_io_tcp_stream(p0)
                     .server(guid)
-                    .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
                 Builder::async_io_tcp_stream(p1).p2p(),
@@ -1816,7 +1809,6 @@ mod p2p_tests {
             (
                 Builder::tokio_tcp_stream(p0)
                     .server(guid)
-                    .unwrap()
                     .p2p()
                     .auth_mechanism(AuthMechanism::Anonymous),
                 Builder::tokio_tcp_stream(p1).p2p(),
@@ -1865,7 +1857,7 @@ mod p2p_tests {
             Builder::tokio_unix_stream(p0),
         );
 
-        futures_util::try_join!(b1.p2p().build(), b0.server(guid).unwrap().p2p().build(),)
+        futures_util::try_join!(b1.p2p().build(), b0.server(guid).p2p().build(),)
     }
 
     // With both backends compiled in, exercise the async-io one end to end. `utils::block_on`
@@ -1917,11 +1909,7 @@ mod p2p_tests {
 
         futures_util::try_join!(
             Builder::async_io_unix_stream(p1).p2p().build(),
-            Builder::async_io_unix_stream(p0)
-                .server(guid)
-                .unwrap()
-                .p2p()
-                .build(),
+            Builder::async_io_unix_stream(p0).server(guid).p2p().build(),
         )
     }
 
@@ -1958,14 +1946,14 @@ mod p2p_tests {
             #[cfg(feature = "tokio-vsock")]
             let builder = Builder::tokio_vsock_stream(server.unwrap()?);
             builder
-                .server(guid)?
+                .server(guid)
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build()
                 .await
         };
 
-        let client = crate::connection::Builder::address(addr.as_str())?
+        let client = crate::connection::Builder::address(addr.as_str())
             .p2p()
             .build();
 
@@ -2000,7 +1988,6 @@ mod p2p_tests {
         futures_util::try_join!(
             Builder::async_io_vsock_stream(server)
                 .server(guid)
-                .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
@@ -2023,7 +2010,6 @@ mod p2p_tests {
         futures_util::try_join!(
             Builder::tokio_vsock_stream(server)
                 .server(guid)
-                .unwrap()
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
@@ -2049,13 +2035,11 @@ mod p2p_tests {
 
         let guid = crate::Guid::generate();
         let conn1 = Builder::authenticated_socket(a, guid.clone())
-            .unwrap()
             .p2p()
             .build()
             .await
             .unwrap();
         let conn2 = Builder::authenticated_socket(b, guid)
-            .unwrap()
             .p2p()
             .build()
             .await

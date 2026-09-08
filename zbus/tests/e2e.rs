@@ -45,16 +45,11 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
 
     let session_conns_build = || {
         let service_conn_builder = connection::Builder::session()
-            .unwrap()
             .name("org.freedesktop.MyService")
-            .unwrap()
             .name("org.freedesktop.MyService.foo")
-            .unwrap()
             .name("org.freedesktop.MyService.bar")
-            .unwrap()
-            .name("org.freedesktop.MyEmitsChangedSignalIface")
-            .unwrap();
-        let client_conn_builder = connection::Builder::session().unwrap();
+            .name("org.freedesktop.MyEmitsChangedSignalIface");
+        let client_conn_builder = connection::Builder::session();
 
         (service_conn_builder, client_conn_builder)
     };
@@ -68,7 +63,6 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
             let builders = (
                 connection::Builder::async_io_unix_stream(p0)
                     .server(guid)
-                    .unwrap()
                     .p2p(),
                 connection::Builder::async_io_unix_stream(p1).p2p(),
             );
@@ -76,7 +70,6 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
             let builders = (
                 connection::Builder::tokio_unix_stream(p0)
                     .server(guid)
-                    .unwrap()
                     .p2p(),
                 connection::Builder::tokio_unix_stream(p1).p2p(),
             );
@@ -96,7 +89,6 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
                 (
                     connection::Builder::async_io_tcp_stream(p0)
                         .server(guid)
-                        .unwrap()
                         .p2p(),
                     connection::Builder::async_io_tcp_stream(p1).p2p(),
                 )
@@ -110,10 +102,7 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
                 let p0 = listener.accept().await.unwrap().0;
 
                 (
-                    connection::Builder::tokio_tcp_stream(p0)
-                        .server(guid)
-                        .unwrap()
-                        .p2p(),
+                    connection::Builder::tokio_tcp_stream(p0).server(guid).p2p(),
                     connection::Builder::tokio_tcp_stream(p1).p2p(),
                 )
             }
@@ -134,13 +123,9 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     );
     let (next_tx, mut next_rx) = channel(64);
     let iface = MyIface::new(next_tx.clone());
-    let service_conn_builder = service_conn_builder
-        .serve_at("/org/freedesktop/MyService", iface)
-        .unwrap();
+    let service_conn_builder = service_conn_builder.serve_at("/org/freedesktop/MyService", iface);
     #[cfg(feature = "object-manager")]
-    let service_conn_builder = service_conn_builder
-        .serve_at("/zbus/test", ObjectManager)
-        .unwrap();
+    let service_conn_builder = service_conn_builder.serve_at("/zbus/test", ObjectManager);
     debug!("ObjectServer set-up.");
 
     let (service_conn, client_conn) = futures_util::try_join!(

@@ -54,7 +54,7 @@ let (client_conn, server_conn) = futures_util::try_join!(
     // Client
     Builder::async_io_unix_stream(p0).p2p().build(),
     // Server
-    Builder::async_io_unix_stream(p1).server(guid)?.p2p().build(),
+    Builder::async_io_unix_stream(p1).server(guid).p2p().build(),
 )?;
 # }
 #

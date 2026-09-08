@@ -345,7 +345,7 @@ mod tests {
             let builder = Builder::async_io_unix_stream(p0);
             #[cfg(feature = "tokio")]
             let builder = Builder::tokio_unix_stream(p0);
-            let c = builder.server(guid).unwrap().p2p().build().unwrap();
+            let c = builder.server(guid).p2p().build().unwrap();
             rx.recv().unwrap();
             let reply = c
                 .call_method(None::<()>, "/", Some("org.zbus.p2p"), "Test", &())

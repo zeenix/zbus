@@ -50,12 +50,10 @@ async fn test_uncached_property() -> Result<()> {
     }
 
     let service = zbus::connection::Builder::session()
-        .unwrap()
         .serve_at(
             "/org/freedesktop/zbus/UncachedPropertyTest",
             ServiceUncachedPropertyTest(false),
         )
-        .unwrap()
         .build()
         .await
         .unwrap();
@@ -162,11 +160,11 @@ async fn test_serde_property() -> Result<()> {
         fn dynamic_dict(&self) -> zbus::Result<HashMap<String, String>>;
     }
 
-    let service = zbus::connection::Builder::session()?
+    let service = zbus::connection::Builder::session()
         .serve_at(
             "/org/freedesktop/zbus/SerdePropertyTest",
             Service("before".to_string()),
-        )?
+        )
         .build()
         .await?;
     let client_conn = zbus::Connection::session().await?;

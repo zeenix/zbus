@@ -35,11 +35,8 @@ fn issue_1015() {
 
 async fn issue_1015_async() {
     let conn = Builder::session()
-        .unwrap()
         .serve_at(IfaceProxy::PATH.as_ref().unwrap(), Iface)
-        .unwrap()
         .name(IfaceProxy::DESTINATION.clone().unwrap())
-        .unwrap()
         .build()
         .await
         .unwrap();

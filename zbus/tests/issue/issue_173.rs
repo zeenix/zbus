@@ -56,11 +56,8 @@ async fn issue_173_async(mut rx: Receiver<()>) {
     rx.recv().await.unwrap();
     for _ in 0..2 {
         let conn = zbus::connection::Builder::session()
-            .unwrap()
             .serve_at("/org/freedesktop/zbus/ComeAndGo", ComeAndGo)
-            .unwrap()
             .name("org.freedesktop.zbus.ComeAndGo")
-            .unwrap()
             .build()
             .await
             .unwrap();

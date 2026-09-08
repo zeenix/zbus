@@ -28,9 +28,7 @@ fn issue_1916() {
 async fn issue_1916_async() {
     let leaf = "/org/zbus/issue1916/sub/leaf";
     let server_conn = Builder::session()
-        .unwrap()
         .serve_at(leaf, Iface)
-        .unwrap()
         .build()
         .await
         .unwrap();

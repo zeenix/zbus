@@ -469,9 +469,7 @@ fn test_proxy_object_list() {
     }
 
     let connection = zbus::blocking::connection::Builder::session()
-        .unwrap()
         .serve_at(OBJECT_LIST.paths[1].as_ref(), OBJECT_LIST.clone())
-        .unwrap()
         .build()
         .unwrap();
     let destination = connection.unique_name().unwrap().clone();

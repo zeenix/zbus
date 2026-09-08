@@ -166,9 +166,9 @@ setting up your interfaces and requesting names, and not have to care about this
 #
 # #[tokio::main]
 # async fn main() -> Result<()> {
-    let _connection = connection::Builder::session()?
-        .name("org.zbus.MyGreeter")?
-        .serve_at("/org/zbus/MyGreeter", Greeter)?
+    let _connection = connection::Builder::session()
+        .name("org.zbus.MyGreeter")
+        .serve_at("/org/zbus/MyGreeter", Greeter)
         .build()
         .await?;
 #     loop {
@@ -264,9 +264,9 @@ async fn main() -> Result<()> {
         done: event_listener::Event::new(),
     };
     let done_listener = greeter.done.listen();
-    let connection = Builder::session()?
-        .name("org.zbus.MyGreeter")?
-        .serve_at("/org/zbus/MyGreeter", greeter)?
+    let connection = Builder::session()
+        .name("org.zbus.MyGreeter")
+        .serve_at("/org/zbus/MyGreeter", greeter)
         .build()
         .await?;
 
@@ -416,9 +416,9 @@ impl Greeter {
 # async fn main() -> zbus::Result<()> {
 
 let greeter = Greeter { name: "GreeterName".to_string() };
-let connection = zbus::connection::Builder::session()?
-        .name("org.zbus.MyGreeter.WithProxy")?
-        .serve_at("/org/zbus/MyGreeter/WithProxy", greeter)?
+let connection = zbus::connection::Builder::session()
+        .name("org.zbus.MyGreeter.WithProxy")
+        .serve_at("/org/zbus/MyGreeter/WithProxy", greeter)
         .build()
         .await?;
 let proxy = GreeterProxy::new(&connection).await?;

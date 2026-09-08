@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             service,
             object_path,
         } => DBusInfo::new(
-            connection::Builder::address(&*address)?.build()?,
+            connection::Builder::address(&*address).build()?,
             service,
             object_path,
         )?,

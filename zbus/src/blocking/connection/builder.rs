@@ -16,19 +16,27 @@ use crate::{
 use crate::{ObjectPath, object_server::Interface};
 
 /// A builder for [`zbus::blocking::Connection`].
+///
+/// The constructors and setters take the same loosely typed values as the rest of the API and
+/// convert them right away, but they never fail: the first error one hits is recorded — a later
+/// call doesn't clear it — and reported by [`Builder::build`].
 #[derive(Debug)]
 #[must_use]
 pub struct Builder<'a>(crate::connection::Builder<'a>);
 
 impl<'a> Builder<'a> {
     /// Create a builder for the session/user message bus connection.
-    pub fn session() -> Result<Self> {
-        crate::connection::Builder::session().map(Self)
+    ///
+    /// A failure to find the session bus address is reported by [`Builder::build`].
+    pub fn session() -> Self {
+        Self(crate::connection::Builder::session())
     }
 
     /// Create a builder for the system-wide message bus connection.
-    pub fn system() -> Result<Self> {
-        crate::connection::Builder::system().map(Self)
+    ///
+    /// A failure to find the system bus address is reported by [`Builder::build`].
+    pub fn system() -> Self {
+        Self(crate::connection::Builder::system())
     }
 
     /// Create a builder for an IBus connection.
@@ -42,7 +50,7 @@ impl<'a> Builder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
+    /// [`Builder::build`] returns an error if:
     /// - The `ibus` command is not found or fails to execute
     /// - The IBus daemon is not running
     /// - The command output cannot be parsed as a valid D-Bus address
@@ -53,26 +61,28 @@ impl<'a> Builder<'a> {
     /// # use std::error::Error;
     /// # use zbus::blocking::connection;
     /// #
-    /// let _conn = connection::Builder::ibus()?
+    /// let _conn = connection::Builder::ibus()
     ///     .build()?;
     ///
     /// // Use the connection to interact with IBus services.
     /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
     /// ```
     #[cfg(all(unix, feature = "ibus"))]
-    pub fn ibus() -> Result<Self> {
-        crate::connection::Builder::ibus().map(Self)
+    pub fn ibus() -> Self {
+        Self(crate::connection::Builder::ibus())
     }
 
     /// Create a builder for a connection that will use the given [D-Bus bus address].
     ///
+    /// An invalid address is reported by [`Builder::build`].
+    ///
     /// [D-Bus bus address]: https://dbus.freedesktop.org/doc/dbus-specification.html#addresses
-    pub fn address<A>(address: A) -> Result<Self>
+    pub fn address<A>(address: A) -> Self
     where
         A: TryInto<Address>,
         A::Error: Into<Error>,
     {
-        crate::connection::Builder::address(address).map(Self)
+        Self(crate::connection::Builder::address(address))
     }
 
     /// Create a builder for a connection that will use the given unix stream with `async-io`.
@@ -131,13 +141,17 @@ impl<'a> Builder<'a> {
     ///
     /// This is similar to [`Builder::socket`], except that the socket is either already
     /// authenticated or does not require authentication.
-    pub fn authenticated_socket<S, G>(socket: S, guid: G) -> Result<Self>
+    ///
+    /// An invalid GUID is reported by [`Builder::build`].
+    pub fn authenticated_socket<S, G>(socket: S, guid: G) -> Self
     where
         S: Into<BoxedSplit>,
         G: TryInto<crate::Guid<'a>>,
         G::Error: Into<Error>,
     {
-        crate::connection::Builder::authenticated_socket(socket, guid).map(Self)
+        Self(crate::connection::Builder::authenticated_socket(
+            socket, guid,
+        ))
     }
 
     /// Create a builder for a connection that will use the given socket.
@@ -178,13 +192,15 @@ impl<'a> Builder<'a> {
     /// **NOTE:** This method is redundant when using [`Builder::authenticated_socket`] since the
     /// latter already sets the GUID for the connection and zbus doesn't differentiate between a
     /// server and a client connection, except for authentication.
+    ///
+    /// An invalid GUID is reported by [`Builder::build`].
     #[cfg(feature = "p2p")]
-    pub fn server<G>(self, guid: G) -> Result<Self>
+    pub fn server<G>(self, guid: G) -> Self
     where
         G: TryInto<Guid<'a>>,
         G::Error: Into<Error>,
     {
-        self.0.server(guid).map(Self)
+        Self(self.0.server(guid))
     }
 
     /// Set the capacity of the main (unfiltered) queue.
@@ -198,7 +214,7 @@ impl<'a> Builder<'a> {
     /// # use std::error::Error;
     /// # use zbus::blocking::connection;
     /// #
-    /// let conn = connection::Builder::session()?
+    /// let conn = connection::Builder::session()
     ///     .max_queued(30)
     ///     .build()?;
     /// assert_eq!(conn.max_queued(), 30);
@@ -216,14 +232,16 @@ impl<'a> Builder<'a> {
     /// your interfaces available immediately after the connection is established. Typically, this
     /// is exactly what you'd want. Also in contrast to [`zbus::blocking::ObjectServer::at`], this
     /// method will replace any previously added interface with the same name at the same path.
+    ///
+    /// An invalid path is reported by [`Builder::build`].
     #[cfg(feature = "service")]
-    pub fn serve_at<P, I>(self, path: P, iface: I) -> Result<Self>
+    pub fn serve_at<P, I>(self, path: P, iface: I) -> Self
     where
         I: Interface,
         P: TryInto<ObjectPath<'a>>,
         P::Error: Into<Error>,
     {
-        self.0.serve_at(path, iface).map(Self)
+        Self(self.0.serve_at(path, iface))
     }
 
     /// Register a well-known name for this connection on the bus.
@@ -240,12 +258,14 @@ impl<'a> Builder<'a> {
         doc = "feature) are advertised. Typically"
     )]
     /// this is exactly what you want.
-    pub fn name<W>(self, well_known_name: W) -> Result<Self>
+    ///
+    /// An invalid name is reported by [`Builder::build`].
+    pub fn name<W>(self, well_known_name: W) -> Self
     where
         W: TryInto<WellKnownName<'a>>,
         W::Error: Into<Error>,
     {
-        self.0.name(well_known_name).map(Self)
+        Self(self.0.name(well_known_name))
     }
 
     /// Whether the [`zbus::fdo::RequestNameFlags::AllowReplacement`] flag will be set when
@@ -270,13 +290,15 @@ impl<'a> Builder<'a> {
     /// It will always panic if the connection is to a message bus as it's the bus that assigns
     /// peers their unique names. This is mainly provided for bus implementations. All other users
     /// should not need to use this method.
+    ///
+    /// An invalid name is reported by [`Builder::build`].
     #[cfg(feature = "bus-impl")]
-    pub fn unique_name<U>(self, unique_name: U) -> Result<Self>
+    pub fn unique_name<U>(self, unique_name: U) -> Self
     where
         U: TryInto<crate::names::UniqueName<'a>>,
         U::Error: Into<Error>,
     {
-        self.0.unique_name(unique_name).map(Self)
+        Self(self.0.unique_name(unique_name))
     }
 
     /// Set a timeout for method calls.
@@ -291,6 +313,9 @@ impl<'a> Builder<'a> {
     /// Build the connection, consuming the builder.
     ///
     /// # Errors
+    ///
+    /// Returns the first error recorded by a constructor or setter, then any error from
+    /// connecting, authenticating or setting the connection up.
     ///
     /// Until server-side bus connection is supported, attempting to build such a connection will
     /// result in a [`Error::Unsupported`] error.

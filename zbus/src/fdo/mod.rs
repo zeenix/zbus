@@ -201,16 +201,12 @@ mod tests {
             }
         }
         let _conn = zbus::conn::Builder::session()
-            .unwrap()
             .name("org.zbus.NoObjectManagerSignalsBeforeHello")
-            .unwrap()
             .serve_at("/org/zbus/NoObjectManagerSignalsBeforeHello/Obj", TestObj)
-            .unwrap()
             .serve_at(
                 "/org/zbus/NoObjectManagerSignalsBeforeHello",
                 super::ObjectManager,
             )
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -253,11 +249,8 @@ mod tests {
         impl TestObj {}
 
         let _service_conn = zbus::conn::Builder::session()
-            .unwrap()
             .name("org.zbus.PeerArbitraryPathTest")
-            .unwrap()
             .serve_at("/registered", TestObj)
-            .unwrap()
             .build()
             .await
             .unwrap();

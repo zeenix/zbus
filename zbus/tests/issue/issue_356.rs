@@ -39,23 +39,19 @@ async fn issue_356() {
 
     // Create the service connection with both interfaces registered
     let connection = Builder::session()
-        .unwrap()
         .serve_at(
             &adapter_path,
             Adapter {
                 name: "TestAdapter".to_string(),
             },
         )
-        .unwrap()
         .serve_at(
             &device_path,
             Device {
                 adapter_path: adapter_path.clone(),
             },
         )
-        .unwrap()
         .name("org.test.Issue356")
-        .unwrap()
         .build()
         .await
         .unwrap();

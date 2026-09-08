@@ -41,7 +41,6 @@ fn issue_1003() {
         let service_conn_builder = service_conn_builder
             .auth_mechanism(AuthMechanism::External)
             .server(guid)
-            .unwrap()
             .p2p()
             .user_id(UID);
         let client_conn_builder = client_conn_builder.p2p().user_id(UID);
