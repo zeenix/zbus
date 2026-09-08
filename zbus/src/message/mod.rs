@@ -310,7 +310,7 @@ impl fmt::Display for Message {
                 }
 
                 let body = self.body();
-                let msg = body.deserialize_unchecked::<&str>();
+                let msg = body.deserialize_ignore_signature::<&str>();
                 if let Ok(msg) = msg {
                     write!(f, ": {msg}")?;
                 }

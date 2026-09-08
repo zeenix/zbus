@@ -29,8 +29,16 @@ impl Body {
             .map(|b| b.0)
     }
 
-    /// Deserialize the body (without checking signature matching).
-    pub fn deserialize_unchecked<'d, 'm: 'd, B>(&'m self) -> Result<B>
+    /// Deserialize the body, ignoring its signature.
+    ///
+    /// Unlike [`Body::deserialize`], the signature of the body is not used to guide the
+    /// deserialization: `B`'s own signature is assumed instead. This is useful when the body's
+    /// signature is already known to match `B`, or when `B` deserializes from a signature that
+    /// differs from the body's but is compatible with its encoding.
+    ///
+    /// Deserialization still fails with an error if the encoded bytes do not match what `B`
+    /// expects, so this is not an unsafe or unchecked operation.
+    pub fn deserialize_ignore_signature<'d, 'm: 'd, B>(&'m self) -> Result<B>
     where
         B: serde::de::Deserialize<'d> + Type,
     {
