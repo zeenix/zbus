@@ -701,13 +701,11 @@ impl Connection {
 
         let acquired_match_rule = MatchRule::fdo_signal_builder("NameAcquired")
             .arg(0, well_known_name.as_ref())
-            .unwrap()
-            .build();
+            .build()?;
         let mut acquired_stream = self.add_match(acquired_match_rule.into(), None).await?;
         let lost_match_rule = MatchRule::fdo_signal_builder("NameLost")
             .arg(0, well_known_name.as_ref())
-            .unwrap()
-            .build();
+            .build()?;
         let mut lost_stream = self.add_match(lost_match_rule.into(), None).await?;
         let reply = self
             .call_method(
@@ -1022,9 +1020,11 @@ impl Connection {
                         Some(conn) => {
                             let mut builder = MatchRule::builder().msg_type(Type::MethodCall);
                             if let Some(unique_name) = conn.unique_name() {
-                                builder = builder.destination(&**unique_name).expect("unique name");
+                                builder = builder.destination(&**unique_name);
                             }
-                            let rule = builder.build();
+                            let rule = builder
+                                .build()
+                                .expect("a unique name is a valid destination");
                             match conn.add_match(rule.into(), None).await {
                                 Ok(stream) => stream,
                                 Err(e) => {

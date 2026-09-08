@@ -48,11 +48,11 @@ impl MessageIterator {
     /// let conn = Connection::session()?;
     /// let rule = MatchRule::builder()
     ///     .msg_type(zbus::message::Type::Signal)
-    ///     .sender("org.freedesktop.DBus")?
-    ///     .interface("org.freedesktop.DBus")?
-    ///     .member("NameOwnerChanged")?
-    ///     .add_arg("org.freedesktop.zbus.MatchRuleIteratorTest42")?
-    ///     .build();
+    ///     .sender("org.freedesktop.DBus")
+    ///     .interface("org.freedesktop.DBus")
+    ///     .member("NameOwnerChanged")
+    ///     .add_arg("org.freedesktop.zbus.MatchRuleIteratorTest42")
+    ///     .build()?;
     /// let mut iter = MessageIterator::for_match_rule(
     ///     rule,
     ///     &conn,

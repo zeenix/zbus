@@ -66,11 +66,11 @@ impl MessageStream {
     /// let conn = Connection::session().await?;
     /// let rule = MatchRule::builder()
     ///     .msg_type(zbus::message::Type::Signal)
-    ///     .sender("org.freedesktop.DBus")?
-    ///     .interface("org.freedesktop.DBus")?
-    ///     .member("NameOwnerChanged")?
-    ///     .add_arg("org.freedesktop.zbus.MatchRuleStreamTest42")?
-    ///     .build();
+    ///     .sender("org.freedesktop.DBus")
+    ///     .interface("org.freedesktop.DBus")
+    ///     .member("NameOwnerChanged")
+    ///     .add_arg("org.freedesktop.zbus.MatchRuleStreamTest42")
+    ///     .build()?;
     /// let mut stream = MessageStream::for_match_rule(
     ///     rule,
     ///     &conn,

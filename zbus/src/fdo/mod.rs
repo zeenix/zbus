@@ -185,10 +185,9 @@ mod tests {
             zbus::MatchRule::builder()
                 .msg_type(zbus::message::Type::Signal)
                 .interface("org.freedesktop.DBus.ObjectManager")
-                .unwrap()
                 .path("/org/zbus/NoObjectManagerSignalsBeforeHello")
-                .unwrap()
-                .build(),
+                .build()
+                .unwrap(),
             &conn,
             None,
         )
