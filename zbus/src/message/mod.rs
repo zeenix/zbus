@@ -70,6 +70,7 @@ impl Message {
     /// Create a builder for a message of type [`Type::MethodCall`].
     ///
     /// An invalid path or method name is reported by [`Builder::build`].
+    #[must_use]
     pub fn method_call<'b, 'p: 'b, 'm: 'b, P, M>(path: P, method_name: M) -> Builder<'b>
     where
         P: TryInto<ObjectPath<'p>>,
@@ -85,6 +86,7 @@ impl Message {
     /// Create a builder for a message of type [`Type::Signal`].
     ///
     /// An invalid path, interface name or signal name is reported by [`Builder::build`].
+    #[must_use]
     pub fn signal<'b, 'p: 'b, 'i: 'b, 'm: 'b, P, I, M>(
         path: P,
         iface: I,
@@ -105,6 +107,7 @@ impl Message {
     }
 
     /// Create a builder for a message of type [`Type::MethodReturn`].
+    #[must_use]
     pub fn method_return(reply_to: &Header<'_>) -> Builder<'static> {
         Builder::new(Type::MethodReturn).reply_to(reply_to)
     }
@@ -112,6 +115,7 @@ impl Message {
     /// Create a builder for a message of type [`Type::Error`].
     ///
     /// An invalid error name is reported by [`Builder::build`].
+    #[must_use]
     pub fn error<'b, 'e: 'b, E>(reply_to: &Header<'_>, name: E) -> Builder<'b>
     where
         E: TryInto<ErrorName<'e>>,

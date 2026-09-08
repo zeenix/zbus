@@ -59,6 +59,7 @@ impl<'a> Builder<'a> {
     /// See [`Flags`] documentation for the meaning of the flags.
     ///
     /// Flags that are invalid for the message type are reported by [`Builder::build`].
+    #[must_use]
     pub fn with_flags(mut self, flag: Flags) -> Self {
         if self.header.message_type() != Type::MethodCall
             && BitFlags::from_flag(flag).contains(Flags::NoReplyExpected)
@@ -76,6 +77,7 @@ impl<'a> Builder<'a> {
     /// Set the unique name of the sending connection.
     ///
     /// An invalid sender name is reported by [`Builder::build`].
+    #[must_use]
     pub fn sender<'s: 'a, S>(mut self, sender: S) -> Self
     where
         S: TryInto<UniqueName<'s>>,
@@ -87,6 +89,7 @@ impl<'a> Builder<'a> {
     /// Set the object to send a call to, or the object a signal is emitted from.
     ///
     /// An invalid path is reported by [`Builder::build`].
+    #[must_use]
     pub fn path<'p: 'a, P>(mut self, path: P) -> Self
     where
         P: TryInto<ObjectPath<'p>>,
@@ -98,6 +101,7 @@ impl<'a> Builder<'a> {
     /// Set the interface to invoke a method call on, or that a signal is emitted from.
     ///
     /// An invalid interface name is reported by [`Builder::build`].
+    #[must_use]
     pub fn interface<'i: 'a, I>(mut self, interface: I) -> Self
     where
         I: TryInto<InterfaceName<'i>>,
@@ -109,6 +113,7 @@ impl<'a> Builder<'a> {
     /// Set the member, either the method name or signal name.
     ///
     /// An invalid member name is reported by [`Builder::build`].
+    #[must_use]
     pub fn member<'m: 'a, M>(mut self, member: M) -> Self
     where
         M: TryInto<MemberName<'m>>,
@@ -120,6 +125,7 @@ impl<'a> Builder<'a> {
     /// Set the name of the error this message reports.
     ///
     /// An invalid error name is reported by [`Builder::build`].
+    #[must_use]
     pub(super) fn error_name<'e: 'a, E>(mut self, error: E) -> Self
     where
         E: TryInto<ErrorName<'e>>,
@@ -131,6 +137,7 @@ impl<'a> Builder<'a> {
     /// Set the name of the connection this message is intended for.
     ///
     /// An invalid destination name is reported by [`Builder::build`].
+    #[must_use]
     pub fn destination<'d: 'a, D>(mut self, destination: D) -> Self
     where
         D: TryInto<BusName<'d>>,
@@ -153,6 +160,7 @@ impl<'a> Builder<'a> {
         self
     }
 
+    #[must_use]
     pub(super) fn reply_to(mut self, reply_to: &Header<'_>) -> Self {
         let serial = reply_to.primary().serial_num();
         self.header.fields_mut().reply_serial = Some(serial);

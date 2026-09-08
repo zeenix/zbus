@@ -15,6 +15,7 @@ const MAX_ARGS: u8 = 64;
 /// clear it — and reported by [`Builder::build`], so a chain of setters never needs a `?` in
 /// between.
 #[derive(Debug)]
+#[must_use]
 pub struct Builder<'m> {
     rule: MatchRule<'m>,
     error: Option<Error>,

@@ -58,6 +58,7 @@ impl<'a, T> Builder<'a, T> {
     /// Set the proxy destination address.
     ///
     /// An invalid destination is reported by [`Builder::build`].
+    #[must_use]
     pub fn destination<D>(mut self, destination: D) -> Self
     where
         D: TryInto<BusName<'a>>,
@@ -74,6 +75,7 @@ impl<'a, T> Builder<'a, T> {
     /// Set the proxy path.
     ///
     /// An invalid path is reported by [`Builder::build`].
+    #[must_use]
     pub fn path<P>(mut self, path: P) -> Self
     where
         P: TryInto<ObjectPath<'a>>,
@@ -90,6 +92,7 @@ impl<'a, T> Builder<'a, T> {
     /// Set the proxy interface.
     ///
     /// An invalid interface name is reported by [`Builder::build`].
+    #[must_use]
     pub fn interface<I>(mut self, interface: I) -> Self
     where
         I: TryInto<InterfaceName<'a>>,
