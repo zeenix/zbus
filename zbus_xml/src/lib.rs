@@ -26,7 +26,10 @@ use std::{
     ops::Deref,
 };
 
-use zbus::names::{InterfaceName, MemberName, PropertyName};
+use zbus::{
+    Str,
+    names::{InterfaceName, MemberName, PropertyName},
+};
 
 /// A warning about document content that was ignored during parsing.
 ///
@@ -95,14 +98,14 @@ impl fmt::Display for Warning {
 
 /// Annotations are generic key/value pairs of metadata.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct Annotation {
-    #[serde(rename = "@name")]
-    name: String,
-    #[serde(rename = "@value")]
-    value: String,
+pub struct Annotation<'a> {
+    #[serde(rename = "@name", borrow)]
+    name: Str<'a>,
+    #[serde(rename = "@value", borrow)]
+    value: Str<'a>,
 }
 
-impl Annotation {
+impl Annotation<'_> {
     /// Return the annotation name/key.
     pub fn name(&self) -> &str {
         &self.name
@@ -111,6 +114,19 @@ impl Annotation {
     /// Return the annotation value.
     pub fn value(&self) -> &str {
         &self.value
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Annotation<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Annotation<'static> {
+        Annotation {
+            name: self.name.into_owned(),
+            value: self.value.into_owned(),
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -143,22 +159,22 @@ impl ArgDirection {
 
 /// An argument
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct Arg {
-    #[serde(rename = "@name")]
-    name: Option<String>,
+pub struct Arg<'a> {
+    #[serde(rename = "@name", borrow)]
+    name: Option<Str<'a>>,
     #[serde(rename = "@type")]
     ty: Signature,
     #[serde(rename = "@direction")]
     direction: Option<ArgDirection>,
-    #[serde(rename = "annotation", default)]
-    annotations: Vec<Annotation>,
+    #[serde(rename = "annotation", default, borrow)]
+    annotations: Vec<Annotation<'a>>,
     #[serde(skip)]
-    docstring: Option<String>,
+    docstring: Option<Str<'a>>,
     #[serde(skip)]
-    tp_type: Option<String>,
+    tp_type: Option<Str<'a>>,
 }
 
-impl Arg {
+impl<'a> Arg<'a> {
     /// Return the argument name, if any.
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
@@ -175,7 +191,7 @@ impl Arg {
     }
 
     /// Return the associated annotations.
-    pub fn annotations(&self) -> &[Annotation] {
+    pub fn annotations(&self) -> &[Annotation<'a>] {
         &self.annotations
     }
 
@@ -194,6 +210,27 @@ impl Arg {
     /// suffix per level of array nesting (e. g. `Playlist[]`).
     pub fn tp_type(&self) -> Option<&str> {
         self.tp_type.as_deref()
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Arg<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Arg<'static> {
+        Arg {
+            name: self.name.map(Str::into_owned),
+            ty: self.ty,
+            direction: self.direction,
+            annotations: self
+                .annotations
+                .into_iter()
+                .map(Annotation::into_owned)
+                .collect(),
+            docstring: self.docstring.map(Str::into_owned),
+            tp_type: self.tp_type.map(Str::into_owned),
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -221,27 +258,27 @@ impl Arg {
 pub struct Method<'a> {
     #[serde(rename = "@name", borrow)]
     name: MemberName<'a>,
-    #[serde(rename = "arg", default)]
-    args: Vec<Arg>,
-    #[serde(rename = "annotation", default)]
-    annotations: Vec<Annotation>,
+    #[serde(rename = "arg", default, borrow)]
+    args: Vec<Arg<'a>>,
+    #[serde(rename = "annotation", default, borrow)]
+    annotations: Vec<Annotation<'a>>,
     #[serde(skip)]
-    docstring: Option<String>,
+    docstring: Option<Str<'a>>,
 }
 
-impl Method<'_> {
+impl<'a> Method<'a> {
     /// Return the method name.
     pub fn name(&self) -> MemberName<'_> {
         self.name.as_ref()
     }
 
     /// Return the method arguments.
-    pub fn args(&self) -> &[Arg] {
+    pub fn args(&self) -> &[Arg<'a>] {
         &self.args
     }
 
     /// Return the method annotations.
-    pub fn annotations(&self) -> &[Annotation] {
+    pub fn annotations(&self) -> &[Annotation<'a>] {
         &self.annotations
     }
 
@@ -252,6 +289,25 @@ impl Method<'_> {
     /// the writer does not emit them.
     pub fn docstring(&self) -> Option<&str> {
         self.docstring.as_deref()
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Method<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Method<'static> {
+        Method {
+            name: self.name.into_owned(),
+            args: self.args.into_iter().map(Arg::into_owned).collect(),
+            annotations: self
+                .annotations
+                .into_iter()
+                .map(Annotation::into_owned)
+                .collect(),
+            docstring: self.docstring.map(Str::into_owned),
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -276,27 +332,27 @@ pub struct Signal<'a> {
     #[serde(rename = "@name", borrow)]
     name: MemberName<'a>,
 
-    #[serde(rename = "arg", default)]
-    args: Vec<Arg>,
-    #[serde(rename = "annotation", default)]
-    annotations: Vec<Annotation>,
+    #[serde(rename = "arg", default, borrow)]
+    args: Vec<Arg<'a>>,
+    #[serde(rename = "annotation", default, borrow)]
+    annotations: Vec<Annotation<'a>>,
     #[serde(skip)]
-    docstring: Option<String>,
+    docstring: Option<Str<'a>>,
 }
 
-impl Signal<'_> {
+impl<'a> Signal<'a> {
     /// Return the signal name.
     pub fn name(&self) -> MemberName<'_> {
         self.name.as_ref()
     }
 
     /// Return the signal arguments.
-    pub fn args(&self) -> &[Arg] {
+    pub fn args(&self) -> &[Arg<'a>] {
         &self.args
     }
 
     /// Return the signal annotations.
-    pub fn annotations(&self) -> &[Annotation] {
+    pub fn annotations(&self) -> &[Annotation<'a>] {
         &self.annotations
     }
 
@@ -307,6 +363,25 @@ impl Signal<'_> {
     /// the writer does not emit them.
     pub fn docstring(&self) -> Option<&str> {
         self.docstring.as_deref()
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Signal<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Signal<'static> {
+        Signal {
+            name: self.name.into_owned(),
+            args: self.args.into_iter().map(Arg::into_owned).collect(),
+            annotations: self
+                .annotations
+                .into_iter()
+                .map(Annotation::into_owned)
+                .collect(),
+            docstring: self.docstring.map(Str::into_owned),
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -365,15 +440,15 @@ pub struct Property<'a> {
     #[serde(rename = "@access")]
     access: PropertyAccess,
 
-    #[serde(rename = "annotation", default)]
-    annotations: Vec<Annotation>,
+    #[serde(rename = "annotation", default, borrow)]
+    annotations: Vec<Annotation<'a>>,
     #[serde(skip)]
-    docstring: Option<String>,
+    docstring: Option<Str<'a>>,
     #[serde(skip)]
-    tp_type: Option<String>,
+    tp_type: Option<Str<'a>>,
 }
 
-impl Property<'_> {
+impl<'a> Property<'a> {
     /// Returns the property name.
     pub fn name(&self) -> PropertyName<'_> {
         self.name.as_ref()
@@ -390,7 +465,7 @@ impl Property<'_> {
     }
 
     /// Return the associated annotations.
-    pub fn annotations(&self) -> &[Annotation] {
+    pub fn annotations(&self) -> &[Annotation<'a>] {
         &self.annotations
     }
 
@@ -409,6 +484,27 @@ impl Property<'_> {
     /// suffix per level of array nesting (e. g. `Playlist[]`).
     pub fn tp_type(&self) -> Option<&str> {
         self.tp_type.as_deref()
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Property<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Property<'static> {
+        Property {
+            name: self.name.into_owned(),
+            ty: self.ty,
+            access: self.access,
+            annotations: self
+                .annotations
+                .into_iter()
+                .map(Annotation::into_owned)
+                .collect(),
+            docstring: self.docstring.map(Str::into_owned),
+            tp_type: self.tp_type.map(Str::into_owned),
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -442,12 +538,12 @@ pub struct Interface<'a> {
     properties: Vec<Property<'a>>,
     #[serde(rename = "signal", default)]
     signals: Vec<Signal<'a>>,
-    #[serde(rename = "annotation", default)]
-    annotations: Vec<Annotation>,
+    #[serde(rename = "annotation", default, borrow)]
+    annotations: Vec<Annotation<'a>>,
     #[serde(skip)]
-    docstring: Option<String>,
+    docstring: Option<Str<'a>>,
     #[serde(skip)]
-    telepathy_types: Vec<telepathy::TypeDef>,
+    telepathy_types: Vec<telepathy::TypeDef<'a>>,
 }
 
 impl<'a> Interface<'a> {
@@ -467,12 +563,12 @@ impl<'a> Interface<'a> {
     }
 
     /// Returns the interface properties.
-    pub fn properties(&self) -> &[Property<'_>] {
+    pub fn properties(&self) -> &[Property<'a>] {
         &self.properties
     }
 
     /// Return the associated annotations.
-    pub fn annotations(&self) -> &[Annotation] {
+    pub fn annotations(&self) -> &[Annotation<'a>] {
         &self.annotations
     }
 
@@ -486,8 +582,38 @@ impl<'a> Interface<'a> {
     }
 
     /// Return the Telepathy type definitions on this interface.
-    pub fn telepathy_types(&self) -> &[telepathy::TypeDef] {
+    pub fn telepathy_types(&self) -> &[telepathy::TypeDef<'a>] {
         &self.telepathy_types
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Interface<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Interface<'static> {
+        Interface {
+            name: self.name.into_owned(),
+            methods: self.methods.into_iter().map(Method::into_owned).collect(),
+            properties: self
+                .properties
+                .into_iter()
+                .map(Property::into_owned)
+                .collect(),
+            signals: self.signals.into_iter().map(Signal::into_owned).collect(),
+            annotations: self
+                .annotations
+                .into_iter()
+                .map(Annotation::into_owned)
+                .collect(),
+            docstring: self.docstring.map(Str::into_owned),
+            telepathy_types: self
+                .telepathy_types
+                .into_iter()
+                .map(telepathy::TypeDef::into_owned)
+                .collect(),
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -519,25 +645,29 @@ impl<'a> Interface<'a> {
 /// An introspection tree node (typically the root of the XML document).
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct Node<'a> {
-    #[serde(rename = "@name")]
-    name: Option<String>,
+    #[serde(rename = "@name", borrow)]
+    name: Option<Str<'a>>,
 
     #[serde(rename = "interface", default, borrow)]
     interfaces: Vec<Interface<'a>>,
     #[serde(rename = "node", default, borrow)]
     nodes: Vec<Node<'a>>,
     #[serde(skip)]
-    docstring: Option<String>,
+    docstring: Option<Str<'a>>,
     #[serde(skip)]
-    telepathy_types: Vec<telepathy::TypeDef>,
+    telepathy_types: Vec<telepathy::TypeDef<'a>>,
 }
 
 impl<'a> Node<'a> {
     /// Parse the introspection XML document from reader.
     ///
+    /// The whole reader is buffered into memory before parsing, so the returned tree owns its
+    /// data and is not tied to the reader's lifetime. For a zero-copy parse that borrows from a
+    /// document already in memory, parse it with `Node::try_from(&str)` instead.
+    ///
     /// Note that `reader` is consumed until end-of-stream before parsing, so this must not be
     /// used with a reader that stays open past the end of the document (e.g. a socket).
-    pub fn from_reader<R: Read>(reader: R) -> Result<Node<'a>> {
+    pub fn from_reader<R: Read>(reader: R) -> Result<Node<'static>> {
         Ok(Node::from_reader_with_warnings(reader)?.0)
     }
 
@@ -548,15 +678,23 @@ impl<'a> Node<'a> {
     /// see [`Interface::docstring`]) and was therefore ignored, e. g. the type-definition
     /// elements of the Telepathy extensions (`tp:enum`, `tp:struct`, …).
     ///
+    /// The whole reader is buffered into memory before parsing, so the returned tree owns its
+    /// data and is not tied to the reader's lifetime. For a zero-copy parse that borrows from a
+    /// document already in memory, parse it with `Node::try_from(&str)` instead.
+    ///
     /// Note that `reader` is consumed until end-of-stream before parsing, so this must not be
     /// used with a reader that stays open past the end of the document (e.g. a socket).
     ///
     /// [introspection format]: https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format
-    pub fn from_reader_with_warnings<R: Read>(mut reader: R) -> Result<(Node<'a>, Vec<Warning>)> {
+    pub fn from_reader_with_warnings<R: Read>(
+        mut reader: R,
+    ) -> Result<(Node<'static>, Vec<Warning>)> {
         let mut input = String::new();
         reader.read_to_string(&mut input)?;
 
-        xml::parse_with_warnings(&input)
+        let (node, warnings) = xml::parse_with_warnings(&input)?;
+
+        Ok((node.into_owned(), warnings))
     }
 
     /// Write the XML document to writer.
@@ -597,8 +735,65 @@ impl<'a> Node<'a> {
     }
 
     /// Return the Telepathy type definitions on this node.
-    pub fn telepathy_types(&self) -> &[telepathy::TypeDef] {
+    pub fn telepathy_types(&self) -> &[telepathy::TypeDef<'a>] {
         &self.telepathy_types
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Node<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    ///
+    /// Nested `<node>`s — the one axis on which a tree can nest arbitrarily deep — are walked
+    /// iteratively on an explicit stack, as the parser does, so converting a deeply nested tree
+    /// does not grow the call stack.
+    pub fn into_owned(self) -> Node<'static> {
+        // A node whose own data is converted, paired with the children still to convert.
+        struct Pending<'a> {
+            node: Node<'static>,
+            children: std::vec::IntoIter<Node<'a>>,
+        }
+
+        impl<'a> Pending<'a> {
+            fn new(node: Node<'a>) -> Self {
+                let children = node.nodes.into_iter();
+                let node = Node {
+                    name: node.name.map(Str::into_owned),
+                    interfaces: node
+                        .interfaces
+                        .into_iter()
+                        .map(Interface::into_owned)
+                        .collect(),
+                    nodes: Vec::with_capacity(children.len()),
+                    docstring: node.docstring.map(Str::into_owned),
+                    telepathy_types: node
+                        .telepathy_types
+                        .into_iter()
+                        .map(telepathy::TypeDef::into_owned)
+                        .collect(),
+                };
+
+                Pending { node, children }
+            }
+        }
+
+        let mut open = vec![Pending::new(self)];
+        loop {
+            let pending = open
+                .last_mut()
+                .expect("the root is popped only by returning");
+            if let Some(child) = pending.children.next() {
+                open.push(Pending::new(child));
+                continue;
+            }
+            let finished = open.pop().expect("non-empty").node;
+            match open.last_mut() {
+                Some(parent) => parent.node.nodes.push(finished),
+                None => return finished,
+            }
+        }
     }
 
     fn write_xml<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -623,7 +818,10 @@ impl<'a> Node<'a> {
 impl<'a> TryFrom<&'a str> for Node<'a> {
     type Error = Error;
 
-    /// Parse the introspection XML document from `s`.
+    /// Parse the introspection XML document from `s`, borrowing from it where possible.
+    ///
+    /// The returned tree borrows attribute values and docstrings from `s`, so it cannot outlive
+    /// it. Call [`Node::into_owned`] to detach the tree from `s` and keep it around for longer.
     fn try_from(s: &'a str) -> Result<Node<'a>> {
         xml::parse(s)
     }

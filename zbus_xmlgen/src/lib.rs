@@ -17,7 +17,7 @@ fn write_doc_header<W: std::fmt::Write>(
     w: &mut W,
     interfaces: &[Interface<'_>],
     standard_interfaces: &[Interface<'_>],
-    node_types: &[TypeDef],
+    node_types: &[TypeDef<'_>],
     input_src: &str,
     cargo_bin_name: &str,
     cargo_bin_version: &str,
@@ -120,7 +120,7 @@ fn write_doc_header<W: std::fmt::Write>(
 /// [Telepathy type definitions]: zbus_xml::telepathy::TypeDef
 #[derive(Debug, Default, Clone)]
 pub struct CodeGenerator<'i> {
-    node_types: &'i [TypeDef],
+    node_types: &'i [TypeDef<'i>],
     service: Option<&'i BusName<'i>>,
     path: Option<&'i ObjectPath<'i>>,
     format: bool,
@@ -138,7 +138,7 @@ impl<'i> CodeGenerator<'i> {
     ///
     /// The ones an interface references get a Rust definition generated alongside the
     /// definitions from the interface itself.
-    pub fn with_node_types(mut self, node_types: &'i [TypeDef]) -> Self {
+    pub fn with_node_types(mut self, node_types: &'i [TypeDef<'i>]) -> Self {
         self.node_types = node_types;
         self
     }
@@ -164,7 +164,7 @@ impl<'i> CodeGenerator<'i> {
     }
 
     /// The Telepathy type definitions from the enclosing `<node>`.
-    pub fn node_types(&self) -> &'i [TypeDef] {
+    pub fn node_types(&self) -> &'i [TypeDef<'i>] {
         self.node_types
     }
 
@@ -469,7 +469,7 @@ fn decode_entity(entity: &str) -> Option<char> {
 fn write_member_docs<W: Write>(
     w: &mut W,
     docstring: Option<&str>,
-    args: &[Arg],
+    args: &[Arg<'_>],
 ) -> std::fmt::Result {
     if let Some(docstring) = docstring {
         writeln!(w, "    ///")?;
@@ -514,14 +514,14 @@ struct Types<'i> {
     ///
     /// Only these are used when resolving `tp:type` references; anything else falls back to
     /// the structural Rust type.
-    generated: HashMap<&'i str, &'i TypeDef>,
+    generated: HashMap<&'i str, &'i TypeDef<'i>>,
     /// The same definitions in emission order (the interface's own first, then the
     /// referenced node-level ones).
-    emit: Vec<&'i TypeDef>,
+    emit: Vec<&'i TypeDef<'i>>,
 }
 
 impl<'i> Types<'i> {
-    fn new(interface: &'i Interface<'i>, node_types: &'i [TypeDef]) -> Self {
+    fn new(interface: &'i Interface<'i>, node_types: &'i [TypeDef<'i>]) -> Self {
         // All definitions in scope, the interface's own shadowing same-named node-level ones.
         let mut by_name = HashMap::new();
         for def in node_types.iter().chain(interface.telepathy_types()) {
@@ -645,7 +645,7 @@ impl<'i> Types<'i> {
 }
 
 /// Push the `tp:type` references of `def`'s members, if any, onto `pending`.
-fn member_references<'i>(def: &'i TypeDef, pending: &mut Vec<&'i str>) {
+fn member_references<'i>(def: &'i TypeDef<'i>, pending: &mut Vec<&'i str>) {
     match def {
         TypeDef::Struct(s) => pending.extend(s.members().iter().filter_map(|m| m.tp_type())),
         TypeDef::Mapping(m) => {
@@ -667,7 +667,7 @@ fn strip_arrays(reference: &str) -> (&str, usize) {
 }
 
 /// Whether a Rust definition can be generated for `def`.
-fn generatable(def: &TypeDef) -> bool {
+fn generatable(def: &TypeDef<'_>) -> bool {
     if !is_valid_ident(&type_name(def.name())) {
         return false;
     }
@@ -734,7 +734,7 @@ enum EnumRepr {
     Str,
 }
 
-fn enum_repr(e: &telepathy::Enum) -> Option<EnumRepr> {
+fn enum_repr(e: &telepathy::Enum<'_>) -> Option<EnumRepr> {
     match e.ty().inner() {
         Signature::U8 => Some(EnumRepr::Int("u8")),
         Signature::I16 => Some(EnumRepr::Int("i16")),
@@ -749,7 +749,7 @@ fn enum_repr(e: &telepathy::Enum) -> Option<EnumRepr> {
 }
 
 /// Whether values of the generated type are cheap enough to pass inputs by value.
-fn passed_by_value(def: &TypeDef) -> bool {
+fn passed_by_value(def: &TypeDef<'_>) -> bool {
     match def {
         // Generated enums are `Copy`.
         TypeDef::Enum(_) => true,
@@ -775,7 +775,7 @@ fn type_name(name: &str) -> String {
 }
 
 /// The Rust name for an enum variant, from the value's `suffix`.
-fn variant_name(value: &telepathy::EnumValue) -> String {
+fn variant_name(value: &telepathy::EnumValue<'_>) -> String {
     to_identifier(&pascal_case(value.suffix()))
 }
 
@@ -830,7 +830,7 @@ fn write_type_defs<W: Write>(
     Ok(())
 }
 
-fn write_simple_type<W: Write>(w: &mut W, t: &telepathy::SimpleType) -> std::fmt::Result {
+fn write_simple_type<W: Write>(w: &mut W, t: &telepathy::SimpleType<'_>) -> std::fmt::Result {
     if let Some(docstring) = t.docstring() {
         write_doc_lines(w, docstring, "")?;
     }
@@ -842,7 +842,7 @@ fn write_simple_type<W: Write>(w: &mut W, t: &telepathy::SimpleType) -> std::fmt
     )
 }
 
-fn write_enum<W: Write>(w: &mut W, e: &telepathy::Enum) -> std::fmt::Result {
+fn write_enum<W: Write>(w: &mut W, e: &telepathy::Enum<'_>) -> std::fmt::Result {
     if let Some(docstring) = e.docstring() {
         write_doc_lines(w, docstring, "")?;
     }
@@ -894,7 +894,11 @@ fn write_enum<W: Write>(w: &mut W, e: &telepathy::Enum) -> std::fmt::Result {
     writeln!(w, "}}")
 }
 
-fn write_struct<W: Write>(w: &mut W, s: &telepathy::Struct, types: &Types<'_>) -> std::fmt::Result {
+fn write_struct<W: Write>(
+    w: &mut W,
+    s: &telepathy::Struct<'_>,
+    types: &Types<'_>,
+) -> std::fmt::Result {
     if let Some(docstring) = s.docstring() {
         write_doc_lines(w, docstring, "")?;
     }
@@ -919,7 +923,7 @@ fn write_struct<W: Write>(w: &mut W, s: &telepathy::Struct, types: &Types<'_>) -
 
 fn write_mapping<W: Write>(
     w: &mut W,
-    m: &telepathy::Mapping,
+    m: &telepathy::Mapping<'_>,
     types: &Types<'_>,
 ) -> std::fmt::Result {
     if let Some(docstring) = m.docstring() {
@@ -973,7 +977,7 @@ fn hide_clippy_type_complexity_lint<W: Write>(
     Ok(())
 }
 
-fn inputs_output_from_args(args: &[Arg], types: &Types<'_>) -> (String, String) {
+fn inputs_output_from_args(args: &[Arg<'_>], types: &Types<'_>) -> (String, String) {
     let mut inputs = vec!["&self".to_string()];
     let mut output: Vec<OutputArg> = vec![];
     let mut n = 0;
@@ -1041,7 +1045,7 @@ struct OutputArg {
     is_struct: bool,
 }
 
-fn parse_signal_args(args: &[Arg], types: &Types<'_>) -> String {
+fn parse_signal_args(args: &[Arg<'_>], types: &Types<'_>) -> String {
     let mut inputs = vec!["&self".to_string()];
     let mut n = 0;
     let mut gen_name = || {
