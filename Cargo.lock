@@ -2262,7 +2262,6 @@ version = "6.0.0"
 dependencies = [
  "codspeed-criterion-compat",
  "doc-comment",
- "serde",
  "winnow 1.0.4",
  "zbus",
 ]

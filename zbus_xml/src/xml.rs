@@ -18,11 +18,14 @@ use winnow::{
     stream::{Location, Stateful},
     token::{any, take_till, take_until, take_while},
 };
-use zbus::names::{InterfaceName, MemberName, PropertyName};
+use zbus::{
+    Signature, Str,
+    names::{InterfaceName, MemberName, PropertyName},
+};
 
 use crate::{
     Annotation, Arg, ArgDirection, Interface, Method, Node, Property, PropertyAccess, Signal,
-    Signature, Warning,
+    Warning,
     error::{Error, Result, XmlError},
     telepathy::{self, TypeDef},
 };
@@ -36,12 +39,12 @@ use crate::{
 const MAX_DEPTH: usize = 1024;
 
 /// Parse a D-Bus introspection document into its [`Node`] tree.
-pub(crate) fn parse<'a>(document: &str) -> Result<Node<'a>> {
+pub(crate) fn parse<'i>(document: &'i str) -> Result<Node<'i>> {
     parse_with_warnings(document).map(|(node, _)| node)
 }
 
 /// Parse a D-Bus introspection document, also returning the warnings collected on the way.
-pub(crate) fn parse_with_warnings<'a>(document: &str) -> Result<(Node<'a>, Vec<Warning>)> {
+pub(crate) fn parse_with_warnings<'i>(document: &'i str) -> Result<(Node<'i>, Vec<Warning>)> {
     let mut input = Input {
         input: LocatingSlice::new(document),
         state: State {
@@ -50,7 +53,6 @@ pub(crate) fn parse_with_warnings<'a>(document: &str) -> Result<(Node<'a>, Vec<W
         },
     };
     match document_node(&mut input) {
-        // The tree owns its data, so it outlives `document` and satisfies any caller lifetime.
         Ok(node) => Ok((node, input.state.warnings)),
         Err(ErrMode::Backtrack(error) | ErrMode::Cut(error)) => Err(error.into_error()),
         Err(ErrMode::Incomplete(_)) => Err(Error::Xml(XmlError::new(
@@ -64,7 +66,7 @@ pub(crate) fn parse_with_warnings<'a>(document: &str) -> Result<(Node<'a>, Vec<W
 ///
 /// The root element's name is not checked, for compatibility with servers that don't name it
 /// `node` and with how previous (quick-xml-based) versions of this crate behaved.
-fn document_node<'i>(input: &mut Input<'i>) -> PResult<Node<'static>> {
+fn document_node<'i>(input: &mut Input<'i>) -> PResult<Node<'i>> {
     ignorable(input)?;
     if opt(eof).parse_next(input)?.is_some() {
         return Err(error("missing root element", input));
@@ -159,13 +161,13 @@ fn node<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Node<'static>> {
+) -> PResult<Node<'i>> {
     let root = empty_node(&attrs);
     if self_closing {
         return Ok(root);
     }
 
-    let mut open: Vec<(&'i str, Node<'static>)> = vec![(tag, root)];
+    let mut open: Vec<(&'i str, Node<'i>)> = vec![(tag, root)];
     loop {
         ignorable(input)?;
         let tag = open.last().expect("the root is popped only by returning").0;
@@ -231,9 +233,9 @@ fn node<'i>(
 }
 
 /// A `<node>` with only its `name`, ready to be filled in.
-fn empty_node(attrs: &Attrs<'_>) -> Node<'static> {
+fn empty_node<'i>(attrs: &Attrs<'i>) -> Node<'i> {
     Node {
-        name: attrs.optional("name").map(str::to_owned),
+        name: attrs.optional_str("name"),
         interfaces: Vec::new(),
         nodes: Vec::new(),
         docstring: None,
@@ -247,7 +249,7 @@ fn interface<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Interface<'static>> {
+) -> PResult<Interface<'i>> {
     let name = attrs.name(|n| InterfaceName::try_from(n).map_err(Error::Zbus))?;
     let mut methods = Vec::new();
     let mut properties = Vec::new();
@@ -306,7 +308,7 @@ fn method<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Method<'static>> {
+) -> PResult<Method<'i>> {
     let name = attrs.name(|n| MemberName::try_from(n).map_err(Error::Zbus))?;
     let mut args = Vec::new();
     let mut annotations = Vec::new();
@@ -342,7 +344,7 @@ fn signal<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Signal<'static>> {
+) -> PResult<Signal<'i>> {
     let name = attrs.name(|n| MemberName::try_from(n).map_err(Error::Zbus))?;
     let mut args = Vec::new();
     let mut annotations = Vec::new();
@@ -378,7 +380,7 @@ fn property<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Property<'static>> {
+) -> PResult<Property<'i>> {
     let name = attrs.name(|n| PropertyName::try_from(n).map_err(Error::Zbus))?;
     let ty = attrs.signature()?;
     let access = match attrs.required("access")? {
@@ -387,7 +389,7 @@ fn property<'i>(
         "readwrite" => PropertyAccess::ReadWrite,
         other => return Err(error(format!("invalid property access `{other}`"), input)),
     };
-    let tp_type = attrs.tp_type().map(str::to_owned);
+    let tp_type = attrs.tp_type();
     let mut annotations = Vec::new();
     let mut docstring = None;
     children(
@@ -419,8 +421,8 @@ fn arg<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Arg> {
-    let name = attrs.optional("name").map(str::to_owned);
+) -> PResult<Arg<'i>> {
+    let name = attrs.optional_str("name");
     let ty = attrs.signature()?;
     let direction = match attrs.optional("direction") {
         Some("in") => Some(ArgDirection::In),
@@ -433,7 +435,7 @@ fn arg<'i>(
         }
         None => None,
     };
-    let tp_type = attrs.tp_type().map(str::to_owned);
+    let tp_type = attrs.tp_type();
     let mut annotations = Vec::new();
     let mut docstring = None;
     children(
@@ -465,9 +467,9 @@ fn annotation<'i>(
     tag: &'i str,
     attrs: Attrs<'i>,
     self_closing: bool,
-) -> PResult<Annotation> {
-    let name = attrs.required("name")?.to_owned();
-    let value = attrs.required("value")?.to_owned();
+) -> PResult<Annotation<'i>> {
+    let name = attrs.required_str("name")?;
+    let value = attrs.required_str("value")?;
     children(input, tag, self_closing, |input, child, attrs, sc| {
         skip_unsupported(input, child, &attrs, sc)?;
         Ok(true)
@@ -566,7 +568,7 @@ fn docstring_or_skip<'i>(
     child: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-    slot: &mut Option<String>,
+    slot: &mut Option<Str<'i>>,
 ) -> PResult<bool> {
     if is_docstring(child) {
         *slot = capture_docstring(input, child, self_closing)?.or(slot.take());
@@ -584,7 +586,7 @@ fn capture_docstring<'i>(
     input: &mut Input<'i>,
     tag: &'i str,
     self_closing: bool,
-) -> PResult<Option<String>> {
+) -> PResult<Option<Str<'i>>> {
     if self_closing {
         return Ok(None);
     }
@@ -592,7 +594,7 @@ fn capture_docstring<'i>(
     let end = skip_to_close(input, tag)?;
     let content = input.state.document[start..end].trim();
 
-    Ok((!content.is_empty()).then(|| content.to_owned()))
+    Ok((!content.is_empty()).then(|| Str::from(content)))
 }
 
 /// Consume an element's subtree, returning the byte offset of the `<` of its matching closing
@@ -660,12 +662,12 @@ impl SignatureAttr {
     fn parse(value: Option<&str>) -> Self {
         match value {
             None => SignatureAttr::Missing,
-            Some(value) => match zbus::Signature::try_from(value.as_bytes()) {
+            Some(value) => match Signature::try_from(value.as_bytes()) {
                 // The empty signature parses as `Unit`, which is only valid as a top-level
                 // signature — inside a composed signature (`Struct`/`Mapping::signature`) it
                 // produces invalid signatures.
-                Ok(zbus::Signature::Unit) | Err(_) => SignatureAttr::Invalid,
-                Ok(signature) => SignatureAttr::Value(Signature(signature)),
+                Ok(Signature::Unit) | Err(_) => SignatureAttr::Invalid,
+                Ok(signature) => SignatureAttr::Value(signature),
             },
         }
     }
@@ -680,7 +682,7 @@ fn telepathy_type_def<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<TypeDef>> {
+) -> PResult<Option<TypeDef<'i>>> {
     match local_name(tag) {
         "simple-type" => simple_type(input, tag, attrs, self_closing),
         "enum" => enum_def(input, tag, attrs, self_closing),
@@ -710,9 +712,9 @@ fn simple_type<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<TypeDef>> {
+) -> PResult<Option<TypeDef<'i>>> {
     let position = attrs.offset - 1;
-    let name = attrs.optional("name").map(str::to_owned);
+    let name = attrs.optional_str("name");
     let ty = SignatureAttr::parse(attrs.optional("type"));
     let mut docstring = None;
     children(input, tag, self_closing, |input, child, attrs, sc| {
@@ -745,9 +747,9 @@ fn enum_def<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<TypeDef>> {
+) -> PResult<Option<TypeDef<'i>>> {
     let position = attrs.offset - 1;
-    let name = attrs.optional("name").map(str::to_owned);
+    let name = attrs.optional_str("name");
     let ty = SignatureAttr::parse(attrs.optional("type"));
     let mut values = Vec::new();
     let mut incomplete_value = false;
@@ -795,9 +797,9 @@ fn enum_value<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<telepathy::EnumValue>> {
-    let suffix = attrs.optional("suffix").map(str::to_owned);
-    let value = attrs.optional("value").map(str::to_owned);
+) -> PResult<Option<telepathy::EnumValue<'i>>> {
+    let suffix = attrs.optional_str("suffix");
+    let value = attrs.optional_str("value");
     let mut docstring = None;
     children(input, tag, self_closing, |input, child, attrs, sc| {
         docstring_or_skip(input, child, &attrs, sc, &mut docstring)
@@ -818,9 +820,9 @@ fn struct_def<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<TypeDef>> {
+) -> PResult<Option<TypeDef<'i>>> {
     let position = attrs.offset - 1;
-    let name = attrs.optional("name").map(str::to_owned);
+    let name = attrs.optional_str("name");
     let (members, incomplete_member, docstring) = members(input, tag, self_closing)?;
 
     let Some(name) = name else {
@@ -846,9 +848,9 @@ fn mapping_def<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<TypeDef>> {
+) -> PResult<Option<TypeDef<'i>>> {
     let position = attrs.offset - 1;
-    let name = attrs.optional("name").map(str::to_owned);
+    let name = attrs.optional_str("name");
     let (members, incomplete_member, docstring) = members(input, tag, self_closing)?;
 
     let Some(name) = name else {
@@ -884,7 +886,7 @@ fn members<'i>(
     input: &mut Input<'i>,
     tag: &'i str,
     self_closing: bool,
-) -> PResult<(Vec<telepathy::Member>, bool, Option<String>)> {
+) -> PResult<(Vec<telepathy::Member<'i>>, bool, Option<Str<'i>>)> {
     let mut members = Vec::new();
     let mut incomplete_member = false;
     let mut docstring = None;
@@ -910,10 +912,10 @@ fn member<'i>(
     tag: &'i str,
     attrs: &Attrs<'i>,
     self_closing: bool,
-) -> PResult<Option<telepathy::Member>> {
-    let name = attrs.optional("name").map(str::to_owned);
+) -> PResult<Option<telepathy::Member<'i>>> {
+    let name = attrs.optional_str("name");
     let ty = SignatureAttr::parse(attrs.optional("type"));
-    let tp_type = attrs.tp_type().map(str::to_owned);
+    let tp_type = attrs.tp_type();
     let mut docstring = None;
     children(input, tag, self_closing, |input, child, attrs, sc| {
         docstring_or_skip(input, child, &attrs, sc, &mut docstring)
@@ -1051,24 +1053,41 @@ impl<'i> Attrs<'i> {
         })
     }
 
+    /// The value of `key` as a string that borrows from the document where possible.
+    fn optional_str(&self, key: &str) -> Option<Str<'i>> {
+        self.pairs
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| Str::from(value.clone()))
+    }
+
+    /// Like [`Self::required`], but as a string that borrows from the document where possible.
+    fn required_str(&self, key: &str) -> PResult<Str<'i>> {
+        self.optional_str(key).ok_or_else(|| {
+            ParseError::xml(
+                format!("missing attribute `{key}` on `<{}>`", self.element),
+                self.offset,
+            )
+        })
+    }
+
     /// The required `name` attribute, validated by `parse` (e. g. into an [`InterfaceName`]).
-    fn name<T>(&self, parse: impl FnOnce(String) -> std::result::Result<T, Error>) -> PResult<T> {
-        parse(self.required("name")?.to_owned()).map_err(ParseError::domain)
+    fn name<T>(&self, parse: impl FnOnce(Str<'i>) -> std::result::Result<T, Error>) -> PResult<T> {
+        parse(self.required_str("name")?).map_err(ParseError::domain)
     }
 
     /// The required `type` attribute, parsed as a signature.
     fn signature(&self) -> PResult<Signature> {
-        zbus::Signature::try_from(self.required("type")?.as_bytes())
-            .map(Signature)
+        Signature::try_from(self.required("type")?.as_bytes())
             .map_err(|e| ParseError::domain(zbus::Error::from(e).into()))
     }
 
     /// The value of the Telepathy `tp:type` attribute, if present.
-    fn tp_type(&self) -> Option<&str> {
+    fn tp_type(&self) -> Option<Str<'i>> {
         self.pairs
             .iter()
             .find(|(name, _)| is_tp_type(name))
-            .map(|(_, value)| value.as_ref())
+            .map(|(_, value)| Str::from(value.clone()))
     }
 }
 

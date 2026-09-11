@@ -4,7 +4,7 @@ use zbus::Signature;
 use zbus_xml::{Arg, ArgDirection, Interface, Node, PropertyAccess};
 
 #[test]
-fn serde() -> Result<(), Box<dyn Error>> {
+fn sample_object() -> Result<(), Box<dyn Error>> {
     let example = include_str!("data/sample_object0.xml");
     let node_r = Node::from_reader(example.as_bytes())?;
     let node = Node::try_from(example)?;
@@ -59,7 +59,7 @@ fn multi_complete_arg_type() -> Result<(), Box<dyn Error>> {
 
     let node = Node::try_from(input)?;
     let arg = &node.interfaces()[0].methods()[0].args()[0];
-    let Signature::Structure(fields) = arg.ty().inner() else {
+    let Signature::Structure(fields) = arg.ty() else {
         panic!("expected `tt` to parse as a structure");
     };
 
@@ -205,7 +205,7 @@ fn interface<'n, 'a>(node: &'n Node<'a>, name: &str) -> &'n Interface<'a> {
 
 /// Assert that `args` matches `expected` exactly — count, and every name, signature and
 /// direction.
-fn assert_args(context: &str, args: &[Arg], expected: &[ArgSpec]) {
+fn assert_args(context: &str, args: &[Arg<'_>], expected: &[ArgSpec]) {
     assert_eq!(
         args.len(),
         expected.len(),
@@ -675,6 +675,11 @@ fn deeply_nested_documents() -> Result<(), Box<dyn Error>> {
             }
             assert_eq!(depth, 1024);
 
+            // Detaching the tree from the document walks the same axis and must not recurse
+            // either, and neither must the reader path, which detaches every tree it parses.
+            let owned = Node::try_from(deep_nodes.as_str()).unwrap().into_owned();
+            assert_eq!(owned, Node::from_reader(deep_nodes.as_bytes()).unwrap());
+
             Node::try_from(deep_foreign.as_str()).unwrap();
         })?
         .join()
@@ -923,7 +928,7 @@ fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
         panic!("expected a simple type on the node");
     };
     assert_eq!(id.name(), "Playlist_Id");
-    assert_eq!(*id.ty().inner(), Signature::ObjectPath);
+    assert_eq!(*id.ty(), Signature::ObjectPath);
     assert_eq!(id.docstring(), Some("Unique playlist identifier."));
 
     // Interface-level definitions.
@@ -938,7 +943,7 @@ fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
     };
 
     assert_eq!(ordering.name(), "Playlist_Ordering");
-    assert_eq!(*ordering.ty().inner(), Signature::Str);
+    assert_eq!(*ordering.ty(), Signature::Str);
     assert_eq!(ordering.docstring(), Some("The way to order playlists."));
     assert_eq!(ordering.values().len(), 2);
     assert_eq!(ordering.values()[0].suffix(), "Alphabetical");
@@ -958,7 +963,7 @@ fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
     );
     assert_eq!(playlist.members().len(), 2);
     assert_eq!(playlist.members()[0].name(), "Id");
-    assert_eq!(*playlist.members()[0].ty().inner(), Signature::ObjectPath);
+    assert_eq!(*playlist.members()[0].ty(), Signature::ObjectPath);
     assert_eq!(playlist.members()[0].tp_type(), Some("Playlist_Id"));
     assert_eq!(
         playlist.members()[0].docstring(),
@@ -1086,6 +1091,57 @@ fn unknown_children_of_telepathy_definitions() -> Result<(), Box<dyn Error>> {
 
     let elements: Vec<_> = warnings.iter().map(|w| w.element()).collect();
     assert_eq!(elements, ["tp:added", "tp:changed", "bogus"]);
+
+    Ok(())
+}
+
+#[test]
+fn borrowed_and_owned_trees() -> Result<(), Box<dyn Error>> {
+    let input = include_str!("data/sample_object0.xml");
+
+    // The zero-copy parse borrows from `input`.
+    let borrowed = Node::try_from(input)?;
+
+    // `to_owned` (borrowing) and `into_owned` (consuming) both detach the tree, and neither
+    // changes the content.
+    let owned: Node<'static> = borrowed.to_owned();
+    assert_eq!(borrowed, owned);
+    let into_owned: Node<'static> = borrowed.clone().into_owned();
+    assert_eq!(borrowed, into_owned);
+
+    // `from_reader` parses the same document into an owned tree directly.
+    let from_reader = Node::from_reader(input.as_bytes())?;
+    assert_eq!(borrowed, from_reader);
+
+    // A tree obtained through `into_owned` does not borrow from the buffer it was parsed from,
+    // so it can be returned from a function that drops that buffer.
+    fn parse_owned(xml: String) -> Node<'static> {
+        Node::try_from(xml.as_str()).unwrap().into_owned()
+    }
+    let owned_from_string = parse_owned(input.to_owned());
+    assert_eq!(borrowed, owned_from_string);
+
+    Ok(())
+}
+
+#[test]
+fn from_reader_is_owned() -> Result<(), Box<dyn Error>> {
+    // A document with escaped attribute values (which unescaping copies into owned strings) and
+    // a Telepathy docstring (which the zero-copy parse path borrows from the document).
+    let input = r#"
+        <node xmlns:tp="http://telepathy.freedesktop.org/wiki/DbusSpec#extensions-v0">
+            <interface name="org.test.testinterface">
+                <tp:docstring>Some &amp; documentation.</tp:docstring>
+                <annotation name="org.test.Escapes" value="&lt;b&gt;old&lt;/b&gt;"/>
+            </interface>
+        </node>
+    "#;
+
+    let node: Node<'static> = Node::from_reader(input.as_bytes())?;
+    let interface = &node.interfaces()[0];
+    // Docstrings are captured verbatim (not unescaped).
+    assert_eq!(interface.docstring(), Some("Some &amp; documentation."));
+    assert_eq!(interface.annotations()[0].value(), "<b>old</b>");
 
     Ok(())
 }

@@ -496,6 +496,50 @@ assert!(Option::<UniqueName<'_>>::from(name).is_none());
 
 A property getter typed as a name can therefore fail where it used to hand back a bogus name.
 
+### `zbus_xml` borrows from the document it parses
+
+`zbus_xml` no longer copies every string out of the introspection document.
+`Node::try_from(&str)` now borrows names, annotation values, argument names and Telepathy
+docstrings from the input where it can; the lifetime that `Node<'a>`, `Interface<'a>` and
+friends always carried is now meaningful.
+
+Consequently `Annotation`, `Arg` and the `telepathy` type-definition types (`TypeDef`,
+`SimpleType`, `Enum`, `EnumValue`, `Struct`, `Member`, `Mapping`) gained a lifetime parameter.
+Code that names them in a type position needs `<'_>` (or a named lifetime); code that only
+calls accessors keeps working, since they still return `&str`. A function that hands out a
+borrow from one of them now has two lifetimes to choose from, so it has to name the one it
+borrows from:
+
+```rust,noplayground
+use zbus_xml::{Arg, Node};
+
+// Was: fn describe(arg: &Arg) -> Option<&str>
+fn describe<'a>(arg: &'a Arg<'_>) -> Option<&'a str> {
+    arg.name()
+}
+
+// Keep the tree past the document it was parsed from.
+fn parse(xml: &str) -> zbus_xml::Result<Node<'static>> {
+    Ok(Node::try_from(xml)?.into_owned())
+}
+```
+
+`Node::from_reader` and `Node::from_reader_with_warnings` return `Node<'static>`: they read the
+whole input into memory, so the tree owns its strings. Callers that bound the result to
+`Node<'a>` keep compiling.
+
+To keep a borrowed tree (or part of it) past the document, use the new
+`into_owned()`/`to_owned()` methods on every tree type, mirroring `zbus::names` types. Strings
+in the tree are `zbus::Str`, the same type the name types wrap, so cloning an owned tree is
+cheap.
+
+Two leftovers of the quick-xml parser that 5.2 replaced are gone too. The tree types no longer
+implement `Serialize` and `Deserialize` (the derives described quick-xml's `@name` attribute
+convention, not a format anyone writes), and `zbus_xml::Signature` — a newtype that only
+existed to be deserialized from an owned string — is replaced by `zbus::Signature` itself.
+`Arg::ty`, `Property::ty` and the Telepathy `ty()` accessors return `&zbus::Signature`, so
+drop any `.inner()` or `.into_inner()` call on their result.
+
 ### `Optional<T>` compares the sentinel before converting
 
 `TryFrom<Value>` and `TryFrom<OwnedValue>` for `Optional<T>` check the incoming value against

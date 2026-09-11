@@ -23,22 +23,22 @@
 //!
 //! [Telepathy D-Bus introspection extensions]: https://telepathy.freedesktop.org/spec/
 
-use crate::Signature;
+use zbus::{Signature, Str};
 
 /// A named type defined through the Telepathy introspection extensions.
 #[derive(Debug, Clone, PartialEq)]
-pub enum TypeDef {
+pub enum TypeDef<'a> {
     /// A name given to a plain D-Bus type (`<tp:simple-type>`).
-    SimpleType(SimpleType),
+    SimpleType(SimpleType<'a>),
     /// An enumeration of the values of a type (`<tp:enum>`).
-    Enum(Enum),
+    Enum(Enum<'a>),
     /// A named structure (`<tp:struct>`).
-    Struct(Struct),
+    Struct(Struct<'a>),
     /// A named dictionary type (`<tp:mapping>`).
-    Mapping(Mapping),
+    Mapping(Mapping<'a>),
 }
 
-impl TypeDef {
+impl TypeDef<'_> {
     /// The name of the defined type, as referenced by `tp:type` attributes.
     pub fn name(&self) -> &str {
         match self {
@@ -60,25 +60,40 @@ impl TypeDef {
     }
 
     /// The D-Bus signature of the defined type.
-    pub fn signature(&self) -> zbus::Signature {
+    pub fn signature(&self) -> Signature {
         match self {
-            TypeDef::SimpleType(t) => t.ty().inner().clone(),
-            TypeDef::Enum(e) => e.ty().inner().clone(),
+            TypeDef::SimpleType(t) => t.ty().clone(),
+            TypeDef::Enum(e) => e.ty().clone(),
             TypeDef::Struct(s) => s.signature(),
             TypeDef::Mapping(m) => m.signature(),
+        }
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> TypeDef<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> TypeDef<'static> {
+        match self {
+            TypeDef::SimpleType(t) => TypeDef::SimpleType(t.into_owned()),
+            TypeDef::Enum(e) => TypeDef::Enum(e.into_owned()),
+            TypeDef::Struct(s) => TypeDef::Struct(s.into_owned()),
+            TypeDef::Mapping(m) => TypeDef::Mapping(m.into_owned()),
         }
     }
 }
 
 /// A name given to a plain D-Bus type (`<tp:simple-type>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct SimpleType {
-    pub(crate) name: String,
+pub struct SimpleType<'a> {
+    pub(crate) name: Str<'a>,
     pub(crate) ty: Signature,
-    pub(crate) docstring: Option<String>,
+    pub(crate) docstring: Option<Str<'a>>,
 }
 
-impl SimpleType {
+impl SimpleType<'_> {
     /// The name of the type.
     pub fn name(&self) -> &str {
         &self.name
@@ -93,18 +108,32 @@ impl SimpleType {
     pub fn docstring(&self) -> Option<&str> {
         self.docstring.as_deref()
     }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> SimpleType<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> SimpleType<'static> {
+        SimpleType {
+            name: self.name.into_owned(),
+            ty: self.ty,
+            docstring: self.docstring.map(Str::into_owned),
+        }
+    }
 }
 
 /// An enumeration of the values of a type (`<tp:enum>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Enum {
-    pub(crate) name: String,
+pub struct Enum<'a> {
+    pub(crate) name: Str<'a>,
     pub(crate) ty: Signature,
-    pub(crate) values: Vec<EnumValue>,
-    pub(crate) docstring: Option<String>,
+    pub(crate) values: Vec<EnumValue<'a>>,
+    pub(crate) docstring: Option<Str<'a>>,
 }
 
-impl Enum {
+impl<'a> Enum<'a> {
     /// The name of the type.
     pub fn name(&self) -> &str {
         &self.name
@@ -116,7 +145,7 @@ impl Enum {
     }
 
     /// The values of the enumeration.
-    pub fn values(&self) -> &[EnumValue] {
+    pub fn values(&self) -> &[EnumValue<'a>] {
         &self.values
     }
 
@@ -124,17 +153,32 @@ impl Enum {
     pub fn docstring(&self) -> Option<&str> {
         self.docstring.as_deref()
     }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Enum<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Enum<'static> {
+        Enum {
+            name: self.name.into_owned(),
+            ty: self.ty,
+            values: self.values.into_iter().map(EnumValue::into_owned).collect(),
+            docstring: self.docstring.map(Str::into_owned),
+        }
+    }
 }
 
 /// A single value of an [`Enum`] (`<tp:enumvalue>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct EnumValue {
-    pub(crate) suffix: String,
-    pub(crate) value: String,
-    pub(crate) docstring: Option<String>,
+pub struct EnumValue<'a> {
+    pub(crate) suffix: Str<'a>,
+    pub(crate) value: Str<'a>,
+    pub(crate) docstring: Option<Str<'a>>,
 }
 
-impl EnumValue {
+impl EnumValue<'_> {
     /// The name of the value.
     pub fn suffix(&self) -> &str {
         &self.suffix
@@ -149,24 +193,38 @@ impl EnumValue {
     pub fn docstring(&self) -> Option<&str> {
         self.docstring.as_deref()
     }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> EnumValue<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> EnumValue<'static> {
+        EnumValue {
+            suffix: self.suffix.into_owned(),
+            value: self.value.into_owned(),
+            docstring: self.docstring.map(Str::into_owned),
+        }
+    }
 }
 
 /// A named structure (`<tp:struct>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Struct {
-    pub(crate) name: String,
-    pub(crate) members: Vec<Member>,
-    pub(crate) docstring: Option<String>,
+pub struct Struct<'a> {
+    pub(crate) name: Str<'a>,
+    pub(crate) members: Vec<Member<'a>>,
+    pub(crate) docstring: Option<Str<'a>>,
 }
 
-impl Struct {
+impl<'a> Struct<'a> {
     /// The name of the type.
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The members of the structure.
-    pub fn members(&self) -> &[Member] {
+    pub fn members(&self) -> &[Member<'a>] {
         &self.members
     }
 
@@ -176,26 +234,40 @@ impl Struct {
     }
 
     /// The D-Bus signature of the structure.
-    pub fn signature(&self) -> zbus::Signature {
-        zbus::Signature::structure(
+    pub fn signature(&self) -> Signature {
+        Signature::structure(
             self.members
                 .iter()
-                .map(|m| m.ty().inner().clone())
+                .map(|m| m.ty().clone())
                 .collect::<Vec<_>>(),
         )
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Struct<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Struct<'static> {
+        Struct {
+            name: self.name.into_owned(),
+            members: self.members.into_iter().map(Member::into_owned).collect(),
+            docstring: self.docstring.map(Str::into_owned),
+        }
     }
 }
 
 /// A member of a [`Struct`] or [`Mapping`] (`<tp:member>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Member {
-    pub(crate) name: String,
+pub struct Member<'a> {
+    pub(crate) name: Str<'a>,
     pub(crate) ty: Signature,
-    pub(crate) tp_type: Option<String>,
-    pub(crate) docstring: Option<String>,
+    pub(crate) tp_type: Option<Str<'a>>,
+    pub(crate) docstring: Option<Str<'a>>,
 }
 
-impl Member {
+impl Member<'_> {
     /// The name of the member.
     pub fn name(&self) -> &str {
         &self.name
@@ -215,30 +287,45 @@ impl Member {
     pub fn docstring(&self) -> Option<&str> {
         self.docstring.as_deref()
     }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Member<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Member<'static> {
+        Member {
+            name: self.name.into_owned(),
+            ty: self.ty,
+            tp_type: self.tp_type.map(Str::into_owned),
+            docstring: self.docstring.map(Str::into_owned),
+        }
+    }
 }
 
 /// A named dictionary type (`<tp:mapping>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Mapping {
-    pub(crate) name: String,
-    pub(crate) key: Member,
-    pub(crate) value: Member,
-    pub(crate) docstring: Option<String>,
+pub struct Mapping<'a> {
+    pub(crate) name: Str<'a>,
+    pub(crate) key: Member<'a>,
+    pub(crate) value: Member<'a>,
+    pub(crate) docstring: Option<Str<'a>>,
 }
 
-impl Mapping {
+impl<'a> Mapping<'a> {
     /// The name of the type.
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The key member of the dictionary.
-    pub fn key(&self) -> &Member {
+    pub fn key(&self) -> &Member<'a> {
         &self.key
     }
 
     /// The value member of the dictionary.
-    pub fn value(&self) -> &Member {
+    pub fn value(&self) -> &Member<'a> {
         &self.value
     }
 
@@ -248,19 +335,31 @@ impl Mapping {
     }
 
     /// The D-Bus signature of the dictionary.
-    pub fn signature(&self) -> zbus::Signature {
-        zbus::Signature::dict(
-            self.key.ty().inner().clone(),
-            self.value.ty().inner().clone(),
-        )
+    pub fn signature(&self) -> Signature {
+        Signature::dict(self.key.ty().clone(), self.value.ty().clone())
+    }
+
+    /// Creates an owned clone of `self`.
+    pub fn to_owned(&self) -> Mapping<'static> {
+        self.clone().into_owned()
+    }
+
+    /// Converts `self` into an owned tree, copying the strings it borrows.
+    pub fn into_owned(self) -> Mapping<'static> {
+        Mapping {
+            name: self.name.into_owned(),
+            key: self.key.into_owned(),
+            value: self.value.into_owned(),
+            docstring: self.docstring.map(Str::into_owned),
+        }
     }
 }
 
 /// Whether `ty` is a basic (i. e. non-container) D-Bus type, as required for dictionary keys.
 pub(crate) fn is_basic(ty: &Signature) -> bool {
-    use zbus::Signature as S;
+    use Signature as S;
 
-    match ty.inner() {
+    match ty {
         S::U8
         | S::Bool
         | S::I16
