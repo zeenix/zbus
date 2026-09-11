@@ -735,7 +735,7 @@ enum EnumRepr {
 }
 
 fn enum_repr(e: &telepathy::Enum<'_>) -> Option<EnumRepr> {
-    match e.ty().inner() {
+    match e.ty() {
         Signature::U8 => Some(EnumRepr::Int("u8")),
         Signature::I16 => Some(EnumRepr::Int("i16")),
         Signature::U16 => Some(EnumRepr::Int("u16")),
@@ -754,7 +754,7 @@ fn passed_by_value(def: &TypeDef<'_>) -> bool {
         // Generated enums are `Copy`.
         TypeDef::Enum(_) => true,
         TypeDef::SimpleType(t) => matches!(
-            t.ty().inner(),
+            t.ty(),
             Signature::U8
                 | Signature::Bool
                 | Signature::I16
@@ -1003,7 +1003,7 @@ fn inputs_output_from_args(args: &[Arg<'_>], types: &Types<'_>) -> (String, Stri
                 let ty = types
                     .resolve(a.tp_type(), a.ty(), false)
                     .unwrap_or_else(|| to_rust_type(a.ty(), false, false));
-                let is_struct = matches!(a.ty().inner(), Signature::Structure(_));
+                let is_struct = matches!(a.ty(), Signature::Structure(_));
                 output.push(OutputArg { ty, is_struct });
             }
         }

@@ -19,13 +19,13 @@ use winnow::{
     token::{any, take_till, take_until, take_while},
 };
 use zbus::{
-    Str,
+    Signature, Str,
     names::{InterfaceName, MemberName, PropertyName},
 };
 
 use crate::{
     Annotation, Arg, ArgDirection, Interface, Method, Node, Property, PropertyAccess, Signal,
-    Signature, Warning,
+    Warning,
     error::{Error, Result, XmlError},
     telepathy::{self, TypeDef},
 };
@@ -662,12 +662,12 @@ impl SignatureAttr {
     fn parse(value: Option<&str>) -> Self {
         match value {
             None => SignatureAttr::Missing,
-            Some(value) => match zbus::Signature::try_from(value.as_bytes()) {
+            Some(value) => match Signature::try_from(value.as_bytes()) {
                 // The empty signature parses as `Unit`, which is only valid as a top-level
                 // signature — inside a composed signature (`Struct`/`Mapping::signature`) it
                 // produces invalid signatures.
-                Ok(zbus::Signature::Unit) | Err(_) => SignatureAttr::Invalid,
-                Ok(signature) => SignatureAttr::Value(Signature(signature)),
+                Ok(Signature::Unit) | Err(_) => SignatureAttr::Invalid,
+                Ok(signature) => SignatureAttr::Value(signature),
             },
         }
     }
@@ -1078,8 +1078,7 @@ impl<'i> Attrs<'i> {
 
     /// The required `type` attribute, parsed as a signature.
     fn signature(&self) -> PResult<Signature> {
-        zbus::Signature::try_from(self.required("type")?.as_bytes())
-            .map(Signature)
+        Signature::try_from(self.required("type")?.as_bytes())
             .map_err(|e| ParseError::domain(zbus::Error::from(e).into()))
     }
 

@@ -4,7 +4,7 @@ use zbus::Signature;
 use zbus_xml::{Arg, ArgDirection, Interface, Node, PropertyAccess};
 
 #[test]
-fn serde() -> Result<(), Box<dyn Error>> {
+fn sample_object() -> Result<(), Box<dyn Error>> {
     let example = include_str!("data/sample_object0.xml");
     let node_r = Node::from_reader(example.as_bytes())?;
     let node = Node::try_from(example)?;
@@ -59,7 +59,7 @@ fn multi_complete_arg_type() -> Result<(), Box<dyn Error>> {
 
     let node = Node::try_from(input)?;
     let arg = &node.interfaces()[0].methods()[0].args()[0];
-    let Signature::Structure(fields) = arg.ty().inner() else {
+    let Signature::Structure(fields) = arg.ty() else {
         panic!("expected `tt` to parse as a structure");
     };
 
@@ -928,7 +928,7 @@ fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
         panic!("expected a simple type on the node");
     };
     assert_eq!(id.name(), "Playlist_Id");
-    assert_eq!(*id.ty().inner(), Signature::ObjectPath);
+    assert_eq!(*id.ty(), Signature::ObjectPath);
     assert_eq!(id.docstring(), Some("Unique playlist identifier."));
 
     // Interface-level definitions.
@@ -943,7 +943,7 @@ fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
     };
 
     assert_eq!(ordering.name(), "Playlist_Ordering");
-    assert_eq!(*ordering.ty().inner(), Signature::Str);
+    assert_eq!(*ordering.ty(), Signature::Str);
     assert_eq!(ordering.docstring(), Some("The way to order playlists."));
     assert_eq!(ordering.values().len(), 2);
     assert_eq!(ordering.values()[0].suffix(), "Alphabetical");
@@ -963,7 +963,7 @@ fn telepathy_type_definitions() -> Result<(), Box<dyn Error>> {
     );
     assert_eq!(playlist.members().len(), 2);
     assert_eq!(playlist.members()[0].name(), "Id");
-    assert_eq!(*playlist.members()[0].ty().inner(), Signature::ObjectPath);
+    assert_eq!(*playlist.members()[0].ty(), Signature::ObjectPath);
     assert_eq!(playlist.members()[0].tp_type(), Some("Playlist_Id"));
     assert_eq!(
         playlist.members()[0].docstring(),

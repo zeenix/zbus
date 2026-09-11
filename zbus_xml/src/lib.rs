@@ -19,15 +19,13 @@ use xml::escape;
 
 pub mod telepathy;
 
-use serde::{Deserialize, Serialize};
 use std::{
     fmt,
     io::{BufWriter, Read, Write},
-    ops::Deref,
 };
 
 use zbus::{
-    Str,
+    Signature, Str,
     names::{InterfaceName, MemberName, PropertyName},
 };
 
@@ -97,11 +95,9 @@ impl fmt::Display for Warning {
 }
 
 /// Annotations are generic key/value pairs of metadata.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Annotation<'a> {
-    #[serde(rename = "@name", borrow)]
     name: Str<'a>,
-    #[serde(rename = "@value", borrow)]
     value: Str<'a>,
 }
 
@@ -140,11 +136,9 @@ impl Annotation<'_> {
 }
 
 /// A direction of an argument
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArgDirection {
-    #[serde(rename = "in")]
     In,
-    #[serde(rename = "out")]
     Out,
 }
 
@@ -158,19 +152,13 @@ impl ArgDirection {
 }
 
 /// An argument
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Arg<'a> {
-    #[serde(rename = "@name", borrow)]
     name: Option<Str<'a>>,
-    #[serde(rename = "@type")]
     ty: Signature,
-    #[serde(rename = "@direction")]
     direction: Option<ArgDirection>,
-    #[serde(rename = "annotation", default, borrow)]
     annotations: Vec<Annotation<'a>>,
-    #[serde(skip)]
     docstring: Option<Str<'a>>,
-    #[serde(skip)]
     tp_type: Option<Str<'a>>,
 }
 
@@ -254,15 +242,11 @@ impl<'a> Arg<'a> {
 }
 
 /// A method
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Method<'a> {
-    #[serde(rename = "@name", borrow)]
     name: MemberName<'a>,
-    #[serde(rename = "arg", default, borrow)]
     args: Vec<Arg<'a>>,
-    #[serde(rename = "annotation", default, borrow)]
     annotations: Vec<Annotation<'a>>,
-    #[serde(skip)]
     docstring: Option<Str<'a>>,
 }
 
@@ -327,16 +311,12 @@ impl<'a> Method<'a> {
 }
 
 /// A signal
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Signal<'a> {
-    #[serde(rename = "@name", borrow)]
     name: MemberName<'a>,
 
-    #[serde(rename = "arg", default, borrow)]
     args: Vec<Arg<'a>>,
-    #[serde(rename = "annotation", default, borrow)]
     annotations: Vec<Annotation<'a>>,
-    #[serde(skip)]
     docstring: Option<Str<'a>>,
 }
 
@@ -401,13 +381,10 @@ impl<'a> Signal<'a> {
 }
 
 /// The possible property access types
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropertyAccess {
-    #[serde(rename = "read")]
     Read,
-    #[serde(rename = "write")]
     Write,
-    #[serde(rename = "readwrite")]
     ReadWrite,
 }
 
@@ -430,21 +407,15 @@ impl PropertyAccess {
 }
 
 /// A property
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Property<'a> {
-    #[serde(rename = "@name", borrow)]
     name: PropertyName<'a>,
 
-    #[serde(rename = "@type")]
     ty: Signature,
-    #[serde(rename = "@access")]
     access: PropertyAccess,
 
-    #[serde(rename = "annotation", default, borrow)]
     annotations: Vec<Annotation<'a>>,
-    #[serde(skip)]
     docstring: Option<Str<'a>>,
-    #[serde(skip)]
     tp_type: Option<Str<'a>>,
 }
 
@@ -527,22 +498,15 @@ impl<'a> Property<'a> {
 }
 
 /// An interface
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Interface<'a> {
-    #[serde(rename = "@name", borrow)]
     name: InterfaceName<'a>,
 
-    #[serde(rename = "method", default)]
     methods: Vec<Method<'a>>,
-    #[serde(rename = "property", default)]
     properties: Vec<Property<'a>>,
-    #[serde(rename = "signal", default)]
     signals: Vec<Signal<'a>>,
-    #[serde(rename = "annotation", default, borrow)]
     annotations: Vec<Annotation<'a>>,
-    #[serde(skip)]
     docstring: Option<Str<'a>>,
-    #[serde(skip)]
     telepathy_types: Vec<telepathy::TypeDef<'a>>,
 }
 
@@ -643,18 +607,13 @@ impl<'a> Interface<'a> {
 }
 
 /// An introspection tree node (typically the root of the XML document).
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Node<'a> {
-    #[serde(rename = "@name", borrow)]
     name: Option<Str<'a>>,
 
-    #[serde(rename = "interface", default, borrow)]
     interfaces: Vec<Interface<'a>>,
-    #[serde(rename = "node", default, borrow)]
     nodes: Vec<Node<'a>>,
-    #[serde(skip)]
     docstring: Option<Str<'a>>,
-    #[serde(skip)]
     telepathy_types: Vec<telepathy::TypeDef<'a>>,
 }
 
@@ -824,51 +783,5 @@ impl<'a> TryFrom<&'a str> for Node<'a> {
     /// it. Call [`Node::into_owned`] to detach the tree from `s` and keep it around for longer.
     fn try_from(s: &'a str) -> Result<Node<'a>> {
         xml::parse(s)
-    }
-}
-
-/// A thin wrapper around [`zbus::Signature`].
-///
-/// This is to allow `Signature` to be deserialized from an owned string, which is what XML
-/// deserializers typically produce.
-#[derive(Debug, Serialize, Clone, PartialEq)]
-pub struct Signature(zbus::Signature);
-
-impl Signature {
-    /// The inner [`zbus::Signature`].
-    pub fn inner(&self) -> &zbus::Signature {
-        &self.0
-    }
-
-    /// Convert this `Signature` into the inner [`zbus::Signature`].
-    pub fn into_inner(self) -> zbus::Signature {
-        self.0
-    }
-}
-
-impl<'de> serde::de::Deserialize<'de> for Signature {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        String::deserialize(deserializer).and_then(|s| {
-            zbus::Signature::try_from(s.as_bytes())
-                .map_err(serde::de::Error::custom)
-                .map(Signature)
-        })
-    }
-}
-
-impl Deref for Signature {
-    type Target = zbus::Signature;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner()
-    }
-}
-
-impl PartialEq<str> for Signature {
-    fn eq(&self, other: &str) -> bool {
-        self.0 == other
     }
 }

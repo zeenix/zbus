@@ -23,8 +23,7 @@
 //!
 //! [Telepathy D-Bus introspection extensions]: https://telepathy.freedesktop.org/spec/
 
-use crate::Signature;
-use zbus::Str;
+use zbus::{Signature, Str};
 
 /// A named type defined through the Telepathy introspection extensions.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,10 +60,10 @@ impl TypeDef<'_> {
     }
 
     /// The D-Bus signature of the defined type.
-    pub fn signature(&self) -> zbus::Signature {
+    pub fn signature(&self) -> Signature {
         match self {
-            TypeDef::SimpleType(t) => t.ty().inner().clone(),
-            TypeDef::Enum(e) => e.ty().inner().clone(),
+            TypeDef::SimpleType(t) => t.ty().clone(),
+            TypeDef::Enum(e) => e.ty().clone(),
             TypeDef::Struct(s) => s.signature(),
             TypeDef::Mapping(m) => m.signature(),
         }
@@ -235,11 +234,11 @@ impl<'a> Struct<'a> {
     }
 
     /// The D-Bus signature of the structure.
-    pub fn signature(&self) -> zbus::Signature {
-        zbus::Signature::structure(
+    pub fn signature(&self) -> Signature {
+        Signature::structure(
             self.members
                 .iter()
-                .map(|m| m.ty().inner().clone())
+                .map(|m| m.ty().clone())
                 .collect::<Vec<_>>(),
         )
     }
@@ -336,11 +335,8 @@ impl<'a> Mapping<'a> {
     }
 
     /// The D-Bus signature of the dictionary.
-    pub fn signature(&self) -> zbus::Signature {
-        zbus::Signature::dict(
-            self.key.ty().inner().clone(),
-            self.value.ty().inner().clone(),
-        )
+    pub fn signature(&self) -> Signature {
+        Signature::dict(self.key.ty().clone(), self.value.ty().clone())
     }
 
     /// Creates an owned clone of `self`.
@@ -361,9 +357,9 @@ impl<'a> Mapping<'a> {
 
 /// Whether `ty` is a basic (i. e. non-container) D-Bus type, as required for dictionary keys.
 pub(crate) fn is_basic(ty: &Signature) -> bool {
-    use zbus::Signature as S;
+    use Signature as S;
 
-    match ty.inner() {
+    match ty {
         S::U8
         | S::Bool
         | S::I16
