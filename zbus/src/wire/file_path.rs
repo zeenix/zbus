@@ -26,6 +26,7 @@ use crate::{Error, Result, Type};
 /// [`TryFrom`] implementations. On unix, where paths are byte strings just like this type, they
 /// preserve the bytes exactly and never fail. On other platforms no such lossless mapping exists,
 /// so they succeed only for valid UTF-8 and return [`Error::Utf8`] otherwise.
+/// [`as_c_str`](Self::as_c_str) hands back the bytes as they are on every platform.
 ///
 /// # Examples:
 ///
@@ -50,6 +51,14 @@ pub struct FilePath<'f>(Cow<'f, CStr>);
 impl<'f> FilePath<'f> {
     pub fn new(cow: Cow<'f, CStr>) -> Self {
         Self(cow)
+    }
+
+    /// The path as a nul-terminated byte string.
+    ///
+    /// This is the lossless view of the path on every platform; the conversions to the standard
+    /// path types are lossless on unix only.
+    pub fn as_c_str(&self) -> &CStr {
+        &self.0
     }
 
     /// Returns a lossy UTF-8 representation of the file path.
@@ -126,6 +135,11 @@ impl<'f> AsRef<FilePath<'f>> for FilePath<'f> {
     }
 }
 
+impl AsRef<CStr> for FilePath<'_> {
+    fn as_ref(&self) -> &CStr {
+        self.as_c_str()
+    }
+}
 impl<'f> TryFrom<&'f FilePath<'f>> for &'f OsStr {
     type Error = Error;
 
@@ -235,6 +249,16 @@ mod file_path_test {
         assert_eq!(p4, p5);
         assert_eq!(p5, p6);
         assert_eq!(p5, p7);
+    }
+
+    /// The `CStr` view is lossless everywhere, UTF-8 or not.
+    #[test]
+    fn as_c_str_test() {
+        let bytes = c"/hello/\xff\xfe/world";
+        let file_path = FilePath::from(bytes);
+
+        assert_eq!(file_path.as_c_str(), bytes);
+        assert_eq!(<FilePath<'_> as AsRef<CStr>>::as_ref(&file_path), bytes);
     }
 
     #[test]

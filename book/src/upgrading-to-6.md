@@ -554,6 +554,10 @@ The same applies to `OsString::from(file_path)`, `<&Path>::from(&file_path)` and
 arm is unreachable in practice, but the signature is the same everywhere so that portable code
 has one form to write.
 
+Code that needs the raw path off unix has `FilePath::as_c_str()`, which is new: it returns the
+nul-terminated bytes as they are on every platform, and `FilePath` implements `AsRef<CStr>` to
+match.
+
 Conversions into `FilePath` — `From<&Path>`, `From<PathBuf>`, `From<&OsStr>`, `From<OsString>`,
 `From<&CStr>`, `From<CString>`, `From<&str>` and so on — are unchanged, and
 `FilePath::to_string_lossy()` remains the explicit lossy option.
