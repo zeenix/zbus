@@ -5,7 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::Type;
+#[cfg(unix)]
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+use crate::{Error, Result, Type};
 
 /// File name represented as a nul-terminated byte array.
 ///
@@ -16,6 +19,13 @@ use crate::Type;
 ///
 /// To solve this problem, this type is provided which encodes the underlying file path as a
 /// null-terminated byte array.
+///
+/// # Converting back to standard types
+///
+/// The conversions to [`OsString`], [`PathBuf`], [`&OsStr`](OsStr) and [`&Path`](Path) are
+/// [`TryFrom`] implementations. On unix, where paths are byte strings just like this type, they
+/// preserve the bytes exactly and never fail. On other platforms no such lossless mapping exists,
+/// so they succeed only for valid UTF-8 and return [`Error::Utf8`] otherwise.
 ///
 /// # Examples:
 ///
@@ -116,27 +126,49 @@ impl<'f> AsRef<FilePath<'f>> for FilePath<'f> {
     }
 }
 
-impl From<FilePath<'_>> for OsString {
-    fn from(value: FilePath<'_>) -> Self {
-        // SAFETY: user is responsible of handling conversion from [FilePath] to [OsString]
-        // since FilePath is a set of null terminated bytes and it's interpretations mainly
-        // depends on the underlying platform.
-        // see [std::ffi::os_str::OsString::from_encoded_bytes_unchecked]
-        unsafe { OsString::from_encoded_bytes_unchecked(value.0.to_bytes().to_vec()) }
+impl<'f> TryFrom<&'f FilePath<'f>> for &'f OsStr {
+    type Error = Error;
+
+    fn try_from(value: &'f FilePath<'f>) -> Result<Self> {
+        #[cfg(unix)]
+        {
+            Ok(OsStr::from_bytes(value.0.to_bytes()))
+        }
+        #[cfg(not(unix))]
+        {
+            value.0.to_str().map(OsStr::new).map_err(Error::Utf8)
+        }
     }
 }
 
-impl<'f> From<&'f FilePath<'f>> for &'f Path {
-    fn from(value: &'f FilePath<'f>) -> Self {
-        // This method should fail if FilePath does not represent UTF-8 valid chars
-        // since [Path] is akin to [str], hence the unwrap.
-        Path::new(value.0.as_ref().to_str().unwrap())
+impl<'f> TryFrom<&'f FilePath<'f>> for &'f Path {
+    type Error = Error;
+
+    fn try_from(value: &'f FilePath<'f>) -> Result<Self> {
+        <&OsStr>::try_from(value).map(Path::new)
     }
 }
 
-impl<'f> From<FilePath<'f>> for PathBuf {
-    fn from(value: FilePath<'f>) -> Self {
-        PathBuf::from(value.0.to_string_lossy().to_string())
+impl TryFrom<FilePath<'_>> for OsString {
+    type Error = Error;
+
+    fn try_from(value: FilePath<'_>) -> Result<Self> {
+        #[cfg(unix)]
+        {
+            Ok(OsString::from_vec(value.0.into_owned().into_bytes()))
+        }
+        #[cfg(not(unix))]
+        {
+            <&OsStr>::try_from(&value).map(OsString::from)
+        }
+    }
+}
+
+impl TryFrom<FilePath<'_>> for PathBuf {
+    type Error = Error;
+
+    fn try_from(value: FilePath<'_>) -> Result<Self> {
+        OsString::try_from(value).map(PathBuf::from)
     }
 }
 
@@ -214,19 +246,49 @@ mod file_path_test {
     }
 
     #[test]
-    fn into_test() {
-        let first = PathBuf::from("/hello/world");
-        let third = OsString::from("/hello/world");
-        let fifth = Path::new("/hello/world");
-        let p = FilePath::from(first.clone());
-        let p2 = FilePath::from(third.clone());
-        let p3 = FilePath::from(fifth);
-        let second: PathBuf = p.into();
-        let forth: OsString = p2.into();
-        let sixth: &Path = (&p3).into();
-        assert_eq!(first, second);
-        assert_eq!(third, forth);
-        assert_eq!(fifth, sixth);
+    fn try_into_test() {
+        let path = Path::new("/hello/world");
+        let file_path = FilePath::from(path);
+
+        assert_eq!(<&OsStr>::try_from(&file_path).unwrap(), path.as_os_str());
+        assert_eq!(<&Path>::try_from(&file_path).unwrap(), path);
+        assert_eq!(
+            OsString::try_from(file_path.clone()).unwrap(),
+            path.as_os_str()
+        );
+        assert_eq!(PathBuf::try_from(file_path).unwrap(), path);
+    }
+
+    /// Arbitrary bytes are exactly what the unix conversions exist for, so nothing may be lost or
+    /// replaced along the way.
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_try_into_test() {
+        let os_str = OsStr::from_bytes(b"/hello/\xff\xfe/world");
+        let file_path = FilePath::from(os_str);
+
+        assert_eq!(<&OsStr>::try_from(&file_path).unwrap(), os_str);
+        assert_eq!(<&Path>::try_from(&file_path).unwrap(), Path::new(os_str));
+        assert_eq!(OsString::try_from(file_path.clone()).unwrap(), os_str);
+        assert_eq!(PathBuf::try_from(file_path).unwrap(), Path::new(os_str));
+    }
+
+    /// Off unix only UTF-8 gets through.
+    #[cfg(not(unix))]
+    #[test]
+    fn non_utf8_try_into_test() {
+        let file_path = FilePath::from(c"/hello/\xff\xfe/world");
+
+        assert!(matches!(
+            <&OsStr>::try_from(&file_path),
+            Err(Error::Utf8(_))
+        ));
+        assert!(matches!(<&Path>::try_from(&file_path), Err(Error::Utf8(_))));
+        assert!(matches!(
+            OsString::try_from(file_path.clone()),
+            Err(Error::Utf8(_))
+        ));
+        assert!(matches!(PathBuf::try_from(file_path), Err(Error::Utf8(_))));
     }
 
     #[test]
