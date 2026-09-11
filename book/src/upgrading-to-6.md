@@ -315,7 +315,7 @@ The compatibility module is removed in zbus 7.0.
 
 ## Other changes in 6.0
 
-Seven more things break in 6.0 without being a consequence of the crate merge. They reach code
+More things break in 6.0 without being a consequence of the crate merge. They reach code
 that never mentioned `zvariant` or `zbus_names`.
 
 ### Builder setters defer their errors to `build()`
@@ -511,6 +511,56 @@ the empty string, and the sentinel now maps to `None` without being converted at
 The public `NoneValue::NoneType` associated type for each owned name type is now `String` rather
 than `&'static str`. This allows `Optional<Owned*Name>` to implement `DeserializeOwned` without
 changing its wire encoding.
+
+### `FilePath` converts back to std types with `TryFrom`
+
+`zbus::FilePath` wraps a nul-terminated byte array (D-Bus signature `ay`), because a file path
+need not be valid UTF-8. Its conversions back to the std path types used to assume otherwise:
+`From<FilePath> for OsString` built the `OsString` with `OsString::from_encoded_bytes_unchecked`,
+undefined behaviour on Windows for bytes that are not valid WTF-8; `From<&FilePath> for &Path`
+panicked on a non-UTF-8 path, the case the type exists for; and `From<FilePath> for PathBuf` went
+through `to_string_lossy()`, silently replacing invalid bytes with `U+FFFD`.
+
+The four conversions — to `OsString`, `PathBuf`, `&Path` and, new, `&OsStr` — are `TryFrom`
+impls now, with `type Error = zbus::Error` on every platform. On unix, where `OsStr` is a byte
+string like `FilePath` itself, they hand back the original bytes and never fail. Elsewhere no
+lossless mapping to `OsStr` exists, so they succeed only when the bytes are valid UTF-8 and return
+`Error::Utf8` otherwise.
+
+Before, this no longer compiles:
+
+```rust,compile_fail,noplayground
+use std::path::PathBuf;
+use zbus::FilePath;
+
+fn path_buf(file_path: FilePath<'_>) -> PathBuf {
+    PathBuf::from(file_path)
+}
+```
+
+After:
+
+```rust,noplayground
+use std::path::PathBuf;
+use zbus::FilePath;
+
+fn path_buf(file_path: FilePath<'_>) -> zbus::Result<PathBuf> {
+    PathBuf::try_from(file_path)
+}
+```
+
+The same applies to `OsString::from(file_path)`, `<&Path>::from(&file_path)` and the matching
+`.into()` calls: spell them `try_from` or `try_into` and handle the `Result`. On unix the error
+arm is unreachable in practice, but the signature is the same everywhere so that portable code
+has one form to write.
+
+Code that needs the raw path off unix has `FilePath::as_c_str()`, which is new: it returns the
+nul-terminated bytes as they are on every platform, and `FilePath` implements `AsRef<CStr>` to
+match.
+
+Conversions into `FilePath` — `From<&Path>`, `From<PathBuf>`, `From<&OsStr>`, `From<OsString>`,
+`From<&CStr>`, `From<CString>`, `From<&str>` and so on — are unchanged, and
+`FilePath::to_string_lossy()` remains the explicit lossy option.
 
 ### Proxy and service API are separate features
 
