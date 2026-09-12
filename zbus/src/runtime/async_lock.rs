@@ -1,3 +1,7 @@
+#[cfg(not(any(feature = "async-io", feature = "tokio")))]
+pub(crate) use super::sync::{Mutex, Semaphore, SemaphorePermit};
+#[cfg(all(not(any(feature = "async-io", feature = "tokio")), feature = "service"))]
+pub(crate) use super::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 #[cfg(feature = "async-io")]
 pub(crate) use async_lock::Mutex;
 #[cfg(all(feature = "async-io", feature = "service"))]
@@ -13,6 +17,7 @@ pub(crate) struct Semaphore(async_lock::Semaphore);
 #[cfg(all(feature = "tokio", not(feature = "async-io")))]
 pub(crate) struct Semaphore(tokio::sync::Semaphore);
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 impl Semaphore {
     pub const fn new(permits: usize) -> Self {
         #[cfg(feature = "async-io")]

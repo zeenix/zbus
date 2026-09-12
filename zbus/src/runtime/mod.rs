@@ -65,6 +65,8 @@ pub use async_drop::AsyncDrop;
 mod executor;
 pub use executor::{Executor, Task};
 pub(crate) mod async_lock;
+#[cfg(any(test, not(any(feature = "async-io", feature = "tokio"))))]
+pub(crate) mod sync;
 pub(crate) mod timeout;
 
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands.
