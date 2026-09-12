@@ -66,6 +66,8 @@ mod executor;
 pub use executor::{Executor, Task};
 pub(crate) mod async_lock;
 #[cfg(any(test, not(any(feature = "async-io", feature = "tokio"))))]
+pub(crate) mod scheduler;
+#[cfg(any(test, not(any(feature = "async-io", feature = "tokio"))))]
 pub(crate) mod sync;
 pub(crate) mod timeout;
 
