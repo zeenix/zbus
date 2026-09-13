@@ -91,9 +91,9 @@ Four things to know about the features:
 * `arrayvec` was a zvariant-only feature and is available in zbus now.
 * `comms` pulls in the `uuid` crate — it parses D-Bus GUIDs — without turning on zbus's own
   `uuid` feature, so the `Uuid` wire impls stay opt-in, as they were.
-* Any D-Bus feature (`async-io`, `tokio`, `blocking-api`, `p2p`, `bus-impl`, `vsock`,
-  `tokio-vsock`) enables `comms`. In a workspace where one crate asks for the wire-only build
-  and another for the full one, Cargo's feature unification gives everybody the full build.
+* Any D-Bus feature (`async-io`, `tokio`, `async-lock`, `blocking-api`, `p2p`, `bus-impl`,
+  `vsock`, `tokio-vsock`) enables `comms`. In a workspace where one crate asks for the wire-only
+  build and another for the full one, Cargo's feature unification gives everybody the full build.
   That is a build-size question only; nothing behaves differently.
 
 A crate that depends on `zbus_macros` directly keeps `proxy`, `interface` and `DBusError`
@@ -425,7 +425,7 @@ available; enabling one feature no longer changes a constructor supplied by the 
 stream's constructor explicitly chooses its I/O backend. For address-created async connections,
 transports supported by both backends instead choose at run time: tokio when the current thread is
 inside a tokio runtime, and `async-io` otherwise. The stream constructor does not override the
-internal task executor selected while building the connection.
+runtime selected while building the connection.
 
 ### The encoding context has no format
 
@@ -660,6 +660,50 @@ zbus = { version = "6", default-features = false, features = ["tokio", "object-m
 streams only need `proxy`, as before.
 
 [`fdo::ObjectManager`]: https://docs.rs/zbus/6/zbus/fdo/struct.ObjectManager.html
+
+### `Builder::runtime` replaces `internal_executor`
+
+A connection used to pick its executor by cargo feature, with
+`Builder::internal_executor(false)` and `Connection::executor().tick()` as the way to drive
+zbus's tasks from another runtime. That pair is gone, together with the `Executor` and `Task`
+types. A connection now takes its timers and its internal tasks from one runtime:
+Tokio when the `tokio` feature is on and a runtime is current, otherwise the built-in async-io
+runtime, or whatever you pass to `Builder::runtime`:
+
+```rust,no_run
+use zbus::{Connection, Result, connection::Builder, runtime::traits::Runtime};
+
+async fn connect(runtime: impl Runtime) -> Result<Connection> {
+    Builder::session().runtime(runtime).build().await
+}
+```
+
+An implementation of `zbus::runtime::traits::Runtime` supplies timers and task spawning; a
+readiness registration is part of the trait too, for the socket path a later release moves onto
+the runtime. Every async runtime already has all of these. zbus never drives the runtime, so the
+tasks a connection spawns only run while the runtime runs them. The two built-in backends are
+implementations of the same trait, picked by cargo feature, so this method is for the runtime
+your application already has. Nothing changes for connections built without `runtime`.
+
+zbus's own async locks are not part of the trait: they still come from a cargo feature, either
+`async-lock` (which `async-io` enables, as before) or `tokio`. `async-lock` is a feature you can
+name on its own now, which is what a build on a runtime of its own does; with neither of the two,
+zbus does not compile.
+
+A runtime may also abort or drop a task it was given, so the connection no longer relies on its
+socket-reader task running to its end: however that task stops, `Connection::closed()` resolves,
+pending method calls fail and every `MessageStream` on the connection ends. A stream therefore
+also ends once `Connection::close()` has been called, after yielding whatever it already held.
+
+A build with `comms` but neither `async-io` nor `tokio` is now valid, as long as it names
+`async-lock` for the locks; every connection in it needs a `runtime`, and until the standard
+transports learn to create sockets on it, such a build connects over a socket you supply.
+
+Two things about such a build. `zbus::blocking` only works there while the runtime's loop runs on
+another thread: a blocking call made from the loop's own thread deadlocks, since the connection it
+waits on only makes progress while that loop runs. And the examples rendered throughout this book
+and zbus's API documentation connect to a bus without naming a runtime, so they need one of the
+built-in backends and report `Error::Unsupported` in a build that has neither.
 
 ### Logging through `tracing` is a feature
 
