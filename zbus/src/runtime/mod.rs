@@ -44,20 +44,13 @@ pub(crate) use select_runtime;
 
 /// Whether zbus should use tokio (rather than `async-io`) for its I/O.
 ///
-/// Only consulted when `async-io` is compiled in, since that's the only time there's a choice. With
-/// both backends we use tokio when a tokio runtime is active on the current thread; with only
-/// `async-io` the answer is always `false`. This keeps the features additive: enabling `tokio`
-/// elsewhere in the dependency graph doesn't force every zbus user into a tokio runtime.
-#[cfg(feature = "async-io")]
+/// Only compiled in when both backends are, since that's the only time there's a choice: we use
+/// tokio when a tokio runtime is active on the current thread. This keeps the features additive:
+/// enabling `tokio` elsewhere in the dependency graph doesn't force every zbus user into a tokio
+/// runtime.
+#[cfg(all(feature = "async-io", feature = "tokio"))]
 pub(crate) fn use_tokio() -> bool {
-    #[cfg(feature = "tokio")]
-    {
-        tokio::runtime::Handle::try_current().is_ok()
-    }
-    #[cfg(not(feature = "tokio"))]
-    {
-        false
-    }
+    tokio::runtime::Handle::try_current().is_ok()
 }
 
 mod async_drop;
