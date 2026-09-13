@@ -191,6 +191,7 @@ async-io.workspace = true
 async-executor.workspace = true
 async-task.workspace = true
 blocking.workspace = true
+polling.workspace = true
 
 [package.metadata.docs.rs]
 # we can't use:
