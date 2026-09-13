@@ -20,14 +20,10 @@ use crate::log::debug;
 use crate::{
     DBusError, Error, Executor, MatchRule, ObjectPath, OwnedGuid, OwnedMatchRule, Result, Task,
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
-    is_flatpak,
     log::{Instrument, info, info_span, trace, trace_span, warn},
     message::{self, Flags, Message, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
-    runtime::{
-        async_lock::{Mutex, Semaphore, SemaphorePermit},
-        timeout::timeout,
-    },
+    runtime::{async_lock::Mutex, timeout::timeout},
 };
 
 mod builder;
@@ -332,8 +328,6 @@ impl Connection {
         M::Error: Into<Error>,
         B: serde::ser::Serialize + crate::DynamicType,
     {
-        let _permit = acquire_serial_num_semaphore().await;
-
         let destination = destination
             .map(TryInto::try_into)
             .transpose()
@@ -421,8 +415,6 @@ impl Connection {
         M::Error: Into<Error>,
         B: serde::ser::Serialize + crate::DynamicType,
     {
-        let _permit = acquire_serial_num_semaphore().await;
-
         let destination = destination
             .map(TryInto::try_into)
             .transpose()
@@ -466,8 +458,6 @@ impl Connection {
     where
         B: serde::ser::Serialize + crate::DynamicType,
     {
-        let _permit = acquire_serial_num_semaphore().await;
-
         let m = self.reply_message(Message::method_return(call), &mut |b| b.build(body))?;
         self.send(&m).await
     }
@@ -487,8 +477,6 @@ impl Connection {
         E: TryInto<ErrorName<'e>>,
         E::Error: Into<Error>,
     {
-        let _permit = acquire_serial_num_semaphore().await;
-
         let m = self.reply_message(Message::error(call, error_name), &mut |b| b.build(body))?;
         self.send(&m).await
     }
@@ -517,8 +505,6 @@ impl Connection {
         call: &zbus::message::Header<'_>,
         err: impl DBusError,
     ) -> Result<()> {
-        let _permit = acquire_serial_num_semaphore().await;
-
         let m = err.create_reply(call)?;
         self.send(&m).await
     }
@@ -1482,20 +1468,6 @@ enum NameStatus {
     Owner(#[allow(unused)] Option<Task<()>>),
     // The task waits for name acquisition signal.
     Queued(#[allow(unused)] Task<()>),
-}
-
-static SERIAL_NUM_SEMAPHORE: Semaphore = Semaphore::new(1);
-
-// Make message creation and sending an atomic operation, using an async
-// semaphore if flatpak portal is detected to workaround an xdg-dbus-proxy issue:
-//
-// https://github.com/flatpak/xdg-dbus-proxy/issues/46
-async fn acquire_serial_num_semaphore() -> Option<SemaphorePermit<'static>> {
-    if is_flatpak() {
-        Some(SERIAL_NUM_SEMAPHORE.acquire().await)
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
