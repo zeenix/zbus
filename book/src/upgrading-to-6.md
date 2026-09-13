@@ -685,6 +685,22 @@ sets up the properties cache, whatever the `CacheProperties` setting, so a progr
 have none carries no cache code at all. A hand-written `Defaults` implementation can leave the
 constant at its default of `true`.
 
+### The xdg-dbus-proxy workarounds are gone
+
+zbus 5 checked the `FLATPAK_ID` environment variable and, when it was set, worked around two bugs in
+xdg-dbus-proxy, the proxy Flatpak puts between a sandboxed app and the bus: it did not pipeline the
+Unix FD negotiation during the handshake ([xdg-dbus-proxy#21]) and it serialized message creation
+and sending behind a global lock ([xdg-dbus-proxy#46]). Both were fixed in xdg-dbus-proxy 0.1.6,
+released in 2024. zbus 6 drops the workarounds and stops special-casing Flatpak altogether, so a
+sandboxed app gets the same pipelined handshake and lock-free sending as everything else.
+
+If your app runs in a Flatpak whose runtime still ships an older xdg-dbus-proxy, connections can
+fail or messages can come out mis-serialized. Update the runtime, get the fix backported, or stay on
+zbus 5 until you can.
+
+[xdg-dbus-proxy#21]: https://github.com/flatpak/xdg-dbus-proxy/issues/21
+[xdg-dbus-proxy#46]: https://github.com/flatpak/xdg-dbus-proxy/issues/46
+
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated
