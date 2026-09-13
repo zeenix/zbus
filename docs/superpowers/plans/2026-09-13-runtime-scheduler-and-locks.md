@@ -9,7 +9,7 @@ without async-executor or async-lock, and make `Executor`/`Task` enums over the 
 and that scheduler.
 
 **Architecture:** Two new private modules under `zbus::runtime`. `sync` holds `Mutex`, `RwLock`
-and `Semaphore` over `event-listener`; `scheduler` holds a ready-queue scheduler with
+and `Semaphore` built on `event-listener`; `scheduler` holds a ready-queue scheduler with
 cancel-on-drop join handles, no threads and no `unsafe`. Both are compiled only in builds with
 neither `async-io` nor `tokio` (which cannot yet be built, see below) and under `cfg(test)`
 everywhere, so their unit tests run in every configuration. `Executor` and `Task` gain a
@@ -20,6 +20,23 @@ dependencies), std `Mutex`/`VecDeque`/`task::Wake`.
 
 **Spec:** `docs/superpowers/specs/2026-09-12-external-runtime-design.md`, sections "Executor and
 tasks" and "Feature and dependency model"; decision 2.
+
+## Corrections made during execution
+
+The branch (PR #1963) deviates from the listings below in these ways; the spec records them too.
+
+- `sync.rs`: the async-lock/tokio `Semaphore` wrapper in `async_lock.rs` had to be gated on
+  `any(feature = "async-io", feature = "tokio")`; `SemaphorePermit::drop` uses
+  `notify_additional(1)`; the cancellation tests own their futures with `Box::pin` (dropping a
+  `pin!` binding drops only the reference); `RwState` lost its unused `Default`; the module doc
+  notes the re-entrant `read()` hazard and `RwLock`'s field-less `Debug`.
+- `scheduler.rs`: the `FinishOnDrop` marker is created before the async block and moved in;
+  `wake_drivers` and `FinishOnDrop::drop` release their locks before waking; `Scheduler::drop`
+  drops futures outside the slot lock; a `PanicGuard` forgets a task whose poll panicked; the
+  re-arm test uses immediately ready tasks and a single `block_on`; every test that can hang has
+  a timeout.
+- `executor.rs`: `use_tokio()` is gated on both backends, since the new `Executor::new` is its
+  only single-backend-adjacent caller and it would otherwise be dead code with `async-io` alone.
 
 ## Global Constraints
 
@@ -63,7 +80,7 @@ Work on `runtime-scheduler`, created from the rename branch (PR #1962), after a 
 
 | File | Responsibility after this PR |
 | --- | --- |
-| `zbus/src/runtime/sync.rs` | Private `Mutex`, `RwLock`, `Semaphore` over `event-listener` |
+| `zbus/src/runtime/sync.rs` | Private `Mutex`, `RwLock`, `Semaphore` built on `event-listener` |
 | `zbus/src/runtime/scheduler.rs` | Private `Scheduler` and `JoinHandle` |
 | `zbus/src/runtime/async_lock.rs` | Selects async-lock, `tokio::sync` or `sync` per build |
 | `zbus/src/runtime/executor.rs` | `Executor`/`Task` as enums; `Executor::with_scheduler` |
@@ -1713,7 +1730,7 @@ nothing.
 Second of four PRs for #1960 (design: #1961). Based on #1962; only the last three commits are
 new.
 
-- `runtime::sync`: `Mutex`, writer-preferring `RwLock` and `Semaphore` over `event-listener`,
+- `runtime::sync`: `Mutex`, writer-preferring `RwLock` and `Semaphore` built on `event-listener`,
   with exactly the API the crate uses.
 - `runtime::scheduler`: a ready-queue task scheduler with cancel-on-drop join handles, bounded
   batches and no threads of its own.

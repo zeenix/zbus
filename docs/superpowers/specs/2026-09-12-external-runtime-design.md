@@ -61,7 +61,7 @@ safe only for call sites that are independent of the socket's reactor.
    `async-executor`, `async-task`, `async-lock`, `async-process` and `blocking`. External
    connections run zbus's tasks on a private scheduler (`runtime::scheduler`) that `Run` polls,
    whichever backends are compiled in. External-only builds use private locks
-   (`runtime::sync`) over `event-listener`, which is already a shared dependency; builds with a
+   (`runtime::sync`) built on `event-listener`, already a shared dependency; builds with a
    backend keep that backend's locks until #1959.
 3. **One ancillary hook, `spawn_blocking`.** It covers DNS, NSS group lookup, nonce-file reads and
    subprocess work. Hosts that do not implement it get `Error::Unsupported` before zbus starts any
@@ -93,7 +93,7 @@ zbus/src/runtime/
 ├── driver.rs       # DriverState, Run (Run is re-exported from `connection`)
 ├── timeout.rs      # timeout over the connection's runtime
 ├── async_lock.rs   # selects async-lock, tokio::sync or `sync` per build
-├── sync.rs         # private Mutex, RwLock, Semaphore over event-listener
+├── sync.rs         # private Mutex, RwLock, Semaphore built on event-listener
 ├── async_drop.rs   # unchanged
 └── process.rs      # gains the reactor-path implementation in PR 4
 ```
@@ -231,11 +231,15 @@ polls `run()`, which does the same thing.
 Both keep their public surface and become enums over what is compiled in:
 
 ```rust
-pub struct Executor<'a>(Inner<'a>);
+pub struct Executor<'a> {
+    inner: Inner,
+    // The lifetime is part of the public type only; every future zbus spawns is `'static`.
+    lifetime: PhantomData<&'a ()>,
+}
 
-enum Inner<'a> {
+enum Inner {
     #[cfg(feature = "async-io")]
-    AsyncExecutor(Arc<async_executor::Executor<'a>>),
+    AsyncExecutor(Arc<async_executor::Executor<'static>>),
     #[cfg(feature = "tokio")]
     Tokio,
     Scheduler(Arc<scheduler::Scheduler>),
@@ -252,9 +256,17 @@ enum TaskInner<T> {
 }
 ```
 
-`spawn`, `is_empty`, `tick`, `run`, `detach`, `Drop` and `Future::poll` dispatch on the variant.
-`Executor::new()` keeps today's outcome for the two built-in backends; explicit reactors and
-external-only builds get `Scheduler`. `Task::spawn_blocking` becomes a method on the connection's
+`spawn`, `is_empty`, `tick`, `run`, `detach` and `Future::poll` dispatch on the variant; the
+tokio variant's abort-on-drop lives in a private `TokioTask` wrapper so `Task` itself needs no
+`Drop`. `Executor<'a>` thereby goes from invariant (async-executor's `Executor<'a>` is) to
+covariant in `'a`, a relaxation nobody can observe since only `Executor<'static>` is ever
+handed out. `Executor::new()` keeps today's outcome for the two built-in backends; explicit
+reactors and external-only builds get `Scheduler`. In PR 2 the `Scheduler` variant, the
+`scheduler` and `sync` modules are gated `#[cfg(any(test, not(any(feature = "async-io",
+feature = "tokio"))))]`; PR 3 widens the variant and the scheduler module to every build (an
+explicit reactor uses them whichever backends are compiled), gates `sync::RwLock` on `service`
+like the re-export, and rewrites the `zbus::runtime` module doc for the third choice.
+`Task::spawn_blocking` becomes a method on the connection's
 runtime in PR 3 (tokio pool, `blocking::unblock`, or the reactor's hook); until then it keeps its
 `select_runtime!` body.
 
@@ -264,43 +276,56 @@ Deliberately small; a `std::sync::Mutex` plus `VecDeque` is enough. No `unsafe`.
 
 ```rust
 pub(crate) struct Scheduler {
-    state: Mutex<State>,          // ready: VecDeque<Arc<TaskCell>>, live: usize
-    driver: Mutex<Option<Waker>>, // whoever polls `tick`/`run`
+    ready: Mutex<VecDeque<Arc<TaskCell>>>,
+    // Every task that has neither finished nor been cancelled. Owning the cells is what lets
+    // dropping the scheduler drop every pending future; a counter could not reach them.
+    tasks: Mutex<Vec<Arc<TaskCell>>>,
+    // Wakers of everyone currently inside `run` or `tick`; a single slot would drop one.
+    drivers: Mutex<Vec<Waker>>,
 }
 
 struct TaskCell {
-    // `None` once the task finished or was cancelled.
-    future: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+    slot: Mutex<Slot>,            // Idle(future) | Running | Done
     scheduled: AtomicBool,        // in the ready queue; suppresses duplicate enqueues
+    rerun: AtomicBool,            // set by a driver that found the cell `Running` elsewhere
+    cancelled: AtomicBool,
     scheduler: Weak<Scheduler>,
 }
 
 impl Wake for TaskCell {
-    fn wake(self: Arc<Self>) { /* enqueue unless already scheduled, then wake the driver */ }
+    fn wake(self: Arc<Self>) { /* enqueue unless already scheduled, then wake the drivers */ }
 }
 
 pub(crate) struct JoinHandle<T> {
     cell: Arc<TaskCell>,
-    output: Arc<Mutex<Slot<T>>>,  // Empty | Ready(T) | Taken, plus the joiner's Waker
+    output: Arc<Mutex<Output<T>>>,  // value, `finished` flag and the joiner's Waker
     detached: bool,
 }
 ```
 
-- `spawn` boxes `async move { slot.set(future.await) }`, creates the cell, enqueues it, wakes the
-  driver, returns the handle.
-- `tick().await` runs one ready task; `run(fut)` interleaves bounded batches (16 tasks) with polls
-  of `fut` and yields between batches so unrelated host futures progress. A task that panics
-  poisons nothing: the panic propagates out of `Run::poll` like it does out of the built-in
-  backends' driver today.
-- Polling a task takes its future out of the cell's mutex, polls it without the lock held, and
-  puts it back unless it finished. A wake that arrives during the poll sets `scheduled` and the
-  future is re-enqueued after the poll, so no wakeup is lost.
-- Dropping a `JoinHandle` that is not detached cancels: the cell's future slot is set to `None`
-  under the lock (dropping the future there if it is idle) or, if the task is being polled on
-  another thread, a `cancelled` flag makes the poller drop it afterwards. `detach()` sets
-  `detached` and lets the task finish on its own. `Task::poll` on the handle returns `Ok(T)` from
-  the slot, or `Err(io::Error::other("task cancelled"))` if the cell finished without output.
-- `is_empty()` is `live == 0`. Dropping the last `Arc<Scheduler>` drops every remaining future.
+- `spawn` wraps the future so that a marker created *before* the async block (a block only runs
+  its body once polled, so a task dropped before its first poll would otherwise never signal)
+  marks the output finished and wakes the joiner whenever the future is dropped, completed or
+  not; creates the cell, enqueues it, wakes the drivers, returns the handle.
+- `tick().await` polls the next queued task; `run(fut)` interleaves bounded batches (16 tasks)
+  with polls of `fut`; after a full batch it wakes its own waker and returns `Pending`, so
+  unrelated host futures progress and the rest of the queue is reached even when no task wakes
+  anything. A task that panics propagates the panic out of `run`/`tick` and is forgotten as if
+  cancelled: a guard live across the poll sets its slot `Done` and removes it from `tasks` on
+  unwind, so `is_empty()` stays truthful.
+- Polling a task moves its future out of the slot (`Idle` → `Running`), clears `scheduled`,
+  polls with no lock held, and restores `Idle` unless it finished. A wake during the poll
+  re-enqueues the cell; a second driver that pops a `Running` cell sets `rerun` instead of
+  polling, and the first driver re-enqueues it after its poll. Wakers and futures are never
+  invoked under any of the scheduler's locks.
+- Dropping a `JoinHandle` that is not detached cancels: `cancelled` is set, then the slot is set
+  `Done` (dropping the future) if it is `Idle`; if it is `Running` the polling driver drops it
+  after the poll. `detach()` lets the task finish on its own. `JoinHandle::poll` returns `Ok(T)`
+  once the value is stored, or `Err(io::Error::other("task cancelled"))` once the task is
+  finished without one.
+- `is_empty()` is `tasks.is_empty()` and has no wakeup source of its own: nothing may wait on it
+  without a notification. Dropping the last `Arc<Scheduler>` sets every slot `Done`, which
+  drops every remaining future even though reactors may still hold their wakers.
 
 ### The private locks (`runtime::sync`)
 
@@ -330,10 +355,15 @@ for the state:
   readers, which is the writer-preferring policy the object server wants: `add_interface` must not
   starve behind a stream of method calls. No upgrading, no `try_` variants: nothing uses them.
 - `Semaphore`: `permits: AtomicUsize` plus one event; `acquire()` is the mutex loop generalised to
-  `n` permits. `SERIAL_NUM_SEMAPHORE` is a `static`, hence the `const fn new`.
+  `n` permits. Releasing a permit uses `notify_additional(1)`: plain `notify(1)` coalesces with
+  a notification that is already pending, so two permits released concurrently would wake one
+  of two waiters. `SERIAL_NUM_SEMAPHORE` is a `static`, hence the `const fn new`.
 
-Guards are `#[must_use]`, implement `Deref`/`DerefMut`, and are `Send`/`Sync` under the same
-bounds as async-lock's (`T: Send` for `Send`, `T: Sync` for `Sync`).
+None of the three guarantees fairness beyond "a release wakes a waiter": the try-before-listen
+loop lets a newcomer barge ahead of a woken waiter, as async-lock's does. Guards are
+`#[must_use]`, implement `Deref`/`DerefMut`, and are `Send`/`Sync` under exactly async-lock's
+bounds. `RwLock`'s `Debug` has no `T: Debug` bound, so that `RwLock<dyn Interface>` stays
+`Debug`; it therefore prints no fields.
 
 ## Driving
 
@@ -494,12 +524,18 @@ PR 2, unit tests in `runtime/scheduler.rs` and `runtime/sync.rs`, run in every c
 
 - scheduler: spawn and join; wake from another thread reaches the driver; a task woken during
   its own poll is re-run; cancel on drop frees the future and fails the join; `detach` lets the
-  task finish; `is_empty`; `run` yields to the inner future between batches (a counter task and
-  the inner future both progress); dropping the scheduler drops pending futures.
-- locks: mutual exclusion under contention across threads; FIFO hand-off; a cancelled `lock()`
-  does not strand the next waiter; `RwLock` allows concurrent readers, a waiting writer blocks new
-  readers and gets the lock; `Semaphore` with `n` permits admits at most `n`; guards deref to
-  unsized targets (`RwLock<dyn Trait>`).
+  task finish; `is_empty`; the batch bound keeps an always-ready task from monopolising `run`;
+  `run` re-arms itself when a batch leaves externally woken tasks queued (fails by hanging
+  without the re-arm, so it carries a timeout); dropping the scheduler fails pending joins; a
+  panicking task propagates and is forgotten. Every test that can hang carries an `ntest`
+  timeout. One `block_on` per assertion: futures-lite's `block_on` shares a parker per thread,
+  so a stale unpark from an earlier call masks a missing wake in the next.
+- locks: mutual exclusion under contention across threads; a release wakes a waiter; a
+  cancelled `lock()` does not strand the next waiter; `RwLock` allows concurrent readers, a
+  waiting writer blocks new readers and gets the lock, a cancelled writer lets readers in again;
+  `Semaphore` with `n` permits admits at most `n`; guards deref to unsized targets
+  (`RwLock<dyn Trait>`). Tests that cancel a future must own it (`Box::pin`): dropping a `pin!`
+  binding drops only the `Pin<&mut F>`.
 - `Executor`/`Task` enum dispatch through the existing suites (default, tokio-only,
   all-features).
 
