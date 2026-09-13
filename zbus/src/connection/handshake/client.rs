@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use crate::{
     Message,
     conn::socket::ReadHalf,
-    is_flatpak,
     log::{trace, warn},
     names::OwnedUniqueName,
 };
@@ -125,24 +124,8 @@ impl Client {
 
         let can_pass_fd = self.common.socket_mut().read_mut().can_pass_unix_fd();
         if can_pass_fd {
-            // xdg-dbus-proxy can't handle pipelining, hence this special handling.
-            // FIXME: Remove this as soon as flatpak is fixed and fix is available in major distros.
-            // See https://github.com/flatpak/xdg-dbus-proxy/issues/21
-            if is_flatpak() {
-                self.common.write_command(Command::NegotiateUnixFD).await?;
-                match self.common.read_command().await? {
-                    Command::AgreeUnixFD => self.common.set_cap_unix_fd(true),
-                    Command::Error(e) => warn!("UNIX file descriptor passing rejected: {e}"),
-                    cmd => {
-                        return Err(Error::Handshake(format!(
-                            "Unexpected command from server: {cmd}"
-                        )));
-                    }
-                }
-            } else {
-                commands.push(Command::NegotiateUnixFD);
-            }
-        };
+            commands.push(Command::NegotiateUnixFD);
+        }
         commands.push(Command::Begin);
         let hello_method = if self.bus {
             Some(create_hello_method_call())
