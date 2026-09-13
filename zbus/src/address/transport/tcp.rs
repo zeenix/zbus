@@ -1,14 +1,17 @@
 use super::encode_percents;
-use crate::{Address, Error, Result};
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use crate::Address;
+use crate::{Error, Result};
 #[cfg(feature = "async-io")]
 use async_io::Async;
 #[cfg(feature = "async-io")]
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use std::sync::Arc;
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     str::FromStr,
-    sync::Arc,
 };
 #[cfg(all(feature = "tokio", not(feature = "async-io")))]
 use tokio::net::TcpStream;

@@ -1,43 +1,52 @@
+#[cfg(any(test, feature = "async-io", feature = "tokio"))]
+use std::net::SocketAddr;
 use std::{
-    ffi::{CStr, OsStr},
+    ffi::CStr,
     io::Error,
-    net::SocketAddr,
-    os::windows::{
-        io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
-        prelude::OsStrExt,
-    },
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
     ptr,
 };
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use std::{ffi::OsStr, os::windows::prelude::OsStrExt};
 
 #[cfg(feature = "service")]
 use windows_sys::Win32::System::WindowsProgramming::{GetCurrentHwProfileA, HW_PROFILE_INFOA};
+#[cfg(any(test, feature = "async-io", feature = "tokio"))]
 use windows_sys::Win32::{
-    Foundation::{
-        ERROR_INSUFFICIENT_BUFFER, FALSE, HANDLE, LocalFree, NO_ERROR, WAIT_ABANDONED,
-        WAIT_OBJECT_0,
-    },
+    Foundation::NO_ERROR,
     NetworkManagement::IpHelper::{GetTcpTable2, MIB_TCP_STATE_ESTAB, MIB_TCPTABLE2},
     Networking::WinSock::INADDR_LOOPBACK,
+};
+use windows_sys::Win32::{
+    Foundation::{ERROR_INSUFFICIENT_BUFFER, FALSE, HANDLE, LocalFree},
     Security::{
         Authorization::ConvertSidToStringSidA, GetTokenInformation, IsValidSid, TOKEN_QUERY,
         TOKEN_USER, TokenUser,
     },
+    System::Threading::{
+        GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_ACCESS_RIGHTS,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    },
+};
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use windows_sys::Win32::{
+    Foundation::{WAIT_ABANDONED, WAIT_OBJECT_0},
     System::{
         Memory::{FILE_MAP_READ, MapViewOfFile, OpenFileMappingW},
-        Threading::{
-            CreateMutexW, GetCurrentProcess, INFINITE, OpenProcess, OpenProcessToken,
-            PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_LIMITED_INFORMATION, ReleaseMutex,
-            WaitForSingleObject,
-        },
+        Threading::{CreateMutexW, INFINITE, ReleaseMutex, WaitForSingleObject},
     },
 };
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 use crate::Address;
 #[cfg(feature = "async-io")]
 use uds_windows::UnixStream;
 
+/// The lock the autolaunch address is read under.
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 struct Mutex(OwnedHandle);
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 impl Mutex {
     pub fn new(name: &str) -> Result<Self, crate::Error> {
         let name_wide = OsStr::new(name)
@@ -61,8 +70,10 @@ impl Mutex {
     }
 }
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 struct MutexGuard<'a>(&'a Mutex);
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 impl Drop for MutexGuard<'_> {
     fn drop(&mut self) {
         unsafe { ReleaseMutex(self.0.0.as_raw_handle()) };
@@ -181,6 +192,7 @@ impl ProcessToken {
 
 /// Get the process ID of the local socket address.
 // TODO: add ipv6 support
+#[cfg(any(test, feature = "async-io", feature = "tokio"))]
 pub fn socket_addr_get_pid(addr: &SocketAddr) -> Result<u32, Error> {
     let mut len = 4096;
     let mut tcp_table = vec![];
@@ -278,6 +290,7 @@ pub fn unix_stream_get_peer_pid(stream: &UnixStream) -> Result<u32, Error> {
     Ok(ret)
 }
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 fn read_shm(name: &str) -> Result<Vec<u8>, crate::Error> {
     let handle = {
         let wide_name = OsStr::new(name)
@@ -307,6 +320,7 @@ fn read_shm(name: &str) -> Result<Vec<u8>, crate::Error> {
     Ok(data.to_bytes().to_owned())
 }
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 pub fn autolaunch_bus_address() -> Result<Address, crate::Error> {
     let mutex = Mutex::new("DBusAutolaunchMutex")?;
     let _guard = mutex.lock();

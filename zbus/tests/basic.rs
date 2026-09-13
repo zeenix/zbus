@@ -1,4 +1,5 @@
-#![cfg(feature = "comms")]
+// Everything here talks to a bus, which needs one of the backends to connect to.
+#![cfg(all(feature = "comms", any(feature = "async-io", feature = "tokio")))]
 
 use std::collections::HashMap;
 

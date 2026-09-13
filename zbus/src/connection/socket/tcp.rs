@@ -1,11 +1,13 @@
 #[cfg(feature = "async-io")]
 use async_io::Async;
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 use std::io;
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 use std::os::fd::BorrowedFd;
 #[cfg(feature = "async-io")]
 use std::{net::TcpStream, sync::Arc};
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 use super::{ReadHalf, RecvmsgResult, WriteHalf};
 #[cfg(feature = "tokio")]
 use super::{Socket, Split};

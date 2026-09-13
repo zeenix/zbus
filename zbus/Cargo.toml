@@ -70,6 +70,9 @@ async-io = [
     "blocking",
 ]
 tokio = ["comms", "dep:tokio"]
+# zbus's async locks, from the `async-lock` crate. `async-io` enables it; a build on a runtime of
+# its own has to enable this or `tokio`, which zbus then takes its locks from instead.
+async-lock = ["comms", "dep:async-lock"]
 # Logging through `tracing` (default). With this off, zbus emits no log events or spans, and
 # `tokio`'s own `tracing` feature is not enabled either.
 tracing = ["dep:tracing", "tokio?/tracing"]
@@ -191,6 +194,10 @@ chrono = { workspace = true, features = [
     "alloc",
 ], default-features = false }
 static_assertions.workspace = true
+async-io.workspace = true
+async-executor.workspace = true
+async-task.workspace = true
+blocking.workspace = true
 
 [package.metadata.docs.rs]
 # we can't use:
@@ -198,6 +205,7 @@ static_assertions.workspace = true
 # because some features (such as vsock) are target-specific
 features = [
     "async-io",
+    "async-lock",
     "blocking-api",
     "comms",
     "arrayvec",

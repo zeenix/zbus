@@ -1,4 +1,9 @@
-#![cfg(all(feature = "unixexec", not(target_os = "windows")))]
+// The `unixexec` transport runs a command, which needs one of the backends.
+#![cfg(all(
+    feature = "unixexec",
+    not(target_os = "windows"),
+    any(feature = "async-io", feature = "tokio")
+))]
 
 use ntest::timeout;
 use test_log::test;

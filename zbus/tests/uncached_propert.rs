@@ -1,4 +1,8 @@
-#![cfg(all(feature = "proxy", feature = "service"))]
+#![cfg(all(
+    feature = "proxy",
+    feature = "service",
+    any(feature = "async-io", feature = "tokio")
+))]
 
 use ntest::timeout;
 use test_log::test;

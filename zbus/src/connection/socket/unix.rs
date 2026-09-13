@@ -1,14 +1,14 @@
 #[cfg(feature = "async-io")]
 use async_io::Async;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", any(feature = "async-io", feature = "tokio")))]
 use std::os::unix::io::FromRawFd;
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd};
 #[cfg(all(unix, feature = "async-io"))]
 use std::os::unix::net::UnixStream;
 #[cfg(feature = "async-io")]
 use std::sync::Arc;
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 use std::{
     future::poll_fn,
     io::{IoSlice, IoSliceMut},
@@ -18,13 +18,13 @@ use std::{
 #[cfg(all(windows, feature = "async-io"))]
 use uds_windows::UnixStream;
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 use rustix::net::{
     RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer,
     SendAncillaryMessage, SendFlags, recvmsg, sendmsg,
 };
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 use crate::utils::FDS_MAX;
 
 #[cfg(all(unix, feature = "async-io"))]
@@ -273,7 +273,7 @@ impl super::WriteHalf for Arc<Async<UnixStream>> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 fn fd_recvmsg(fd: BorrowedFd<'_>, buffer: &mut [u8]) -> std::io::Result<(usize, Vec<OwnedFd>)> {
     use std::mem::MaybeUninit;
 
@@ -311,7 +311,7 @@ fn fd_recvmsg(fd: BorrowedFd<'_>, buffer: &mut [u8]) -> std::io::Result<(usize, 
     Ok((msg.bytes, fds))
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 fn fd_sendmsg(fd: BorrowedFd<'_>, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> std::io::Result<usize> {
     use std::mem::MaybeUninit;
 
@@ -357,7 +357,7 @@ fn fd_sendmsg(fd: BorrowedFd<'_>, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> std:
     Ok(sent)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 async fn get_unix_peer_creds(fd: &impl AsFd) -> std::io::Result<crate::fdo::ConnectionCredentials> {
     let fd = fd.as_fd().as_raw_fd();
     // FIXME: Is it likely enough for sending of 1 byte to block, to justify a task (possibly
@@ -366,7 +366,7 @@ async fn get_unix_peer_creds(fd: &impl AsFd) -> std::io::Result<crate::fdo::Conn
         .await?
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 fn get_unix_peer_creds_blocking(fd: RawFd) -> std::io::Result<crate::fdo::ConnectionCredentials> {
     // TODO: get this BorrowedFd directly from get_unix_peer_creds(), but this requires a
     // 'static lifetime due to the Task.
@@ -496,13 +496,19 @@ fn get_unix_peer_creds_blocking(fd: RawFd) -> std::io::Result<crate::fdo::Connec
 }
 
 // Send 0 byte as a separate SCM_CREDS message.
-#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
+#[cfg(all(
+    any(target_os = "freebsd", target_os = "dragonfly"),
+    any(feature = "async-io", feature = "tokio")
+))]
 async fn send_zero_byte(fd: &impl AsFd) -> std::io::Result<usize> {
     let fd = fd.as_fd().as_raw_fd();
     crate::runtime::spawn_blocking(move || send_zero_byte_blocking(fd), "send zero byte").await?
 }
 
-#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
+#[cfg(all(
+    any(target_os = "freebsd", target_os = "dragonfly"),
+    any(feature = "async-io", feature = "tokio")
+))]
 fn send_zero_byte_blocking(fd: RawFd) -> std::io::Result<usize> {
     // FIXME: Replace with rustix API when it provides SCM_CREDS support for BSD.
     // For now, use libc directly since rustix doesn't support sending SCM_CREDS on BSD.

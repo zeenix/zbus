@@ -19,13 +19,15 @@ use uds_windows::UnixStream as AsyncIoUnixStream;
 
 #[cfg(feature = "bus-impl")]
 use crate::MessageStream;
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use crate::address;
 use crate::{
     Connection, Error, Guid, OwnedGuid, Result,
-    address::{self, Address},
+    address::Address,
     fdo::RequestNameFlags,
     message::Message,
     names::WellKnownName,
-    runtime::Runtime,
+    runtime::{Runtime, traits},
 };
 #[cfg(feature = "service")]
 use crate::{
@@ -106,6 +108,9 @@ pub struct Builder<'a> {
     request_name_flags: BitFlags<RequestNameFlags>,
     method_timeout: Option<std::time::Duration>,
     user_id: Option<u32>,
+    // `None` unless the caller picked a runtime, in which case the connection runs on that one
+    // instead of the default for the build.
+    runtime: Option<Runtime>,
     error: Option<Error>,
 }
 
@@ -526,6 +531,25 @@ impl<'a> Builder<'a> {
         self
     }
 
+    /// Run the connection on `runtime`.
+    ///
+    /// The connection takes its timers, its internal tasks and its locks from `runtime`; the
+    /// socket it is given supplies its own readiness. zbus never drives a runtime of its own, so
+    /// the tasks the connection spawns only make progress while `runtime` runs them. This is how
+    /// an application whose event loop is neither of the two zbus can be compiled with puts a
+    /// connection on the one it has.
+    ///
+    /// Without this, the connection runs on the backend zbus is compiled with: Tokio when the
+    /// `tokio` feature is on and a Tokio runtime is current on this thread, otherwise the
+    /// built-in async-io backend. Where that leaves no backend, [`Builder::build`] reports
+    /// [`Error::Unsupported`] unless a runtime is set here: in a build with neither feature, and
+    /// in a `tokio` build without `async-io` on a thread where no Tokio runtime is current.
+    pub fn runtime(mut self, runtime: impl traits::Runtime) -> Self {
+        self.runtime = Some(Runtime::from_external(runtime));
+
+        self
+    }
+
     /// Build the connection, consuming the builder.
     ///
     /// # Errors
@@ -615,7 +639,10 @@ impl<'a> Builder<'a> {
             return Err(error);
         }
 
-        let runtime = Runtime::default_for_build()?;
+        let runtime = self
+            .runtime
+            .take()
+            .map_or_else(Runtime::default_for_build, Ok)?;
         // Box the future as it's large and can cause stack overflow.
         Box::pin(self.build_(runtime, activate_msg_stream)).await
     }
@@ -708,6 +735,7 @@ impl<'a> Builder<'a> {
             request_name_flags: BitFlags::default(),
             method_timeout: None,
             user_id: None,
+            runtime: None,
             error,
         }
     }
@@ -811,12 +839,25 @@ impl<'a> Builder<'a> {
             #[cfg(feature = "tokio-vsock")]
             Target::TokioVsockStream(stream) => stream.into(),
             Target::Address(address) => {
-                guid = address.guid().map(|g| g.to_owned().into());
+                // Without a backend there is no socket to create for an address, so `connect`
+                // always fails and the GUID would never be read.
+                #[cfg(any(feature = "async-io", feature = "tokio"))]
+                {
+                    guid = address.guid().map(|g| g.to_owned().into());
+                }
                 match address.connect().await? {
-                    #[cfg(any(unix, feature = "async-io"))]
+                    #[cfg(all(
+                        any(unix, feature = "async-io"),
+                        any(feature = "async-io", feature = "tokio")
+                    ))]
                     address::transport::Stream::Unix(split) => split,
-                    #[cfg(all(unix, feature = "unixexec"))]
+                    #[cfg(all(
+                        unix,
+                        feature = "unixexec",
+                        any(feature = "async-io", feature = "tokio")
+                    ))]
                     address::transport::Stream::Unixexec(split) => split,
+                    #[cfg(any(feature = "async-io", feature = "tokio"))]
                     address::transport::Stream::Tcp(split) => split,
                     #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
                     address::transport::Stream::Vsock(split) => split,
@@ -839,7 +880,9 @@ mod tests {
     use test_log::test;
 
     use super::{Address, Builder};
-    use crate::{Error, names::WellKnownName, utils::block_on};
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
+    use crate::Error;
+    use crate::{names::WellKnownName, utils::block_on};
 
     // Syntactically valid, so that the builder records no error for the target itself.
     const ADDRESS: &str = "unix:path=/tmp/zbus-connection-builder-tests";
@@ -854,6 +897,8 @@ mod tests {
         assert_eq!(error, WellKnownName::try_from("not a name").unwrap_err());
     }
 
+    // The build gets as far as connecting, which needs a backend.
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     #[test]
     fn typed_values() {
         // No `Result` anywhere before `build`.

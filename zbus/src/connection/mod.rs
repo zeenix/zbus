@@ -1448,15 +1448,23 @@ enum NameStatus {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "service")]
+    #[cfg(all(feature = "service", any(feature = "async-io", feature = "tokio")))]
     use super::*;
-    #[cfg(all(feature = "proxy", feature = "service"))]
+    #[cfg(all(
+        feature = "proxy",
+        feature = "service",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     use crate::fdo::DBusProxy;
-    #[cfg(feature = "service")]
+    #[cfg(all(feature = "service", any(feature = "async-io", feature = "tokio")))]
     use ntest::timeout;
-    #[cfg(feature = "service")]
+    #[cfg(all(feature = "service", any(feature = "async-io", feature = "tokio")))]
     use std::{pin::pin, time::Duration};
-    #[cfg(all(feature = "proxy", feature = "service"))]
+    #[cfg(all(
+        feature = "proxy",
+        feature = "service",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     use test_log::test;
 
     #[cfg(windows)]
@@ -1481,7 +1489,11 @@ mod tests {
         .expect("Unable to connect to session bus");
     }
 
-    #[cfg(all(feature = "proxy", feature = "service"))]
+    #[cfg(all(
+        feature = "proxy",
+        feature = "service",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     #[test]
     #[timeout(15000)]
     fn disconnect_on_drop() {
@@ -1490,7 +1502,11 @@ mod tests {
         crate::utils::block_on(test_disconnect_on_drop());
     }
 
-    #[cfg(all(feature = "proxy", feature = "service"))]
+    #[cfg(all(
+        feature = "proxy",
+        feature = "service",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     async fn test_disconnect_on_drop() {
         #[derive(Default)]
         struct MyInterface {}
@@ -1524,7 +1540,7 @@ mod tests {
         assert!(!name_has_owner);
     }
 
-    #[cfg(feature = "service")]
+    #[cfg(all(feature = "service", any(feature = "async-io", feature = "tokio")))]
     #[tokio::test(start_paused = true)]
     #[timeout(15000)]
     async fn test_graceful_shutdown() {
@@ -1617,8 +1633,9 @@ mod tests {
     }
 }
 
+// Every pipe here is a real socket, which only a backend can create.
 #[cfg(feature = "p2p")]
-#[cfg(test)]
+#[cfg(all(test, any(feature = "async-io", feature = "tokio")))]
 mod p2p_tests {
     use crate::wire::{Endian, NATIVE_ENDIAN};
     use event_listener::Event;

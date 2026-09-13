@@ -1,4 +1,6 @@
-use crate::{Address, Result, runtime::process::run};
+use crate::Result;
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use crate::{Address, runtime::process::run};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The transport properties of an IBus D-Bus address.
@@ -60,6 +62,9 @@ impl Ibus {
     /// # Ok::<(), zbus::Error>(())
     /// # }).unwrap();
     /// ```
+    ///
+    /// Only a backend can run the command that asks, so this is unavailable without one.
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     pub(super) async fn bus_address(&self) -> Result<Address> {
         let output = run("ibus", ["address"])
             .await

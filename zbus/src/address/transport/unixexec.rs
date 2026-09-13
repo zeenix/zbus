@@ -1,8 +1,8 @@
-use std::{
-    borrow::BorrowMut, ffi::OsString, fmt::Display, os::unix::ffi::OsStrExt, path::PathBuf,
-    process::Stdio, sync::Arc,
-};
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use std::{borrow::BorrowMut, process::Stdio, sync::Arc};
+use std::{ffi::OsString, fmt::Display, os::unix::ffi::OsStrExt, path::PathBuf};
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 use crate::{Address, runtime::process::Command};
 
 use super::encode_percents;
@@ -67,6 +67,10 @@ impl Unixexec {
         self.args.as_ref()
     }
 
+    /// Runs the command and talks D-Bus over its standard I/O.
+    ///
+    /// Only a backend can drive the command's pipes, so this is unavailable without one.
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     pub(super) async fn connect(
         &self,
         address: &Address,
@@ -101,7 +105,7 @@ impl Display for Unixexec {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "async-io", feature = "tokio")))]
 mod tests {
     use crate::address::{Address, transport::Transport};
 

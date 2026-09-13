@@ -506,7 +506,8 @@ where
     fn inner(&self) -> &Proxy<'p>;
 }
 
-#[cfg(test)]
+// The test here talks to the session bus, which needs a backend to connect to.
+#[cfg(all(test, any(feature = "async-io", feature = "tokio")))]
 mod tests {
     use super::*;
     use crate::blocking;

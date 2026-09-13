@@ -194,3 +194,65 @@ pub(super) struct SocketStatus {
     pub closed: AtomicBool,
     pub closed_event: Event,
 }
+
+#[cfg(all(test, feature = "p2p"))]
+mod tests {
+    use futures_util::{StreamExt, stream::FusedStream};
+    use ntest::timeout;
+
+    use crate::{
+        Guid, MessageStream,
+        connection::{Builder, socket::Channel},
+        runtime::test_runtime::{AbortingRuntime, TestRuntime},
+    };
+
+    /// A connection whose reader task is taken away still lets go of everyone waiting on it.
+    ///
+    /// A runtime is within its rights to drop or abort the task, and the connection has no say
+    /// in it, so the reader has to leave the connection closed on its way out either way.
+    #[test]
+    #[timeout(15000)]
+    fn aborting_the_reader_task_closes_the_connection() {
+        let runtime = AbortingRuntime::new();
+        let (c1, c2) = Channel::pair();
+
+        futures_lite::future::block_on(async {
+            let guid = Guid::generate();
+            let (client, peer) = futures_util::try_join!(
+                Builder::authenticated_socket(c1, guid.clone())
+                    .p2p()
+                    .runtime(runtime.clone())
+                    .build(),
+                Builder::authenticated_socket(c2, guid)
+                    .p2p()
+                    .runtime(TestRuntime::new())
+                    .build(),
+            )
+            .unwrap();
+            let mut stream = MessageStream::from(&client);
+            let mut peer_stream = MessageStream::from(&peer);
+
+            // Nothing ever answers this call, so only the reader's departure can end the wait
+            // for its reply. The peer seeing the call is what says it is registered and away.
+            let calling = client.call_method(
+                None::<()>,
+                "/org/zbus/Test",
+                Some("org.zbus.Test"),
+                "NoReply",
+                &(),
+            );
+            let aborting = async {
+                peer_stream.next().await.unwrap().unwrap();
+                runtime.abort_tasks();
+            };
+            let (reply, ()) = futures_util::future::join(calling, aborting).await;
+
+            assert!(reply.is_err(), "the pending call was answered after all");
+            client.closed().await;
+            assert!(stream.next().await.is_none(), "the stream lives on");
+            // A cancelled reader never gets to close the channel behind the stream, so only the
+            // stream itself can say it is spent — and a `select!` loop spins until it does.
+            assert!(stream.is_terminated(), "the finished stream denies it");
+        });
+    }
+}
