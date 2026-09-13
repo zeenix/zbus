@@ -160,7 +160,7 @@ pub mod traits {
     }
 
     /// A handle to a spawned task. Dropping it cancels the task; `detach` lets it run on.
-    pub trait Task<T>: Future<Output = io::Result<T>> + Send + Unpin + 'static {
+    pub trait Task<T>: Future<Output = io::Result<T>> + Send + Sync + Unpin + 'static {
         fn detach(self);
     }
 
@@ -233,9 +233,13 @@ It implements `traits::Runtime` with async-io, async-executor and async-lock: `r
 the source in `async_io::Async::new` and `poll_io` is the `poll_readable`/`poll_writable` loop
 that `Arc<Async<UnixStream>>` uses today; `sleep_until` is `async_io::Timer::at` behind a small
 future that drops the `Instant`; `spawn` goes to an `async_executor::Executor` owned by the
-`AsyncIo` instance, whose `zbus::Connection executor` thread starts on the first spawn and runs
-`async_io::block_on(executor.run(pending()))` until the instance is dropped; the locks are
-`async_lock`'s; `spawn_blocking` returns `blocking::unblock`.
+`AsyncIo` instance, whose `zbus::Connection executor` thread starts on the first spawn, holds a
+strong reference to the executor, ticks it under `async_io::block_on` until it is empty, exits,
+and starts again on the next spawn (a running check under the same lock the spawner takes makes
+the hand-off race-free); the locks are `async_lock`'s; `spawn_blocking` returns
+`blocking::unblock`. A thread that instead waited for the last `AsyncIo` clone would block
+forever in an idle executor once the connection is gone, and one that held only a weak reference
+would cancel detached tasks.
 
 The default path (no explicit runtime, `async-io` compiled) uses the same type through a
 zero-cost enum variant, so there is one implementation of the backend, not two. Selecting it
@@ -303,7 +307,9 @@ trait ErasedRegistration: Send + Sync {
                operation: &mut dyn FnMut() -> io::Result<()>) -> Poll<io::Result<()>>;
 }
 
-trait ErasedTask: Future<Output = io::Result<()>> + Send + Unpin { fn detach(self: Box<Self>); }
+trait ErasedTask: Future<Output = io::Result<()>> + Send + Sync + Unpin {
+    fn detach(self: Box<Self>);
+}
 
 trait ErasedMutex: Send + Sync {
     fn lock(&self) -> Pin<Box<dyn Future<Output = Box<dyn ErasedGuard<dyn Any + Send>> + '_>>;
