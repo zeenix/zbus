@@ -663,9 +663,9 @@ streams only need `proxy`, as before.
 A connection used to pick its executor by cargo feature, with
 `Builder::internal_executor(false)` and `Connection::executor().tick()` as the way to drive
 zbus's tasks from another runtime. That pair is gone, together with the `Executor` and `Task`
-types. A connection now takes its readiness, its timers and its internal tasks from one runtime:
-Tokio when the `tokio` feature is on and a runtime is current, otherwise the built-in async-io
-runtime, or whatever you pass to `Builder::runtime`:
+types. A connection now takes its readiness, its timers, its internal tasks and its blocking work
+from one runtime: Tokio when the `tokio` feature is on and a runtime is current, otherwise the
+built-in async-io runtime, or whatever you pass to `Builder::runtime`:
 
 ```rust,no_run
 use zbus::{Connection, Result, connection::Builder, runtime::traits::Runtime};
@@ -675,12 +675,17 @@ async fn connect(runtime: impl Runtime) -> Result<Connection> {
 }
 ```
 
-An implementation of `zbus::runtime::traits::Runtime` supplies a readiness registration, timers
+An implementation of `zbus::runtime::traits::Runtime` supplies a readiness registration, a timer
 and task spawning; every async runtime already has all three. Every socket a connection owns goes
-through the same registration, address-connected ones included. zbus never drives the runtime, so
-the tasks a connection spawns only run while the runtime runs them. The two built-in backends are
-implementations of the same trait, picked by cargo feature, so this method is for the runtime your
-application already has. Nothing changes for connections built without `runtime`.
+through the same registration, and so does the helper process behind a `unixexec:`, `ibus:` or
+`launchd:` address: it is now spawned with `std::process::Command` rather than an async runtime's
+own process support, so `async-process` is no longer a dependency. A handful of calls that have no
+async form — a `tcp:` host-name lookup, a `nonce-tcp:` file read, the peer-credential group lookup,
+waiting for a helper process to exit — go through the trait's `spawn_blocking`, which defaults to a
+thread of its own per call. zbus never drives the runtime, so the tasks a connection spawns only
+run while the runtime runs them. The two built-in backends are implementations of the same trait,
+picked by cargo feature, so this method is for the runtime your application already has. Nothing
+changes for connections built without `runtime`.
 
 zbus's own async locks are not part of the trait: they still come from a cargo feature, either
 `async-lock` (which `async-io` enables, as before) or `tokio`. `async-lock` is a feature you can

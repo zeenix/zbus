@@ -6,7 +6,7 @@ use ntest::timeout;
 
 use super::{
     Runtime,
-    test_runtime::{DefaultBlocking, TestRuntime},
+    test_runtime::{DefaultBlocking, TestRuntime, under_every_runtime},
 };
 
 #[cfg(all(feature = "p2p", feature = "service"))]
@@ -178,11 +178,35 @@ fn the_default_blocking_hook_runs_the_work_on_a_short_lived_thread() {
     }
 }
 
+/// Blocking work runs even when the future for it is let go of before it is ever polled.
+///
+/// A runtime is free to queue the work rather than start it at once, and letting go of the
+/// future must not take it back out of that queue: the wait for a helper process owns the
+/// process, so a wait that never runs is a process nothing will ever reap.
+#[test]
+#[timeout(15000)]
+fn blocking_work_runs_even_when_its_future_is_dropped() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    under_every_runtime(|runtime| async move {
+        let ran = Arc::new(AtomicBool::new(false));
+        let setting = Arc::clone(&ran);
+
+        drop(runtime.spawn_blocking(move || setting.store(true, Ordering::SeqCst)));
+
+        // The work runs wherever the runtime puts it, so the flag is what says it has, and
+        // nothing here is left to await.
+        while !ran.load(Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+    });
+}
+
 /// The threads of this process that are running work of the default blocking hook.
 ///
 /// Linux truncates a thread's name to fifteen bytes, leaving only the start of it to match on.
 #[cfg(target_os = "linux")]
-fn blocking_threads() -> usize {
+pub(super) fn blocking_threads() -> usize {
     std::fs::read_dir("/proc/self/task")
         .expect("a process on Linux can list its own threads")
         .filter_map(Result::ok)

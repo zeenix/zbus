@@ -36,16 +36,11 @@ use tokio_rt::Tokio;
 #[cfg(any(feature = "async-io", test))]
 mod unblock;
 
-// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands, and
-// only a backend can run one: the transports are unsupported without one.
-#[cfg(all(
-    unix,
-    any(feature = "async-io", feature = "tokio"),
-    any(feature = "unixexec", feature = "ibus", target_os = "macos")
-))]
+// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run a program.
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
 
-use std::{future::Future, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use erased::ErasedRuntime;
 
@@ -144,16 +139,22 @@ impl Runtime {
     }
 
     /// Runs `work` off the event loop, on whatever this runtime keeps for blocking work.
-    pub(crate) async fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> T
+    ///
+    /// The future this hands back is the runtime's own and borrows nothing from here, so whoever
+    /// waits for the outcome does not have to keep the runtime alive alongside it.
+    pub(crate) fn spawn_blocking<T>(
+        &self,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Pin<Box<dyn Future<Output = T> + Send + 'static>>
     where
         T: Send + 'static,
     {
         match self {
             #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
+            Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             #[cfg(feature = "tokio")]
-            Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
-            Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
+            Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work),
+            Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work),
         }
     }
 }

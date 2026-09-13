@@ -65,9 +65,6 @@ async-io = [
     "async-executor",
     "async-task",
     "async-lock",
-    # FIXME: We only currently only need this for unix but Cargo doesn't provide a way to enable
-    # features for only specific target OS: https://github.com/rust-lang/cargo/issues/1197.
-    "async-process",
     "blocking",
 ]
 tokio = ["comms", "dep:tokio"]
@@ -131,7 +128,6 @@ async-lock = { workspace = true, optional = true }
 async-executor = { workspace = true, optional = true }
 blocking = { workspace = true, optional = true }
 async-task = { workspace = true, optional = true }
-async-process = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = [
     "rt",
     "rt-multi-thread",
@@ -139,9 +135,6 @@ tokio = { workspace = true, optional = true, features = [
     "time",
     "fs",
     "io-util",
-    # FIXME: We should only enable this feature for unix. See comment above regarding `async-process`
-    # on why we can't.
-    "process",
     "sync",
 ] }
 socket2 = { workspace = true, optional = true }

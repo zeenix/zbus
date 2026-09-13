@@ -1,7 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process::Command};
 
 use super::{Transport, Unix, UnixSocket};
-use crate::Result;
+use crate::{
+    Result,
+    runtime::{Runtime, process},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -25,34 +28,22 @@ impl Launchd {
 
     /// Determine the actual transport details behind a launchd address.
     ///
-    /// Only a runtime that can run a command can ask for them, and a build with neither backend
-    /// compiled in has none.
-    pub(super) async fn bus_address(&self) -> Result<Transport> {
-        #[cfg(not(any(feature = "async-io", feature = "tokio")))]
-        {
-            Err(crate::Error::Unsupported)
-        }
-        #[cfg(any(feature = "async-io", feature = "tokio"))]
-        {
-            let output = crate::runtime::process::run("launchctl", ["getenv", self.env()])
-                .await
-                .expect("failed to wait on launchctl output");
+    /// The `launchctl` command runs on `runtime`, which is also what waits for it to exit.
+    pub(super) async fn bus_address(&self, runtime: &Runtime) -> Result<Transport> {
+        let mut command = Command::new("launchctl");
+        command.args(["getenv", self.env()]);
 
-            if !output.status.success() {
-                return Err(crate::Error::Address(format!(
-                    "launchctl terminated with code: {}",
-                    output.status
-                )));
-            }
+        let printed = process::stdout(runtime, command)
+            .await
+            .map_err(|e| crate::Error::Address(format!("The launchctl command failed: {e}")))?;
 
-            let addr = String::from_utf8(output.stdout).map_err(|e| {
-                crate::Error::Address(format!("Unable to parse launchctl output as UTF-8: {e}"))
-            })?;
+        let addr = String::from_utf8(printed).map_err(|e| {
+            crate::Error::Address(format!("Unable to parse launchctl output as UTF-8: {e}"))
+        })?;
 
-            Ok(Transport::Unix(Unix::new(UnixSocket::File(
-                addr.trim().into(),
-            ))))
-        }
+        Ok(Transport::Unix(Unix::new(UnixSocket::File(
+            addr.trim().into(),
+        ))))
     }
 
     pub(super) fn from_options(opts: HashMap<&str, &str>) -> Result<Self> {
