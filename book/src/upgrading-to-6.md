@@ -405,15 +405,24 @@ features are unified: each one takes the socket the platform owns, and the conne
 whichever runtime it was built with. Hand a stream of another kind over as the socket it wraps.
 
 - `Builder::unix_stream` takes a `std::os::unix::net::UnixStream` (`uds_windows::UnixStream` on
-  Windows). A `tokio::net::UnixStream` becomes one with `into_std()`.
+  Windows). A `tokio::net::UnixStream` becomes one with `into_std()`; an `async_io::Async<T>`
+  becomes one with `into_inner()`. Tokio cannot watch a unix socket on Windows, so a Tokio
+  connection there can no longer use one — through this constructor or through a `unix:` address
+  — even where the `async-io` feature is also on. Give such a connection a TCP or `autolaunch:`
+  address instead.
 - `Builder::tcp_stream` takes a `std::net::TcpStream`. A `tokio::net::TcpStream` becomes one with
-  `into_std()`.
+  `into_std()`; an `async_io::Async<T>` becomes one with `into_inner()`.
 - `Builder::vsock_stream` takes a `vsock::VsockStream`. It serves a Tokio connection too, so the
   `tokio-vsock` feature and the constructor that took its stream are both gone; `vsock` no longer
   enables `async-io` either.
 
 `zbus::blocking::connection::Builder` mirrors the Unix and TCP constructors; it has no VSOCK
 stream constructor.
+
+`Builder::socket` is likewise no longer a way to bring a runtime's own socket type along: the
+`Socket`, `ReadHalf` and `WriteHalf` implementations for `async_io::Async<T>` and for Tokio's
+stream types are gone. Implement `Socket` for a transport that is none of the three above, such
+as an in-process channel or a tunnel of your own.
 
 ### The encoding context has no format
 
@@ -667,13 +676,11 @@ async fn connect(runtime: impl Runtime) -> Result<Connection> {
 ```
 
 An implementation of `zbus::runtime::traits::Runtime` supplies a readiness registration, timers
-and task spawning; every async runtime already has all three. Every socket a connection owns
-through `Builder::unix_stream`, `tcp_stream`, `vsock_stream` or `socket` goes through the same
-registration; the standard transports still pick a backend of their own until a later release
-moves them onto it too. zbus never drives the runtime, so the tasks a connection spawns only run
-while the runtime runs them. The two built-in backends are implementations of the same trait,
-picked by cargo feature, so this method is for the runtime your application already has. Nothing
-changes for connections built without `runtime`.
+and task spawning; every async runtime already has all three. Every socket a connection owns goes
+through the same registration, address-connected ones included. zbus never drives the runtime, so
+the tasks a connection spawns only run while the runtime runs them. The two built-in backends are
+implementations of the same trait, picked by cargo feature, so this method is for the runtime your
+application already has. Nothing changes for connections built without `runtime`.
 
 zbus's own async locks are not part of the trait: they still come from a cargo feature, either
 `async-lock` (which `async-io` enables, as before) or `tokio`. `async-lock` is a feature you can
@@ -686,8 +693,8 @@ pending method calls fail and every `MessageStream` on the connection ends. A st
 also ends once `Connection::close()` has been called, after yielding whatever it already held.
 
 A build with `comms` but neither `async-io` nor `tokio` is now valid, as long as it names
-`async-lock` for the locks; every connection in it needs a `runtime`, and until the standard
-transports learn to create sockets on it, such a build connects over a socket you supply.
+`async-lock` for the locks; every connection in it needs a `runtime`, over an address or over a
+socket you supply.
 
 Two things about such a build. `zbus::blocking` only works there while the runtime's loop runs on
 another thread: a blocking call made from the loop's own thread deadlocks, since the connection it

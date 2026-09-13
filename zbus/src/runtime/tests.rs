@@ -9,17 +9,6 @@ use super::{
     test_runtime::{DefaultBlocking, TestRuntime},
 };
 
-#[cfg(all(feature = "tokio", feature = "async-io"))]
-#[test]
-fn use_tokio_reflects_active_runtime() {
-    assert!(!super::use_tokio(), "no runtime is active here");
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    assert!(
-        runtime.block_on(async { super::use_tokio() }),
-        "a tokio runtime is active",
-    );
-}
-
 #[cfg(all(feature = "p2p", feature = "service"))]
 #[test]
 #[timeout(15000)]
@@ -204,11 +193,11 @@ fn blocking_threads() -> usize {
         .count()
 }
 
-/// Without a backend there is no socket to create for an address, whatever the runtime.
-#[cfg(not(any(feature = "async-io", feature = "tokio")))]
+/// The socket an address names is created and connected on the connection's own runtime.
+#[cfg(unix)]
 #[test]
 #[timeout(15000)]
-fn an_address_cannot_be_connected_without_a_backend() {
+fn an_address_is_connected_on_the_runtime_it_is_given() {
     use crate::{Error, connection::Builder};
 
     let error = futures_lite::future::block_on(
@@ -218,7 +207,12 @@ fn an_address_cannot_be_connected_without_a_backend() {
     )
     .unwrap_err();
 
-    assert!(matches!(error, Error::Unsupported), "got {error:?}");
+    // Reaching the filesystem at all is what says the connection was attempted rather than
+    // turned away for want of a backend.
+    assert!(
+        matches!(&error, Error::Connection(e, _) if e.kind() == std::io::ErrorKind::NotFound),
+        "got {error:?}",
+    );
 }
 
 /// Without a backend, a connection can only run on a runtime the caller supplies.

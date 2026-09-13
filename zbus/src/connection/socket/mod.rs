@@ -19,14 +19,13 @@ pub(crate) mod command;
     any(feature = "async-io", feature = "tokio")
 ))]
 pub(crate) use command::Command;
-mod tcp;
-mod unix;
-mod vsock;
+// Tokio watches a Windows socket through a type that owns it, so a Tokio connection there cannot
+// hand its descriptor to the reactor the way it does everywhere else.
+#[cfg(all(windows, feature = "tokio"))]
+pub(crate) mod tokio_tcp;
+#[cfg(all(windows, feature = "tokio"))]
+pub(crate) use tokio_tcp::TokioTcp;
 
-#[cfg(feature = "async-io")]
-use async_io::Async;
-#[cfg(feature = "async-io")]
-use std::sync::Arc;
 use std::{io, mem};
 
 use crate::{
@@ -59,13 +58,13 @@ pub(crate) type RecvmsgResult = io::Result<usize>;
 /// into a read half and a write half. The reader and writer halves can be any types that implement
 /// [`ReadHalf`] and [`WriteHalf`] respectively.
 ///
-/// The crate provides implementations for `async_io` and `tokio`'s `UnixStream` wrappers if you
-/// enable the corresponding crate features (`async_io` is enabled by default).
+/// A unix, TCP or VSOCK stream needs none of this: hand the socket itself to
+/// [`Builder::unix_stream`], [`Builder::tcp_stream`] or `Builder::vsock_stream` and the connection
+/// drives it on its own runtime. Implement this trait for a transport that is none of those, such
+/// as an in-process channel or a tunnel of your own.
 ///
-/// You can implement it manually to integrate with other runtimes or other dbus transports.  Feel
-/// free to submit pull requests to add support for more runtimes to zbus itself so rust's orphan
-/// rules don't force the use of a wrapper struct (and to avoid duplicating the work across many
-/// projects).
+/// [`Builder::unix_stream`]: crate::connection::Builder::unix_stream
+/// [`Builder::tcp_stream`]: crate::connection::Builder::tcp_stream
 pub trait Socket {
     type ReadHalf: ReadHalf;
     type WriteHalf: WriteHalf;
@@ -417,24 +416,5 @@ impl WriteHalf for Box<dyn WriteHalf> {
 
     async fn peer_credentials(&mut self) -> io::Result<ConnectionCredentials> {
         (**self).peer_credentials().await
-    }
-}
-
-#[cfg(feature = "async-io")]
-impl<T> Socket for Async<T>
-where
-    T: std::fmt::Debug + Send + Sync,
-    Arc<Async<T>>: ReadHalf + WriteHalf,
-{
-    type ReadHalf = Arc<Async<T>>;
-    type WriteHalf = Arc<Async<T>>;
-
-    fn split(self) -> Split<Self::ReadHalf, Self::WriteHalf> {
-        let arc = Arc::new(self);
-
-        Split {
-            read: arc.clone(),
-            write: arc,
-        }
     }
 }

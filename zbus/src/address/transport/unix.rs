@@ -4,10 +4,21 @@ use std::{
     ffi::OsStr,
     fmt::{Display, Formatter},
     path::PathBuf,
+    sync::Arc,
 };
+
+use socket2::{Domain, SockAddr, Type};
 
 #[cfg(unix)]
 use super::encode_percents;
+use crate::{
+    Address, Error, Result,
+    connection::socket::BoxedSplit,
+    runtime::{
+        Runtime,
+        io::{RegisteredIo, UnixOps, connect},
+    },
+};
 
 /// A Unix domain socket transport in a D-Bus address.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,6 +40,31 @@ impl Unix {
     /// Take the path, consuming `self`.
     pub fn take_path(self) -> UnixSocket {
         self.path
+    }
+
+    /// Connects to the socket this address names.
+    pub(super) async fn connect(self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
+        // Tokio has no unix socket on Windows and no way to watch one a connection owns, so a
+        // Tokio connection there has nothing to reach this address with.
+        #[cfg(all(windows, feature = "tokio"))]
+        if let Runtime::Tokio(_) = runtime {
+            return Err(Error::Unsupported);
+        }
+
+        let socket_address = match self.take_path() {
+            UnixSocket::File(path) => SockAddr::unix(path)?,
+            #[cfg(target_os = "linux")]
+            UnixSocket::Abstract(name) => SockAddr::unix(abstract_path(&name))?,
+            // A directory is where a server puts a socket of its own, not something to connect
+            // to.
+            UnixSocket::Dir(_) | UnixSocket::TmpDir(_) => return Err(Error::Unsupported),
+        };
+
+        let source = connect(runtime, Domain::UNIX, Type::STREAM, &socket_address)
+            .await
+            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))?;
+
+        Ok(RegisteredIo::new(runtime, source, UnixOps)?.into())
     }
 
     pub(super) fn from_options(opts: std::collections::HashMap<&str, &str>) -> crate::Result<Self> {
@@ -55,6 +91,20 @@ impl Unix {
 
         Ok(Self::new(path))
     }
+}
+
+/// The path that names the abstract socket `name`.
+///
+/// A unix socket address whose path starts with a zero byte is a name in the Linux abstract
+/// namespace rather than one on the filesystem.
+#[cfg(target_os = "linux")]
+fn abstract_path(name: &OsStr) -> PathBuf {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let mut bytes = vec![0];
+    bytes.extend_from_slice(name.as_bytes());
+
+    PathBuf::from(OsString::from_vec(bytes))
 }
 
 impl Display for Unix {

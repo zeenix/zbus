@@ -21,7 +21,7 @@ fn issue_813() {
         os::{fd::AsFd, unix::net::UnixStream},
         vec,
     };
-    use zbus::{Fd, conn::socket::WriteHalf, connection::Builder};
+    use zbus::{Fd, connection::Builder};
 
     #[derive(Debug)]
     struct Issue813Iface {
@@ -92,12 +92,9 @@ fn issue_813() {
                 fds.push(fd.as_fd());
             }
 
-            p1.set_nonblocking(true)?;
-            #[cfg(feature = "tokio")]
-            let mut split = zbus::conn::Socket::split(tokio::net::UnixStream::from_std(p1)?);
-            #[cfg(not(feature = "tokio"))]
-            let mut split = zbus::conn::Socket::split(async_io::Async::new(p1)?);
-            split.write_mut().sendmsg(&bytes, &fds).await?;
+            // The point of the test is that everything reaches the server in one go, so it goes
+            // out as a single message with the descriptors attached, straight through the socket.
+            send_with_fds(&p1, &bytes, &fds)?;
 
             server_listener.await;
             client_event.notify(1);
@@ -109,4 +106,31 @@ fn issue_813() {
         Result::<()>::Ok(())
     })
     .unwrap();
+}
+
+/// Sends all of `bytes` down `socket`, with `fds` attached to the first write.
+fn send_with_fds(
+    socket: &std::os::unix::net::UnixStream,
+    bytes: &[u8],
+    fds: &[std::os::fd::BorrowedFd<'_>],
+) -> std::io::Result<()> {
+    use std::{io::IoSlice, mem::MaybeUninit};
+
+    use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, send, sendmsg};
+
+    let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(2))];
+    let mut ancillary = SendAncillaryBuffer::new(&mut space);
+    assert!(ancillary.push(SendAncillaryMessage::ScmRights(fds)));
+
+    let mut sent = sendmsg(
+        socket,
+        &[IoSlice::new(bytes)],
+        &mut ancillary,
+        SendFlags::empty(),
+    )?;
+    while sent < bytes.len() {
+        sent += send(socket, &bytes[sent..], SendFlags::empty())?;
+    }
+
+    Ok(())
 }

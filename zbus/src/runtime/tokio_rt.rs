@@ -30,6 +30,15 @@ impl Tokio {
     pub(crate) fn current() -> Option<Self> {
         Handle::try_current().ok().map(|handle| Self { handle })
     }
+
+    /// Makes this runtime the current one for as long as the guard lives.
+    ///
+    /// A socket or timer of Tokio's own belongs to the runtime that is current where it is
+    /// created, so one built anywhere but in the methods below needs this guard around it.
+    #[cfg(windows)]
+    pub(crate) fn enter(&self) -> tokio::runtime::EnterGuard<'_> {
+        self.handle.enter()
+    }
 }
 
 impl traits::Runtime for Tokio {

@@ -1,11 +1,11 @@
 //! What a runtime supplies to a connection.
 //!
-//! zbus ships no runtime of its own. A connection watches its socket, takes its timers and runs
-//! its tasks on `async-io` (the default), on Tokio, or on whatever implements [`Runtime`] and is
-//! handed to [`Builder::runtime`]. Implementing the trait takes a readiness registration, a timer
-//! and a task handle, all of which every async runtime already has, together with a hook for
-//! blocking work. Both built-in backends are implementations of these traits, picked by the
-//! `async-io` and `tokio` features.
+//! zbus ships no runtime of its own. A connection watches its socket, takes its timers, runs its
+//! tasks and hands off its blocking work on `async-io` (the default), on Tokio, or on whatever
+//! implements [`Runtime`] and is handed to [`Builder::runtime`]. Implementing the trait takes a
+//! readiness registration, a timer and a task handle, all of which every async runtime already
+//! has, together with a hook for blocking work. Both built-in backends are implementations of
+//! these traits, picked by the `async-io` and `tokio` features.
 //!
 //! The async locks a connection holds are not part of the trait: zbus takes those from
 //! `async-lock` or from Tokio, whichever of the `async-lock` and `tokio` cargo features is on, so
@@ -79,13 +79,11 @@ pub trait Runtime: Send + Sync + 'static {
     ///
     /// zbus asks for this for the operations it has no async form of:
     ///
-    /// * the hostname lookup for a `tcp:` address,
-    /// * reading a `nonce-tcp:` file,
-    /// * the supplementary-group lookup behind peer credentials,
-    /// * waiting on the helper process of `unixexec:`, `ibus:` and `launchd:`.
-    ///
-    /// Peer credentials come through this hook already; the rest still goes to the backend zbus
-    /// is compiled with.
+    /// * the host-name lookup for a `tcp:` address,
+    /// * reading the file a `nonce-tcp:` address names,
+    /// * the peer-credential lookups that go to the name service or to the operating system's table
+    ///   of connections,
+    /// * reading the `autolaunch:` address on Windows, which takes a named mutex.
     ///
     /// The default runs every call on a thread of its own, which exits with the work and whose
     /// failure to start panics, so a runtime that keeps a pool of threads for blocking work

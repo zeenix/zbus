@@ -1,11 +1,11 @@
 //! Integration with the async runtime that drives a connection.
 //!
-//! zbus does not ship a runtime of its own. A connection watches its socket, takes its timers and
-//! runs its internal tasks on `async-io` (the default), on Tokio, or on any implementation of
-//! [`traits::Runtime`] handed to [`Builder::runtime`]. Both built-in backends are implementations
-//! of that trait, picked by the `async-io` and `tokio` features. The async locks a connection
-//! holds are not part of that trait: they come from `async-lock` or from Tokio, whichever of the
-//! `async-lock` and `tokio` cargo features is on.
+//! zbus does not ship a runtime of its own. A connection watches its socket, takes its timers,
+//! runs its internal tasks and hands off its blocking work on `async-io` (the default), on Tokio,
+//! or on any implementation of [`traits::Runtime`] handed to [`Builder::runtime`]. Both built-in
+//! backends are implementations of that trait, picked by the `async-io` and `tokio` features. The
+//! async locks a connection holds are not part of that trait: they come from `async-lock` or from
+//! Tokio, whichever of the `async-lock` and `tokio` cargo features is on.
 //! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
@@ -33,7 +33,7 @@ mod timeout;
 mod tokio_rt;
 #[cfg(feature = "tokio")]
 use tokio_rt::Tokio;
-#[cfg(feature = "async-io")]
+#[cfg(any(feature = "async-io", test))]
 mod unblock;
 
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands, and
@@ -144,9 +144,6 @@ impl Runtime {
     }
 
     /// Runs `work` off the event loop, on whatever this runtime keeps for blocking work.
-    //
-    // The socket and transport code that has no connection at hand still picks a backend of its
-    // own, per call, through `select_runtime!`.
     pub(crate) async fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> T
     where
         T: Send + 'static,
@@ -159,76 +156,6 @@ impl Runtime {
             Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
         }
     }
-}
-
-/// Blocking work for code that does not have a connection's runtime at hand.
-///
-/// Transports and sockets are not tied to one connection's runtime, so they pick the backend per
-/// call the way `select_runtime!` does. A build with neither backend has no pool to offer: this
-/// function and every path that needs it are compiled out of it.
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-pub(crate) fn spawn_blocking<F, T>(
-    f: F,
-    #[allow(unused)] name: &str,
-) -> std::pin::Pin<Box<dyn Future<Output = std::io::Result<T>> + Send + 'static>>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    select_runtime! {
-        tokio: {
-            let task = task::tokio_spawn_blocking(f, name);
-
-            Box::pin(async move { task.await.map_err(std::io::Error::other) })
-        },
-        async_io: Box::pin(async move { Ok(blocking::unblock(f).await) }),
-    }
-}
-
-/// Evaluates the `tokio` or `async-io` expression for the active backend.
-///
-/// With a single backend it resolves to that backend's expression at compile time; with both it
-/// picks at runtime via [`use_tokio`]. The inactive arm is `cfg`-stripped, so each arm only needs
-/// to be valid in the configurations where its backend is compiled in.
-///
-/// The choice is re-evaluated on every call, so this is only safe where it doesn't need to match a
-/// particular connection's backend. A connection latches its backend once at build time (see
-/// [`Runtime::default_for_build`]); use that instead of this macro for anything tied to the
-/// socket's reactor. The current call sites (timers, the blocking pool) are independent of the
-/// socket, so a per-call decision is fine.
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-macro_rules! select_runtime {
-    (tokio: $tokio:expr, async_io: $async_io:expr $(,)?) => {{
-        #[cfg(all(feature = "tokio", feature = "async-io"))]
-        {
-            if $crate::runtime::use_tokio() {
-                $tokio
-            } else {
-                $async_io
-            }
-        }
-        #[cfg(all(feature = "tokio", not(feature = "async-io")))]
-        {
-            $tokio
-        }
-        #[cfg(all(feature = "async-io", not(feature = "tokio")))]
-        {
-            $async_io
-        }
-    }};
-}
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-pub(crate) use select_runtime;
-
-/// Whether zbus should use tokio (rather than `async-io`) for its I/O.
-///
-/// Only consulted when both backends are compiled in, since that's the only time there's a
-/// choice: we then use tokio when a tokio runtime is active on the current thread. This keeps the
-/// features additive: enabling `tokio` elsewhere in the dependency graph doesn't force every zbus
-/// user into a tokio runtime.
-#[cfg(all(feature = "async-io", feature = "tokio"))]
-pub(crate) fn use_tokio() -> bool {
-    tokio::runtime::Handle::try_current().is_ok()
 }
 
 #[cfg(test)]

@@ -6,13 +6,11 @@
 //! thread per instance, which lives as long as the process, and its registrations and timers are
 //! async-io's: enough for a test, not a model for a real host.
 
-#[cfg(feature = "p2p")]
-use std::sync::{Mutex, PoisonError};
 use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex, PoisonError},
     task::{Context, Poll},
     time::Duration,
 };
@@ -20,11 +18,75 @@ use std::{
 use async_executor::Executor;
 use async_io::{Async, Timer};
 
-use super::{Interest, IoSource, traits};
+use super::{Interest, IoSource, Runtime, traits, unblock};
+
+/// Runs `body` once under every runtime this build can make.
+///
+/// Everything but Tokio is driven by `futures_lite`; a Tokio connection is polled inside the
+/// runtime it belongs to, which is where a Tokio user would poll it.
+pub(crate) fn under_every_runtime<Body, Fut>(body: Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    under_the_polled_runtimes(&body);
+
+    #[cfg(feature = "tokio")]
+    under_tokio(&body);
+}
+
+/// [`under_every_runtime`], minus any runtime that cannot watch a socket zbus owns.
+///
+/// Tokio on Windows reaches a socket through a type that owns it, so it has nowhere to keep a
+/// descriptor of zbus's own and [`traits::Runtime::register_io_source`] reports `Unsupported`
+/// there. A Tokio connection on Windows takes a `tcp:` address over as a stream of Tokio's own,
+/// reports every other address as unsupported, and fails to register a stream handed to the
+/// builder.
+pub(crate) fn under_every_watching_runtime<Body, Fut>(body: Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    under_the_polled_runtimes(&body);
+
+    #[cfg(all(feature = "tokio", not(windows)))]
+    under_tokio(&body);
+}
+
+/// Runs `body` under the runtimes a test drives with `futures_lite` from the calling thread.
+fn under_the_polled_runtimes<Body, Fut>(body: &Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    #[cfg(feature = "async-io")]
+    futures_lite::future::block_on(body(Runtime::AsyncIo(super::AsyncIo::new())));
+
+    futures_lite::future::block_on(body(Runtime::from_external(TestRuntime::new())));
+}
+
+/// Runs `body` inside a Tokio runtime of its own, which is where a Tokio user would poll it.
+#[cfg(feature = "tokio")]
+fn under_tokio<Body, Fut>(body: &Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+
+    tokio.block_on(async {
+        let runtime = super::Tokio::current().expect("a Tokio runtime is current");
+
+        body(Runtime::Tokio(runtime)).await
+    });
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct TestRuntime {
     executor: Arc<Executor<'static>>,
+    // Shared with every clone, so a test that hands one to a connection still sees what the
+    // connection asked of it.
+    blocking_calls: Arc<Mutex<usize>>,
 }
 
 impl TestRuntime {
@@ -38,12 +100,23 @@ impl TestRuntime {
             .spawn(move || futures_lite::future::block_on(runner.run(std::future::pending::<()>())))
             .expect("failed to spawn the test runtime thread");
 
-        Self { executor }
+        Self {
+            executor,
+            blocking_calls: Arc::default(),
+        }
     }
 
     /// Whether every task spawned on this runtime is finished or cancelled.
     pub(crate) fn is_empty(&self) -> bool {
         self.executor.is_empty()
+    }
+
+    /// How many pieces of blocking work have been handed to this runtime.
+    pub(crate) fn blocking_calls(&self) -> usize {
+        *self
+            .blocking_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -77,7 +150,12 @@ impl traits::Runtime for TestRuntime {
     where
         T: Send + 'static,
     {
-        Box::pin(blocking::unblock(work))
+        *self
+            .blocking_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) += 1;
+
+        unblock::run(work)
     }
 }
 

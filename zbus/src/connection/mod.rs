@@ -1456,6 +1456,7 @@ mod tests {
         any(feature = "async-io", feature = "tokio")
     ))]
     use crate::fdo::DBusProxy;
+    use crate::runtime::io::tests::RefusedPort;
     #[cfg(all(feature = "service", any(feature = "async-io", feature = "tokio")))]
     use ntest::timeout;
     #[cfg(all(feature = "service", any(feature = "async-io", feature = "tokio")))]
@@ -1473,7 +1474,11 @@ mod tests {
         let addr =
             crate::win32::autolaunch_bus_address().expect("Unable to get session bus address");
 
-        crate::block_on(async { addr.connect().await }).expect("Unable to connect to session bus");
+        crate::block_on(async {
+            addr.connect(&crate::runtime::Runtime::default_for_build()?)
+                .await
+        })
+        .expect("Unable to connect to session bus");
     }
 
     #[cfg(target_os = "macos")]
@@ -1484,9 +1489,85 @@ mod tests {
             let addr = Address::from(Transport::Launchd(Launchd::new(
                 "DBUS_LAUNCHD_SESSION_BUS_SOCKET",
             )));
-            addr.connect().await
+            addr.connect(&crate::runtime::Runtime::default_for_build()?)
+                .await
         })
         .expect("Unable to connect to session bus");
+    }
+
+    #[test]
+    #[ntest::timeout(15000)]
+    fn a_session_connection_over_an_external_runtime() {
+        crate::utils::block_on(async {
+            let connection = super::Builder::session()
+                .runtime(crate::runtime::test_runtime::TestRuntime::new())
+                .build()
+                .await
+                .unwrap();
+
+            connection
+                .call_method(
+                    Some("org.freedesktop.DBus"),
+                    "/org/freedesktop/DBus",
+                    Some("org.freedesktop.DBus.Peer"),
+                    "Ping",
+                    &(),
+                )
+                .await
+                .unwrap();
+        });
+    }
+
+    #[test]
+    #[ntest::timeout(15000)]
+    fn a_tcp_host_name_resolves_through_spawn_blocking() {
+        let runtime = crate::runtime::test_runtime::TestRuntime::new();
+        // A connection to a name tries every address that name resolves to, so the port has to
+        // be refused on all of them.
+        let refused = RefusedPort::for_host("localhost");
+        let address = format!("tcp:host=localhost,port={}", refused.port());
+
+        let error = connection_error(address.as_str(), runtime.clone());
+
+        assert!(
+            matches!(&error, crate::Error::Connection(e, _)
+                if e.kind() == std::io::ErrorKind::ConnectionRefused),
+            "connecting to a closed port reported `{error}` rather than a refused connection",
+        );
+        assert!(
+            runtime.blocking_calls() > 0,
+            "the host name was resolved without asking the runtime for blocking work",
+        );
+    }
+
+    #[test]
+    #[ntest::timeout(15000)]
+    fn a_tcp_literal_skips_resolution() {
+        let runtime = crate::runtime::test_runtime::TestRuntime::new();
+        let refused = RefusedPort::on(std::net::Ipv4Addr::LOCALHOST.into());
+        let address = format!("tcp:host=127.0.0.1,port={}", refused.port());
+
+        let error = connection_error(address.as_str(), runtime.clone());
+
+        assert!(
+            matches!(&error, crate::Error::Connection(e, _)
+                if e.kind() == std::io::ErrorKind::ConnectionRefused),
+            "connecting to a closed port reported `{error}` rather than a refused connection",
+        );
+        assert_eq!(
+            runtime.blocking_calls(),
+            0,
+            "an address that is already an IP address was handed to the resolver anyway",
+        );
+    }
+
+    /// The error a connection to `address` over `runtime` fails with.
+    fn connection_error(
+        address: &str,
+        runtime: crate::runtime::test_runtime::TestRuntime,
+    ) -> crate::Error {
+        crate::utils::block_on(super::Builder::address(address).runtime(runtime).build())
+            .unwrap_err()
     }
 
     #[cfg(all(
@@ -1845,14 +1926,14 @@ mod p2p_tests {
         )
     }
 
-    #[cfg(all(feature = "vsock", feature = "async-io"))]
+    #[cfg(feature = "vsock")]
     #[test]
     #[timeout(15000)]
     fn vsock_connect() {
         let _ = crate::utils::block_on(test_vsock_connect()).unwrap();
     }
 
-    #[cfg(all(feature = "vsock", feature = "async-io"))]
+    #[cfg(feature = "vsock")]
     async fn test_vsock_connect() -> Result<(Connection, Connection)> {
         let guid = Guid::generate();
 
@@ -1862,8 +1943,9 @@ mod p2p_tests {
         let addr = format!("vsock:cid={},port={},guid={guid}", addr.cid(), addr.port());
 
         let server = async {
-            let server =
-                crate::runtime::spawn_blocking(move || listener.incoming().next(), "").await?;
+            let server = crate::runtime::Runtime::default_for_build()?
+                .spawn_blocking(move || listener.incoming().next())
+                .await;
             Builder::vsock_stream(server.unwrap()?)
                 .server(guid)
                 .p2p()
@@ -1879,14 +1961,14 @@ mod p2p_tests {
         futures_util::try_join!(server, client)
     }
 
-    #[cfg(all(feature = "vsock", feature = "async-io"))]
+    #[cfg(feature = "vsock")]
     #[test]
     #[timeout(15000)]
     fn vsock_p2p() {
         crate::utils::block_on(test_vsock_p2p()).unwrap();
     }
 
-    #[cfg(all(feature = "vsock", feature = "async-io"))]
+    #[cfg(feature = "vsock")]
     async fn test_vsock_p2p() -> Result<()> {
         let (server1, client1) = vsock_p2p_pipe().await?;
         let (server2, client2) = vsock_p2p_pipe().await?;
@@ -1894,7 +1976,7 @@ mod p2p_tests {
         test_p2p(server1, client1, server2, client2).await
     }
 
-    #[cfg(all(feature = "vsock", feature = "async-io"))]
+    #[cfg(feature = "vsock")]
     async fn vsock_p2p_pipe() -> Result<(Connection, Connection)> {
         let guid = Guid::generate();
 

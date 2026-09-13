@@ -15,14 +15,12 @@ use uds_windows::UnixStream;
 
 #[cfg(feature = "bus-impl")]
 use crate::MessageStream;
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use crate::address;
 #[cfg(any(unix, windows))]
 use crate::runtime::io::UnixOps;
 #[cfg(feature = "vsock")]
 use crate::runtime::io::VsockOps;
 use crate::{
-    Connection, Error, Guid, OwnedGuid, Result,
+    Connection, Error, Guid, OwnedGuid, Result, address,
     address::Address,
     fdo::RequestNameFlags,
     message::Message,
@@ -488,11 +486,11 @@ impl<'a> Builder<'a> {
 
     /// Run the connection on `runtime`.
     ///
-    /// The connection watches its socket, takes its timers, runs its internal tasks and takes its
-    /// locks on `runtime`. zbus never drives a runtime of its own, so the tasks the connection
-    /// spawns only make progress while `runtime` runs them. This is how an application whose
-    /// event loop is neither of the two zbus can be compiled with puts a connection on the one it
-    /// has.
+    /// The connection creates and watches its sockets, takes its timers, runs its internal
+    /// tasks and hands off its blocking work on `runtime`. zbus never drives a runtime of its
+    /// own, so the tasks the connection spawns only make progress while `runtime` runs them.
+    /// This is how an application whose event loop is neither of the two zbus can be compiled
+    /// with puts a connection on the one it has.
     ///
     /// Without this, the connection runs on the backend zbus is compiled with: Tokio when the
     /// `tokio` feature is on and a Tokio runtime is current on this thread, otherwise the
@@ -796,31 +794,17 @@ impl<'a> Builder<'a> {
 
                 registered(runtime, socket, UnixOps)?.into()
             }
-            Target::TcpStream(stream) => registered(runtime, stream, TcpOps)?.into(),
+            Target::TcpStream(stream) => tcp_stream(runtime, stream)?,
             #[cfg(feature = "vsock")]
             Target::VsockStream(stream) => registered(runtime, stream, VsockOps)?.into(),
             Target::Address(address) => {
-                // Without a backend there is no socket to create for an address, so `connect`
-                // always fails and the GUID would never be read.
-                #[cfg(any(feature = "async-io", feature = "tokio"))]
-                {
-                    guid = address.guid().map(|g| g.to_owned().into());
-                }
-                match address.connect().await? {
-                    #[cfg(all(
-                        any(unix, feature = "async-io"),
-                        any(feature = "async-io", feature = "tokio")
-                    ))]
+                guid = address.guid().map(|g| g.to_owned().into());
+                match address.connect(runtime).await? {
                     address::transport::Stream::Unix(split) => split,
-                    #[cfg(all(
-                        unix,
-                        feature = "unixexec",
-                        any(feature = "async-io", feature = "tokio")
-                    ))]
+                    #[cfg(all(unix, feature = "unixexec"))]
                     address::transport::Stream::Unixexec(split) => split,
-                    #[cfg(any(feature = "async-io", feature = "tokio"))]
                     address::transport::Stream::Tcp(split) => split,
-                    #[cfg(all(feature = "vsock", feature = "async-io"))]
+                    #[cfg(feature = "vsock")]
                     address::transport::Stream::Vsock(split) => split,
                 }
             }
@@ -834,6 +818,26 @@ impl<'a> Builder<'a> {
 
         Ok((split, guid, authenticated))
     }
+}
+
+/// Hands `stream` over to `runtime` the way a `tcp:` address hands its own socket over.
+///
+/// Tokio watches a Windows socket through a type that owns it, so a Tokio connection there takes
+/// the stream over as one of Tokio's rather than registering a descriptor of its own.
+fn tcp_stream(runtime: &Runtime, stream: std::net::TcpStream) -> Result<BoxedSplit> {
+    #[cfg(all(windows, feature = "tokio"))]
+    if let Runtime::Tokio(tokio_runtime) = runtime {
+        use crate::connection::socket::TokioTcp;
+
+        stream.set_nonblocking(true)?;
+        // Tokio hands the socket to the reactor of whichever runtime is current, which has to be
+        // this connection's and not whichever one the caller is on.
+        let _guard = tokio_runtime.enter();
+
+        return Ok(TokioTcp::new(tokio::net::TcpStream::from_std(stream)?, runtime.clone()).into());
+    }
+
+    Ok(registered(runtime, stream, TcpOps)?.into())
 }
 
 #[cfg(test)]
@@ -866,7 +870,12 @@ mod tests {
         let address = Address::try_from(ADDRESS).unwrap();
         let name = WellKnownName::try_from("org.zbus.Test").unwrap();
         let error = block_on(Builder::address(address).name(name).build()).unwrap_err();
-        // No setter recorded an error, so the build got as far as connecting.
+        // No setter recorded an error, so the build got as far as connecting, which a Tokio
+        // connection on Windows turns down before trying: it has nothing to reach a unix socket
+        // with.
+        #[cfg(all(windows, feature = "tokio"))]
+        assert!(matches!(error, Error::Unsupported));
+        #[cfg(not(all(windows, feature = "tokio")))]
         assert!(matches!(error, Error::Connection(..)));
     }
 
