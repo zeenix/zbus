@@ -1,0 +1,139 @@
+//! What a runtime supplies to a connection.
+//!
+//! zbus ships no runtime of its own. A connection takes its timers and runs its tasks on
+//! `async-io` (the default), on Tokio, or on whatever implements [`Runtime`] and is handed to
+//! `Builder::runtime`; the socket it is given supplies its own readiness. Implementing the trait
+//! takes a timer and a task handle, both of which every async runtime already has, together with
+//! a readiness registration and a hook for blocking work that a connection does not ask for yet;
+//! the host examples in the repository show the shape for Tokio and for a plain `polling` event
+//! loop.
+//!
+//! The async locks a connection holds are not part of the trait: zbus takes those from
+//! `async-lock` or from Tokio, whichever cargo feature is on, exactly as it always has.
+
+use std::{
+    future::Future,
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
+
+use super::{Interest, IoSource, blocking_thread};
+
+/// An async runtime, as seen by a connection.
+pub trait Runtime: Send + Sync + 'static {
+    /// How this runtime watches a registered [`IoSource`] for readiness.
+    type RegisteredIoSource: PollIo;
+    /// The timer [`Runtime::sleep`] hands back.
+    type Sleep: Future<Output = ()> + Send + 'static;
+    /// The handle to a task [`Runtime::spawn`] hands back.
+    type Task<T>: TaskHandle<T>
+    where
+        T: Send + 'static;
+
+    /// Register a socket or pipe for readiness notifications.
+    ///
+    /// The registration must stop watching the source before the [`IoSource`] it was given is
+    /// released.
+    ///
+    /// This method and [`Registration`] are part of the contract every implementor provides; a
+    /// connection does not consult them yet, since the socket it is given drives itself.
+    fn register_io_source(&self, source: IoSource) -> io::Result<Self::RegisteredIoSource>;
+
+    /// A future that completes once `duration` has passed. Dropping it cancels the timer.
+    ///
+    /// A wait is asked for as a length rather than as a deadline because the clock it is timed
+    /// on is the runtime's own. Tokio's, for one, can be paused and advanced by hand, and a
+    /// deadline worked out from [`Instant::now`] on the standard clock would then be a wait of
+    /// some altogether different length, or of none at all.
+    ///
+    /// [`Instant::now`]: std::time::Instant::now
+    fn sleep(&self, duration: Duration) -> Self::Sleep;
+
+    /// Run `future` to completion in the background.
+    ///
+    /// The task runs concurrently with the caller, on whichever thread the runtime chooses. The
+    /// handle resolves to what `future` produced, or to `Err` where the runtime lost the task;
+    /// only some runtimes can report that. Dropping the handle cancels the task;
+    /// [`TaskHandle::detach`] lets it run on.
+    ///
+    /// `name` says what the task is there for — `"socket reader"`, say. It is for diagnostics
+    /// only: nothing zbus does depends on it, and a runtime with nowhere to put it is free to
+    /// drop it. The built-in Tokio backend hands it to `tokio::task::Builder`, which is where
+    /// tokio-console and a task dump read a task's name from.
+    fn spawn<T>(
+        &self,
+        name: &str,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> Self::Task<T>
+    where
+        T: Send + 'static;
+
+    /// Run `work` off the event loop.
+    ///
+    /// zbus asks for this for the operations it has no async form of:
+    ///
+    /// * the hostname lookup for a `tcp:` address,
+    /// * reading a `nonce-tcp:` file,
+    /// * the supplementary-group lookup behind peer credentials,
+    /// * waiting on the helper process of `unixexec:`, `ibus:` and `launchd:`.
+    ///
+    /// A connection does not consult this hook yet: that work still goes to the backend zbus is
+    /// compiled with.
+    ///
+    /// The default runs every call on a thread of its own, which exits with the work and whose
+    /// failure to start panics, so a runtime that keeps a pool of threads for blocking work
+    /// should hand the work to that pool instead.
+    fn spawn_blocking<T>(
+        &self,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Pin<Box<dyn Future<Output = T> + Send + 'static>>
+    where
+        T: Send + 'static,
+    {
+        blocking_thread::run(work)
+    }
+}
+
+/// I/O on one registered [`IoSource`], polled as the runtime reports it ready.
+pub trait PollIo: Send + Sync + 'static {
+    /// Run `operation` on the polling thread while the source is ready for `interest`.
+    ///
+    /// Every readiness signal must run `operation` at least once. The first success it returns,
+    /// a partial write included, and the first error other than `WouldBlock` are each what this
+    /// call resolves to. A `WouldBlock` says the source was not ready after all: arrange for
+    /// `cx`'s waker to be woken once it is, and return [`Poll::Pending`]. Whether readiness is
+    /// looked at before or after the first attempt is the implementation's to choose.
+    ///
+    /// An implementation must never spin while the source is not ready, never block the thread
+    /// it is polled on and never hold on to `operation` past the call, and it must stop watching
+    /// the source before the [`IoSource`] it was registered with is released.
+    fn poll_io<T>(
+        &self,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        operation: impl FnMut() -> io::Result<T>,
+    ) -> Poll<io::Result<T>>;
+}
+
+/// A handle to a spawned task, which resolves to what that task produced.
+///
+/// The output travels back through the handle from the outset so that this contract is the one a
+/// caller who wants it already has: zbus spawns nothing that produces a value today, and a handle
+/// that could only ever resolve to `()` would have to change shape the day something does. The
+/// `Err` case is the runtime having lost the task, which only some runtimes can report.
+///
+/// Dropping the handle cancels the task. A Tokio implementation wraps its `JoinHandle` in a
+/// newtype that aborts on drop; an async-task style handle already behaves this way. A handle is
+/// shared between threads with the connection that owns it, so it must be `Sync`.
+pub trait TaskHandle<T>: Future<Output = io::Result<T>> + Send + Sync + Unpin + 'static {
+    /// Let the task run to completion on its own.
+    ///
+    /// A detached task is the runtime's to keep: it runs until it ends, and a runtime that shuts
+    /// down drops it, as Tokio and async-executor do. A task that is merely forgotten can never be
+    /// reached again, and its future holds a clone of the connection that spawned it, so a runtime
+    /// that forgot one would keep that connection's state for as long as the process runs. The
+    /// object server detaches the task that runs each method call, which is what makes this matter.
+    fn detach(self);
+}
