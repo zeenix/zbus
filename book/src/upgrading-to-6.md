@@ -92,8 +92,8 @@ Four things to know about the features:
 * `comms` pulls in the `uuid` crate — it parses D-Bus GUIDs — without turning on zbus's own
   `uuid` feature, so the `Uuid` wire impls stay opt-in, as they were.
 * Any D-Bus feature (`async-io`, `tokio`, `async-lock`, `blocking-api`, `p2p`, `bus-impl`,
-  `vsock`, `tokio-vsock`) enables `comms`. In a workspace where one crate asks for the wire-only
-  build and another for the full one, Cargo's feature unification gives everybody the full build.
+  `vsock`) enables `comms`. In a workspace where one crate asks for the wire-only build
+  and another for the full one, Cargo's feature unification gives everybody the full build.
   That is a build-size question only; nothing behaves differently.
 
 A crate that depends on `zbus_macros` directly keeps `proxy`, `interface` and `DBusError`
@@ -398,34 +398,22 @@ discriminant. Use `serde_repr` for an integer enum whose discriminants are its D
 A property type mismatch now returns `Error::SignatureMismatch` rather than
 `Error::IncorrectType`. The new error includes both the actual and expected signatures.
 
-### Stream constructors name their I/O backend
+### Stream constructors take an owned socket
 
 The stream constructors on `connection::Builder` no longer change their parameter type when Cargo
-features are unified. `unix_stream`, `tcp_stream` and `vsock_stream` are gone; choose the
-constructor that matches the stream instead:
+features are unified: each one takes the socket the platform owns, and the connection drives it on
+whichever runtime it was built with. Hand a stream of another kind over as the socket it wraps.
 
-- `tokio::net::UnixStream`: `Builder::unix_stream` becomes `Builder::tokio_unix_stream` with
-  `tokio`.
-- `std::os::unix::net::UnixStream` or `uds_windows::UnixStream`: `Builder::unix_stream` becomes
-  `Builder::async_io_unix_stream` with `async-io`.
-- `tokio::net::TcpStream`: `Builder::tcp_stream` becomes `Builder::tokio_tcp_stream` with `tokio`.
-- `std::net::TcpStream`: `Builder::tcp_stream` becomes `Builder::async_io_tcp_stream` with
-  `async-io`.
-- `tokio_vsock::VsockStream`: `Builder::vsock_stream` becomes `Builder::tokio_vsock_stream` with
-  `tokio-vsock`.
-- `vsock::VsockStream`: `Builder::vsock_stream` becomes `Builder::async_io_vsock_stream` with
-  `vsock`.
+- `Builder::unix_stream` takes a `std::os::unix::net::UnixStream` (`uds_windows::UnixStream` on
+  Windows). A `tokio::net::UnixStream` becomes one with `into_std()`.
+- `Builder::tcp_stream` takes a `std::net::TcpStream`. A `tokio::net::TcpStream` becomes one with
+  `into_std()`.
+- `Builder::vsock_stream` takes a `vsock::VsockStream`. It serves a Tokio connection too, so the
+  `tokio-vsock` feature and the constructor that took its stream are both gone; `vsock` no longer
+  enables `async-io` either.
 
-`async_io_unix_stream` and `async_io_tcp_stream` already existed in zbus 5.19 and keep their
-names. The Unix and TCP renames also apply to `zbus::blocking::connection::Builder`; the blocking
-builder has no VSOCK stream constructors.
-
-When the corresponding runtime features are enabled, both sets of applicable constructors are
-available; enabling one feature no longer changes a constructor supplied by the other. A supplied
-stream's constructor explicitly chooses its I/O backend. For address-created async connections,
-transports supported by both backends instead choose at run time: tokio when the current thread is
-inside a tokio runtime, and `async-io` otherwise. The stream constructor does not override the
-runtime selected while building the connection.
+`zbus::blocking::connection::Builder` mirrors the Unix and TCP constructors; it has no VSOCK
+stream constructor.
 
 ### The encoding context has no format
 
@@ -666,7 +654,7 @@ streams only need `proxy`, as before.
 A connection used to pick its executor by cargo feature, with
 `Builder::internal_executor(false)` and `Connection::executor().tick()` as the way to drive
 zbus's tasks from another runtime. That pair is gone, together with the `Executor` and `Task`
-types. A connection now takes its timers and its internal tasks from one runtime:
+types. A connection now takes its readiness, its timers and its internal tasks from one runtime:
 Tokio when the `tokio` feature is on and a runtime is current, otherwise the built-in async-io
 runtime, or whatever you pass to `Builder::runtime`:
 
@@ -678,12 +666,14 @@ async fn connect(runtime: impl Runtime) -> Result<Connection> {
 }
 ```
 
-An implementation of `zbus::runtime::traits::Runtime` supplies timers and task spawning; a
-readiness registration is part of the trait too, for the socket path a later release moves onto
-the runtime. Every async runtime already has all of these. zbus never drives the runtime, so the
-tasks a connection spawns only run while the runtime runs them. The two built-in backends are
-implementations of the same trait, picked by cargo feature, so this method is for the runtime
-your application already has. Nothing changes for connections built without `runtime`.
+An implementation of `zbus::runtime::traits::Runtime` supplies a readiness registration, timers
+and task spawning; every async runtime already has all three. Every socket a connection owns
+through `Builder::unix_stream`, `tcp_stream`, `vsock_stream` or `socket` goes through the same
+registration; the standard transports still pick a backend of their own until a later release
+moves them onto it too. zbus never drives the runtime, so the tasks a connection spawns only run
+while the runtime runs them. The two built-in backends are implementations of the same trait,
+picked by cargo feature, so this method is for the runtime your application already has. Nothing
+changes for connections built without `runtime`.
 
 zbus's own async locks are not part of the trait: they still come from a cargo feature, either
 `async-lock` (which `async-io` enables, as before) or `tokio`. `async-lock` is a feature you can

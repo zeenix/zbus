@@ -54,6 +54,7 @@ comms = [
     "dep:libc",
     "dep:windows-sys",
     "dep:uds_windows",
+    "dep:socket2",
     # `guid::validate_guid` parses GUIDs with `uuid` outside any `p2p` gate, so the dependency is
     # needed here. `dep:uuid` rather than `uuid` keeps the `Uuid` wire impls opt-in, as today.
     "dep:uuid",
@@ -76,8 +77,7 @@ async-lock = ["comms", "dep:async-lock"]
 # Logging through `tracing` (default). With this off, zbus emits no log events or spans, and
 # `tokio`'s own `tracing` feature is not enabled either.
 tracing = ["dep:tracing", "tokio?/tracing"]
-vsock = ["dep:vsock", "async-io"]
-tokio-vsock = ["dep:tokio-vsock", "tokio"]
+vsock = ["comms", "dep:vsock"]
 # Enable blocking API (default).
 blocking-api = ["comms"]
 # The client-side (proxy) API (default).
@@ -144,10 +144,10 @@ tokio = { workspace = true, optional = true, features = [
     "process",
     "sync",
 ] }
+socket2 = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 vsock = { workspace = true, optional = true }
-tokio-vsock = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, optional = true }

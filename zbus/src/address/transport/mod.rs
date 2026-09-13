@@ -42,13 +42,13 @@ pub use launchd::Launchd;
 mod ibus;
 #[cfg(all(unix, feature = "ibus"))]
 pub use ibus::Ibus;
-#[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+#[cfg(feature = "vsock")]
 #[path = "vsock.rs"]
 // Gotta rename to avoid name conflict with the `vsock` crate.
 mod vsock_transport;
 #[cfg(all(target_os = "linux", any(feature = "async-io", feature = "tokio")))]
 use std::os::linux::net::SocketAddrExt;
-#[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+#[cfg(feature = "vsock")]
 pub use vsock_transport::Vsock;
 
 /// The transport properties of a D-Bus address.
@@ -71,12 +71,10 @@ pub enum Transport {
     /// IBus daemon for its D-Bus address using the `ibus address` command.
     #[cfg(all(unix, feature = "ibus"))]
     Ibus(Ibus),
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     /// A VSOCK address.
     ///
-    /// This variant is only available when either the `vsock` or `tokio-vsock` feature is enabled.
-    /// The type of `stream` is `vsock::VsockStream` with the `vsock` feature and
-    /// `tokio_vsock::VsockStream` with the `tokio-vsock` feature.
+    /// This variant is only available with the `vsock` feature.
+    #[cfg(feature = "vsock")]
     Vsock(Vsock),
     /// A `unixexec` address.
     #[cfg(all(unix, feature = "unixexec"))]
@@ -153,23 +151,18 @@ impl Transport {
                 .connect(&address)
                 .await
                 .map(|s| Stream::Unixexec(s.into())),
-            #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+            #[cfg(feature = "vsock")]
             Transport::Vsock(addr) => {
-                #[cfg(all(feature = "vsock", feature = "tokio-vsock"))]
-                {
-                    if crate::runtime::use_tokio() {
-                        vsock_connect_tokio(&addr, &address).await
-                    } else {
-                        vsock_connect_async_io(&addr, &address)
-                    }
-                }
-                #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
+                // `async-io` is the only backend that drives a VSOCK socket today.
+                #[cfg(feature = "async-io")]
                 {
                     vsock_connect_async_io(&addr, &address)
                 }
-                #[cfg(all(feature = "tokio-vsock", not(feature = "vsock")))]
+                #[cfg(not(feature = "async-io"))]
                 {
-                    vsock_connect_tokio(&addr, &address).await
+                    let _ = (addr, address);
+
+                    Err(Error::Unsupported)
                 }
             }
 
@@ -251,7 +244,7 @@ impl Transport {
             "unixexec" => Unixexec::from_options(options).map(Self::Unixexec),
             "tcp" => Tcp::from_options(options, false).map(Self::Tcp),
             "nonce-tcp" => Tcp::from_options(options, true).map(Self::Tcp),
-            #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+            #[cfg(feature = "vsock")]
             "vsock" => Vsock::from_options(options).map(Self::Vsock),
             #[cfg(windows)]
             "autolaunch" => Autolaunch::from_options(options).map(Self::Autolaunch),
@@ -285,7 +278,7 @@ pub(crate) enum Stream {
     Unixexec(BoxedSplit),
     #[cfg(any(feature = "async-io", feature = "tokio"))]
     Tcp(BoxedSplit),
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     Vsock(BoxedSplit),
 }
 
@@ -314,21 +307,13 @@ fn tcp_async_to_split(stream: Async<std::net::TcpStream>) -> Result<BoxedSplit> 
     Ok(stream.into())
 }
 
-#[cfg(feature = "vsock")]
+#[cfg(all(feature = "vsock", feature = "async-io"))]
 fn vsock_connect_async_io(addr: &Vsock, address: &Address) -> Result<Stream> {
     let stream = vsock::VsockStream::connect_with_cid_port(addr.cid(), addr.port())
         .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))?;
     Async::new(stream)
         .map(|s| Stream::Vsock(s.into()))
         .map_err(Into::into)
-}
-
-#[cfg(feature = "tokio-vsock")]
-async fn vsock_connect_tokio(addr: &Vsock, address: &Address) -> Result<Stream> {
-    tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(addr.cid(), addr.port()))
-        .await
-        .map(|s| Stream::Vsock(s.into()))
-        .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))
 }
 
 fn decode_hex(c: char) -> Result<u8> {
@@ -418,7 +403,7 @@ impl Display for Transport {
             Self::Unix(unix) => write!(f, "{unix}")?,
             #[cfg(all(unix, feature = "unixexec"))]
             Self::Unixexec(unixexec) => write!(f, "{unixexec}")?,
-            #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+            #[cfg(feature = "vsock")]
             Self::Vsock(vsock) => write!(f, "{}", vsock)?,
             #[cfg(windows)]
             Self::Autolaunch(autolaunch) => write!(f, "{autolaunch}")?,

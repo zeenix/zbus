@@ -1,12 +1,11 @@
 //! What a runtime supplies to a connection.
 //!
-//! zbus ships no runtime of its own. A connection takes its timers and runs its tasks on
-//! `async-io` (the default), on Tokio, or on whatever implements [`Runtime`] and is handed to
-//! [`Builder::runtime`]; the socket it is given supplies its own readiness. Implementing the
-//! trait takes a timer and a task handle, both of which every async runtime already has, together
-//! with a readiness registration and a hook for blocking work that a connection does not ask for
-//! yet. Both built-in backends are implementations of these traits, picked by the `async-io` and
-//! `tokio` features.
+//! zbus ships no runtime of its own. A connection watches its socket, takes its timers and runs
+//! its tasks on `async-io` (the default), on Tokio, or on whatever implements [`Runtime`] and is
+//! handed to [`Builder::runtime`]. Implementing the trait takes a readiness registration, a timer
+//! and a task handle, all of which every async runtime already has, together with a hook for
+//! blocking work. Both built-in backends are implementations of these traits, picked by the
+//! `async-io` and `tokio` features.
 //!
 //! The async locks a connection holds are not part of the trait: zbus takes those from
 //! `async-lock` or from Tokio, whichever of the `async-lock` and `tokio` cargo features is on, so
@@ -40,8 +39,11 @@ pub trait Runtime: Send + Sync + 'static {
     /// The registration must stop watching the source before the [`IoSource`] it was given is
     /// released.
     ///
-    /// This method and [`Registration`] are part of the contract every implementor provides; a
-    /// connection does not consult them yet, since the socket it is given drives itself.
+    /// Every read and write a connection makes on a socket of its own goes through the
+    /// registration this returns. A socket handed over as a [`Socket`] implementation of its own
+    /// drives itself instead and never reaches this method.
+    ///
+    /// [`Socket`]: crate::connection::Socket
     fn register_io_source(&self, source: IoSource) -> io::Result<Self::RegisteredIoSource>;
 
     /// A future that completes once `duration` has passed. Dropping it cancels the timer.
@@ -82,8 +84,8 @@ pub trait Runtime: Send + Sync + 'static {
     /// * the supplementary-group lookup behind peer credentials,
     /// * waiting on the helper process of `unixexec:`, `ibus:` and `launchd:`.
     ///
-    /// A connection does not consult this hook yet: that work still goes to the backend zbus is
-    /// compiled with.
+    /// Peer credentials come through this hook already; the rest still goes to the backend zbus
+    /// is compiled with.
     ///
     /// The default runs every call on a thread of its own, which exits with the work and whose
     /// failure to start panics, so a runtime that keeps a pool of threads for blocking work

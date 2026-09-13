@@ -19,9 +19,22 @@ type Owned = OwnedFd;
 type Owned = OwnedSocket;
 
 impl IoSource {
-    #[cfg(test)]
     pub(crate) fn new(owned: Owned) -> Self {
         Self(Arc::new(owned))
+    }
+}
+
+#[cfg(unix)]
+impl From<OwnedFd> for IoSource {
+    fn from(owned: OwnedFd) -> Self {
+        Self::new(owned)
+    }
+}
+
+#[cfg(windows)]
+impl From<OwnedSocket> for IoSource {
+    fn from(owned: OwnedSocket) -> Self {
+        Self::new(owned)
     }
 }
 

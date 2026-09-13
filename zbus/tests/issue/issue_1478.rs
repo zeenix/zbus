@@ -5,10 +5,7 @@ const UNIX_ADDRESS: &str = "unix:path=/this/path/does/not/exist";
 const TCP_ADDRESS: &str = "tcp:host=localhost,port=4142,family=ipv4";
 #[cfg(all(unix, feature = "unixexec"))]
 const UNIXEXEC_ADDRESS: &str = "unixexec:path=/this/path/does/not/exist";
-#[cfg(any(
-    all(feature = "vsock", not(feature = "tokio")),
-    feature = "tokio-vsock"
-))]
+#[cfg(all(feature = "vsock", feature = "async-io"))]
 const VSOCK_ADDRESS: &str = "vsock:cid=2,port=0";
 
 #[test]
@@ -26,10 +23,7 @@ async fn connection_error_async() {
     let mut addresses = vec![UNIX_ADDRESS, TCP_ADDRESS];
     #[cfg(all(unix, feature = "unixexec"))]
     addresses.push(UNIXEXEC_ADDRESS);
-    #[cfg(any(
-        all(feature = "vsock", not(feature = "tokio")),
-        feature = "tokio-vsock"
-    ))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     addresses.push(VSOCK_ADDRESS);
 
     for addr in addresses {

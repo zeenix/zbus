@@ -48,10 +48,10 @@ use crate::{
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 
 #[cfg(unix)]
-type RecvmsgResult = io::Result<(usize, Vec<OwnedFd>)>;
+pub(crate) type RecvmsgResult = io::Result<(usize, Vec<OwnedFd>)>;
 
 #[cfg(not(unix))]
-type RecvmsgResult = io::Result<usize>;
+pub(crate) type RecvmsgResult = io::Result<usize>;
 
 /// Trait representing some transport layer over which the DBus protocol can be used.
 ///

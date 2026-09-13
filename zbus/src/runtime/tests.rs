@@ -96,12 +96,12 @@ fn an_explicit_runtime_beats_tokio_detection() {
     let tokio = tokio::runtime::Runtime::new().unwrap();
     let (server, _peer) = tokio.block_on(async {
         futures_util::try_join!(
-            Builder::async_io_unix_stream(p0)
+            Builder::unix_stream(p0)
                 .server(guid)
                 .p2p()
                 .runtime(TestRuntime::new())
                 .build(),
-            Builder::async_io_unix_stream(p1).p2p().build(),
+            Builder::unix_stream(p1).p2p().build(),
         )
         .unwrap()
     });
@@ -316,4 +316,16 @@ fn a_detached_external_task_runs_to_completion() {
     handle_dropped.notify(1);
 
     receiver.recv().expect("the detached task sent nothing");
+}
+
+/// A task spawned through the erased mirror hands its output back to the typed handle.
+#[test]
+#[timeout(15000)]
+fn an_erased_task_hands_its_output_back() {
+    use super::{erased::ErasedRuntime, traits};
+
+    let runtime: Arc<dyn ErasedRuntime> = Arc::new(TestRuntime::new());
+    let task = traits::Runtime::spawn(&runtime, "an erased task", async { 42 });
+
+    assert_eq!(futures_lite::future::block_on(task).unwrap(), 42);
 }

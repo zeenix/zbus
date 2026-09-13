@@ -1,17 +1,18 @@
 //! Integration with the async runtime that drives a connection.
 //!
-//! zbus does not ship a runtime of its own. A connection takes its timers and runs its internal
-//! tasks on `async-io` (the default), on Tokio, or on any implementation of [`traits::Runtime`]
-//! handed to [`Builder::runtime`]; the socket it is given supplies its own readiness. Both
-//! built-in backends are implementations of that trait, picked by the `async-io` and `tokio`
-//! features. The async locks a connection holds are not part of that trait: they come from
-//! `async-lock` or from Tokio, whichever of the `async-lock` and `tokio` cargo features is on.
+//! zbus does not ship a runtime of its own. A connection watches its socket, takes its timers and
+//! runs its internal tasks on `async-io` (the default), on Tokio, or on any implementation of
+//! [`traits::Runtime`] handed to [`Builder::runtime`]. Both built-in backends are implementations
+//! of that trait, picked by the `async-io` and `tokio` features. The async locks a connection
+//! holds are not part of that trait: they come from `async-lock` or from Tokio, whichever of the
+//! `async-lock` and `tokio` cargo features is on.
 //! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
 
 pub mod traits;
 
+pub(crate) mod io;
 mod io_source;
 pub use io_source::{Interest, IoSource};
 #[cfg(feature = "async-io")]
@@ -44,8 +45,6 @@ mod unblock;
 ))]
 pub(crate) mod process;
 
-#[cfg(test)]
-use std::any::Any;
 use std::{future::Future, sync::Arc};
 
 use erased::ErasedRuntime;
@@ -100,6 +99,26 @@ impl Runtime {
         Self::External(Arc::new(runtime))
     }
 
+    /// Watches `source` for readiness on this runtime.
+    ///
+    /// Every I/O a connection performs on a socket of its own goes through the registration this
+    /// returns, so a socket is only ever driven by the runtime the connection was built with.
+    pub(crate) fn register_io_source(&self, source: IoSource) -> std::io::Result<io::Registration> {
+        match self {
+            #[cfg(feature = "async-io")]
+            Self::AsyncIo(runtime) => {
+                traits::Runtime::register_io_source(runtime, source).map(io::Registration::AsyncIo)
+            }
+            #[cfg(feature = "tokio")]
+            Self::Tokio(runtime) => {
+                traits::Runtime::register_io_source(runtime, source).map(io::Registration::Tokio)
+            }
+            Self::External(runtime) => {
+                traits::Runtime::register_io_source(runtime, source).map(io::Registration::External)
+            }
+        }
+    }
+
     /// Spawns a task onto the runtime, under the diagnostic name `name`.
     pub(crate) fn spawn<T>(
         &self,
@@ -118,17 +137,16 @@ impl Runtime {
             Self::Tokio(runtime) => Task(task::TaskInner::Tokio(traits::Runtime::spawn(
                 runtime, name, future,
             ))),
-            Self::External(runtime) => Task(task::TaskInner::External(
-                erased::ExternalTask::spawn(&**runtime, name, future),
-            )),
+            Self::External(runtime) => Task(task::TaskInner::External(traits::Runtime::spawn(
+                runtime, name, future,
+            ))),
         }
     }
 
     /// Runs `work` off the event loop, on whatever this runtime keeps for blocking work.
     //
-    // Only this module's tests reach the hook so far: the call sites still pick a backend of
-    // their own, per call, through `select_runtime!`.
-    #[cfg(test)]
+    // The socket and transport code that has no connection at hand still picks a backend of its
+    // own, per call, through `select_runtime!`.
     pub(crate) async fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> T
     where
         T: Send + 'static,
@@ -138,17 +156,7 @@ impl Runtime {
             Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
-            Self::External(runtime) => {
-                // The erased runtime only takes work that produces an opaque value, so the
-                // result comes back to be downcast to what `work` returned.
-                let work = Box::new(move || Box::new(work()) as Box<dyn Any + Send>);
-
-                *runtime
-                    .spawn_blocking(work)
-                    .await
-                    .downcast()
-                    .expect("blocking work hands back the value it produced")
-            }
+            Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
         }
     }
 }

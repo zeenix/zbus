@@ -42,7 +42,7 @@ For example to create a bus-less peer-to-peer connection on Unix, you can do:
 ```rust,noplayground
 # #[tokio::main]
 # async fn main() -> zbus::Result<()> {
-# #[cfg(all(unix, feature = "async-io"))]
+# #[cfg(unix)]
 # {
 use std::os::unix::net::UnixStream;
 use zbus::{connection::Builder, Guid};
@@ -52,9 +52,9 @@ let (p0, p1) = UnixStream::pair().unwrap();
 # #[allow(unused)]
 let (client_conn, server_conn) = futures_util::try_join!(
     // Client
-    Builder::async_io_unix_stream(p0).p2p().build(),
+    Builder::unix_stream(p0).p2p().build(),
     // Server
-    Builder::async_io_unix_stream(p1).server(guid).p2p().build(),
+    Builder::unix_stream(p1).server(guid).p2p().build(),
 )?;
 # }
 #
@@ -62,8 +62,9 @@ let (client_conn, server_conn) = futures_util::try_join!(
 # }
 ```
 
-`async_io_unix_stream` takes a [`std::os::unix::net::UnixStream`]. With `tokio` enabled you can
-instead pass a [`tokio::net::UnixStream`] to `tokio_unix_stream`.
+`unix_stream` takes a [`std::os::unix::net::UnixStream`], whichever runtime the connection ends
+up on. A stream of another kind is handed over as the socket it wraps: `into_std()` for a
+[`tokio::net::UnixStream`].
 
 [`std::os::unix::net::UnixStream`]: https://doc.rust-lang.org/std/os/unix/net/struct.UnixStream.html
 [`tokio::net::UnixStream`]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html

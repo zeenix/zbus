@@ -28,8 +28,7 @@ That build compiles `zbus::wire` and `zbus::names` and nothing else — no conne
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
 `chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
 and enabling any D-Bus feature (`comms`, `async-io`, `tokio`, `async-lock`, `blocking-api`,
-`p2p`, `bus-impl`, `vsock`, `tokio-vsock`, `proxy`, `service`, `unixexec`, `ibus`) brings the
-D-Bus API back.
+`p2p`, `bus-impl`, `vsock`, `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
 
 zbus logs through [`tracing`], behind the default `tracing` feature; a `default-features =
 false` build that wants zbus's logs must re-enable it explicitly.
