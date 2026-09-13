@@ -1,1694 +1,509 @@
-# Runtime abstraction — implementation plan (PR 2 of 4)
+# External Runtime Implementation Plan (single PR for #1960)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
-> (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every connection takes its tasks, async locks and timers from one runtime value, which
-is either a compiled-in backend or an implementation of the new public `runtime::traits::Runtime`
-trait supplied through `Builder::runtime`; a build with neither `async-io` nor `tokio` becomes
-valid.
+**Goal:** One PR (#1964, branch `runtime-abstraction`) delivers the whole of #1960: a
+connection takes readiness, timers, tasks, locks and blocking work from one runtime, chosen by
+cargo feature for the built-in backends or supplied through `Builder::runtime` by an external
+host, and an external-runtime build depends on no crate the `async-io` feature owns.
 
-**Architecture:** A public trait family (`Runtime`, `IoRegistration`, `Task`, `Mutex`, `RwLock`)
-describes what a runtime supplies. Inside zbus a private `Runtime` enum has one zero-cost variant
-per compiled backend and an `External` variant holding a type-erased trait object; the crate's
-task handle and lock wrappers are enums with the same shape. The async-io backend becomes the
-`AsyncIo` type, one implementor of the trait that the default path uses through its own variant.
-`internal_executor`, `Connection::executor`, and the public `Executor`/`Task` types go away.
+**Architecture:** `zbus::runtime::traits::Runtime` is the only contract. Both built-in backends
+(`AsyncIo`, `Tokio`) are crate-private implementors of it; a crate-private `Runtime` enum with a
+zero-cost variant per compiled backend plus an erased `External` variant is what a connection
+stores. One private registered-socket wrapper (`Registered<K>`) does every socket's I/O through
+`IoRegistration::poll_io`, so transports, FD passing, authentication and peer credentials have one
+implementation. Blocking work (DNS, nonce files, NSS group lookups, process reaping) goes through
+the runtime's `spawn_blocking`, whose default implementation runs the work on a thread of its own
+when the host has no pool; hosts with a pool override it. Processes (`unixexec`, `ibus`,
+`launchd`) are spawned with std and their pipes registered like sockets.
 
-**Tech Stack:** Rust 1.87 (MSRV; return-position `impl Trait` in traits, GATs), async-io /
-async-executor / async-task / async-lock behind `async-io`, tokio behind `tokio`, `event-listener`
-and `futures-lite` as shared dependencies.
+**Tech stack:** Rust 1.87 (MSRV), `socket2` (new, under `comms`), `rustix`/`libc` (existing),
+`async-io`/`async-executor`/`async-lock`/`blocking` behind `async-io`, `tokio` behind `tokio`;
+dev-dependencies add `polling` for the reference host.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-external-runtime-design.md`: "Public API",
-"Runtime selection", "Internals", "Feature and dependency model", "Testing strategy" (PR 2).
+**Spec:** `docs/superpowers/specs/2026-09-12-external-runtime-design.md` (branch
+`external-runtime-spec`, PR #1961), amended by this plan as listed under "Spec amendments".
+
+**Starting point:** branch `runtime-abstraction` at 631bfff6, five commits on `origin/main`
+(ef30879c): traits; runtime value; `Builder::runtime`; CI leg; book. Tasks 1 and 6-7 amend those
+commits with fixups; Tasks 2-5 add commits. Final history is nine commits (see Task 8).
 
 ## Global Constraints
 
-- No new normal dependencies; `Cargo.lock` must not change. Dev-dependencies may add
-  `async-io`, `async-executor` and `async-lock` (already in the lock) for the test runtime.
-- No crate the `async-io` feature owns is referenced outside `#[cfg(feature = "async-io")]` code:
-  `async_io`, `async_executor`, `async_task`, `async_lock`, `async_process`, `blocking`.
-- No handwritten scheduler or synchronization primitive. Everything zbus needs comes from a
-  backend or from the trait.
-- No `unsafe`. No `#[allow(...)]` beyond the pre-existing `#[allow(unused)]` on the `name`
-  parameters of spawning functions.
-- The automatic default behaviour is unchanged: `Connection::session()` and friends on the
-  default features still start one `zbus::Connection executor` thread per connection and run on
-  async-io; with `tokio` and a current Tokio runtime they run on Tokio with no thread.
-- 6.0 is unreleased: remove replaced API outright, no deprecations.
-- 100 characters per line in code, comments and docs. No trailing whitespace. Comments explain
-  non-obvious *why*. Doc titles have no `Get`/`Return` prefix. Tests are not prefixed `test_`.
-- Format with `cargo +nightly fmt --all` and act on any warning it prints.
-- Commit prefix: curated gimoji emoji + `zb: ` (or `book: `). Bodies wrap at 72 columns (CI's
-  commitlint rejects lines over 74). Commit with
-  `/usr/bin/git -c core.hooksPath=/dev/null commit --no-verify --no-gpg-sign`. Every commit ends
-  with exactly these trailers after a blank line:
-
-  ```text
-  Assisted-by: Claude Fable 5.1 (claude-fable-5-1)
-  Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ
-  ```
-
-- Use `/usr/bin/git`, `/usr/bin/grep`, `~/.cargo/bin/cargo` (the bare names are shims). Tests
-  that talk to a bus need `dbus-run-session --`. `ibus_connection` in `zbus/tests/basic.rs` fails
-  in this environment for an unrelated reason (stale ibus socket path); every other failure is
-  real. Tests that can hang carry `#[ntest::timeout(15000)]`.
-- The external-only feature set used throughout this plan is
-  `EXT="blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p"` with
-  `--no-default-features` (every default feature except `async-io`, plus `p2p` for the channel
-  tests).
-
-## Branch
-
-```bash
-/usr/bin/git fetch zeenix
-/usr/bin/git switch -c runtime-abstraction zeenix/runtime-module
-```
-
-## File structure
-
-| File | Responsibility after this PR |
-| --- | --- |
-| `zbus/src/runtime/traits.rs` | Public `Runtime`, `IoRegistration`, `Task`, `Mutex`, `RwLock` |
-| `zbus/src/runtime/io_source.rs` | Public `IoSource` and `Interest` |
-| `zbus/src/runtime/async_io.rs` | `AsyncIo`: the built-in implementor, owns executor and thread |
-| `zbus/src/runtime/erased.rs` | Object-safe mirrors of the traits and the blanket impl |
-| `zbus/src/runtime/locks.rs` | Crate-private `Mutex`/`RwLock` enums and guards |
-| `zbus/src/runtime/executor.rs` | Crate-private `Task` enum (the `Executor` type is gone) |
-| `zbus/src/runtime/timeout.rs` | `Runtime::timeout` |
-| `zbus/src/runtime/test_runtime.rs` | `cfg(test)` implementor over dev-dependencies |
-| `zbus/src/runtime/mod.rs` | The private `Runtime` enum, selection, spawning, lock constructors |
-| `zbus/src/connection/{mod,builder,socket_reader}.rs` | Use the runtime; `Builder::runtime` |
-| `zbus/src/object_server/{mod,interface/*}.rs` | Locks from the runtime; `Box<dyn Interface>` |
-| `zbus/src/proxy/mod.rs` | Property cache task spawned on the runtime |
-| `zbus/src/{lib,utils}.rs` | Re-exports; no-backend `block_on` |
-| `.github/workflows/rust.yml` | External-only leg |
-| `book/src/upgrading-to-6.md` | Migration entry |
+- A build with `--no-default-features` and the features
+  `blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p`
+  ("EXT") lists none of async-io, async-executor, async-task, async-lock, async-process, blocking,
+  polling, async-channel, async-signal, piper, tokio in `cargo tree -e normal`.
+- Those crates are named only inside `#[cfg(feature = "async-io")]` (or `feature = "tokio"` for
+  tokio) code, or in `cfg(test)` code over dev-dependencies.
+- zbus writes no scheduler and no lock. It never drives, ticks or polls a runtime; every task it
+  needs is spawned through `traits::Runtime::spawn`.
+- The external path adds no zbus thread for readiness, timers or task progress at any point of
+  a connection's life, including `build()` and teardown. The one documented exception is the
+  default `traits::Runtime::spawn_blocking`, which runs a blocking operation (hostname lookup for
+  `tcp:`, reading a `nonce-tcp:` file, the supplementary-group lookup for peer credentials,
+  waiting on a helper process for `unixexec:`/`ibus:`/`launchd:`) on a std thread that exits with
+  the operation; a host with a pool overrides it. Proof: the polling host test asserts an
+  unchanged thread count over a lifecycle that needs none of those operations, and a second test
+  shows the default hook's thread is gone once its work is done.
+- Built-in backends are chosen by feature only: `async-io` alone → `AsyncIo`; `tokio` alone →
+  `Tokio` when a Tokio runtime is current, else `Error::Unsupported`; both → `Tokio` when current,
+  else `AsyncIo`; neither → `Builder::runtime` is required, else `Error::Unsupported`. `AsyncIo` and
+  `Tokio` are crate-private; `Builder::runtime` is for external runtimes.
+- Public API after the PR: `zbus::runtime::traits::{Runtime, IoRegistration, Task, Mutex, RwLock}`,
+  `zbus::runtime::{IoSource, Interest, AsyncDrop}`, `connection::Builder::runtime` (+ blocking
+  mirror), `Builder::{unix_stream, tcp_stream, vsock_stream}` taking owned std/`vsock` types
+  (registered on the connection's runtime), `Builder::socket`/`authenticated_socket` for custom
+  `Socket` impls (`Channel` and user types). Removed: `Builder::async_io_*` and
+  `Builder::tokio_*` constructors, every `Socket`/`ReadHalf`/`WriteHalf` impl for `Async<T>` and
+  the tokio/tokio-vsock types, the `tokio-vsock` feature, `internal_executor`,
+  `Connection::executor`, `zbus::Executor`, `zbus::Task`. A tokio socket is passed after
+  `into_std()`, an `Async<T>` after `into_inner()`.
+- `poll_io` contract (issue text, verbatim in the trait docs): run the operation; return the
+  first success (a partial write included) or any error other than `WouldBlock` immediately; on
+  `WouldBlock` keep newer readiness events, arrange a wakeup and return `Pending`; bound retries;
+  never spin, block the host thread or retain the callback. A pending connect waits for writable
+  readiness before checking `SO_ERROR`. A registration is dropped before the source it watches.
+- No `unsafe` beyond the existing FFI in `unix.rs`/`win32.rs` (each with a `// SAFETY:` comment),
+  no `#[allow(...)]`, no atomics where a lock does, bounds in `where` clauses, pub before
+  pub(crate) before private, usage before definition, no `test_` prefix, lines ≤ 100 chars, doc
+  sentences end with a period and describe the code (no history, no future), no internal type
+  names in user docs. Every hang-capable test has `#[ntest::timeout(15000)]`; no fixed-sleep
+  assertions.
+- Commits: gimoji prefix copied verbatim, `zb:`/`book:` scope, header ≤ 72 code points (♻️ counts
+  two), body lines ≤ 74, trailers exactly `Assisted-by: Claude Fable 5.1 (claude-fable-5-1)` then
+  `Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ`, no `Co-Authored-By`.
+  Every git command that creates a commit runs with `-c core.hooksPath=/dev/null --no-verify
+  --no-gpg-sign`. Fixups land with `git commit --fixup=<sha>` then
+  `git -c sequence.editor=true rebase --autosquash origin/main`.
 
 ---
 
-### Task 1: The runtime traits and `IoSource`
+## Design deltas against the current branch
 
-**Files:**
-- Create: `zbus/src/runtime/traits.rs`, `zbus/src/runtime/io_source.rs`
-- Modify: `zbus/src/runtime/mod.rs` (declare and re-export)
+1. **Built-ins through the trait.** `AsyncIo` becomes `pub(crate)`. A new `pub(crate) struct Tokio
+   { handle: tokio::runtime::Handle }` implements `traits::Runtime`: `register` →
+   `tokio::io::unix::AsyncFd<IoSource>` (unix) / `io::ErrorKind::Unsupported` (windows);
+   `sleep_until` → `tokio::time::sleep_until`; `spawn` → `handle.spawn` in the abort-on-drop
+   `TokioTask`; locks → `tokio::sync`; `spawn_blocking` → `handle.spawn_blocking`. The enum becomes
+   `Runtime { AsyncIo(AsyncIo), Tokio(Tokio), External(Arc<dyn ErasedRuntime>) }` and every arm
+   calls the trait method on the concrete type. `Runtime::from_external` loses its downcast.
+   `timeout.rs` goes through `sleep_until` for all variants. `Tokio` captures
+   `Handle::current()` at build time, so a connection keeps working when later polled outside a
+   runtime context (today it panics in `tokio::spawn`/`tokio::time::sleep`).
+2. **One socket wrapper.** `runtime/io.rs`: `Registered<K>` = `IoSource` + a `Registration` enum
+   (`AsyncIo(async_io::Registration)`, `Tokio(tokio_rt::Registration)`, `External(Box<dyn
+   ErasedRegistration>)`) + a kind. `ReadHalf`/`WriteHalf` on `Arc<Registered<K>>`. Kinds:
+   `Unix` (recvmsg/sendmsg with SCM_RIGHTS, peer credentials), `Tcp`, `Vsock`, `Pipe` (one fd,
+   read or write). Every `Socket`/`ReadHalf`/`WriteHalf` impl for `Async<T>`, `tokio::net::*` and
+   `tokio_vsock::*` goes; the `Socket` trait stays for sockets that are not file descriptors
+   (`Channel`, user types). One crate-private `TokioTcp` over `tokio::net::TcpStream` remains under
+   `#[cfg(all(windows, feature = "tokio"))]` for the Windows fallback in delta 3.
+3. **Connecting on the runtime.** Transports build sockets with `socket2` (non-blocking,
+   close-on-exec), call `connect`, and on `EINPROGRESS`/`WouldBlock` register and wait for
+   writable readiness, then `take_error()`. `Transport::connect(self, address, runtime: &Runtime)`.
+   Windows: unix sockets over `socket2` `AF_UNIX` on `AsyncIo`/`External`; on `Tokio` TCP falls back
+   to `TokioTcp` and unix sockets stay `Unsupported`, as today. `select_runtime!`, `use_tokio`,
+   `tcp_async_to_split`, `unix_stream_to_*` go.
+4. **Blocking work through `spawn_blocking`.** The trait method loses its `Option`:
+   `fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> Pin<Box<dyn
+   Future<Output = T> + Send + 'static>>` with a default body that spawns a std thread named
+   `zbus blocking work`, runs `work` there, and hands the result back through an
+   `event_listener::Event` plus a `std::sync::Mutex<Option<T>>` (both already dependencies of
+   `comms`); the future resolves once the result is stored and the thread exits. `AsyncIo`
+   overrides it with `blocking::unblock`, `Tokio` with `Handle::spawn_blocking`. Its doc lists
+   every zbus use verbatim: hostname lookup for `tcp:`, reading a `nonce-tcp:` file, the
+   supplementary-group lookup behind peer credentials, waiting on the helper process of
+   `unixexec:`, `ibus:` and `launchd:`. The enum's `spawn_blocking(&self, work, name) -> T`
+   dispatches to the three variants; `close`/`shutdown(2)` run inline (non-blocking sockets);
+   Windows credential lookups are inline syscalls.
+5. **Processes with std.** `runtime/process.rs` spawns with `std::process::Command` (stdin/stdout
+   piped, pipes set non-blocking, `CLOEXEC`), wraps the pipes as `Registered<Pipe>`, and reaps
+   through `spawn_blocking(child.wait())` in a detached task spawned at the same time. `output()`
+   for `ibus`/`launchd` reads stdout through the registration to EOF then awaits the reaper.
+   `async-process` leaves the `async-io` feature list and `process` leaves the tokio feature list;
+   `socket/command.rs` goes.
+6. **Builder constructors.** `Builder::unix_stream(std::os::unix::net::UnixStream)` (unix) /
+   `Builder::unix_stream(uds_windows::UnixStream)` (windows),
+   `Builder::tcp_stream(std::net::TcpStream)`,
+   `Builder::vsock_stream(vsock::VsockStream)` replace both the `async_io_*` and the `tokio_*`
+   constructors and register the stream on the connection's runtime at build; the stream is set
+   non-blocking there. The `vsock` feature no longer implies `async-io`; `tokio-vsock` is removed.
+7. **Reference host.** `zbus/tests/polling_host.rs` (dev-dependency `polling`): a single-threaded
+   host with a `polling::Poller`, a run loop that polls its spawned futures, `async-lock` locks
+   (dev-dependency), timers via the poller's timeout, and the trait's default `spawn_blocking`.
+   It connects to the session bus over a unix socket, serves an interface, calls a method with a
+   timeout, and shuts down, asserting on Linux that `/proc/self/task` has the same entry count
+   before and after. It runs in the external-only CI leg.
 
-**Interfaces:**
-- Produces: `zbus::runtime::traits::{Runtime, IoRegistration, Task, Mutex, RwLock}`,
-  `zbus::runtime::{IoSource, Interest}`. Nothing consumes them yet; they are `pub`, so no
-  dead-code warnings.
+## Spec amendments (Task 7 writes them on `external-runtime-spec`)
 
-- [ ] **Step 1: `io_source.rs`**
-
-```rust
-//! The handle a runtime registers for readiness.
-
-#[cfg(unix)]
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-#[cfg(windows)]
-use std::os::windows::io::{AsRawSocket, AsSocket, BorrowedSocket, OwnedSocket, RawSocket};
-use std::sync::Arc;
-
-/// A socket or pipe that zbus owns and a runtime watches for readiness.
-///
-/// It is a shared owner: zbus keeps one clone for the I/O it performs itself and the runtime's
-/// registration keeps whatever it needs. The descriptor stays open as long as either lives.
-#[derive(Clone, Debug)]
-pub struct IoSource(Arc<Owned>);
-
-#[cfg(unix)]
-type Owned = OwnedFd;
-#[cfg(windows)]
-type Owned = OwnedSocket;
-
-impl IoSource {
-    pub(crate) fn new(owned: Owned) -> Self {
-        Self(Arc::new(owned))
-    }
-}
-
-#[cfg(unix)]
-impl AsFd for IoSource {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.0.as_fd()
-    }
-}
-
-#[cfg(unix)]
-impl AsRawFd for IoSource {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0.as_raw_fd()
-    }
-}
-
-#[cfg(windows)]
-impl AsSocket for IoSource {
-    fn as_socket(&self) -> BorrowedSocket<'_> {
-        self.0.as_socket()
-    }
-}
-
-#[cfg(windows)]
-impl AsRawSocket for IoSource {
-    fn as_raw_socket(&self) -> RawSocket {
-        self.0.as_raw_socket()
-    }
-}
-
-/// The readiness an I/O operation waits for.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Interest {
-    Readable,
-    Writable,
-}
-```
-
-`IoSource::new` is `pub(crate)` and unused until PR 3; that is a dead-code warning, so until
-then mark it `#[cfg(any(test, feature = "async-io"))]` and use it from the `AsyncIo` tests in
-Task 2 (they register a `UnixStream` pair). Remove the gate in PR 3.
-
-- [ ] **Step 2: `traits.rs`**
-
-```rust
-//! What a runtime supplies to a connection.
-//!
-//! zbus ships no runtime of its own. A connection waits for socket readiness and timers, runs
-//! its tasks and takes its locks on `async-io` (the default), on Tokio, or on whatever
-//! implements [`Runtime`] and is handed to [`Builder::runtime`]. Implementing it takes a
-//! readiness registration, a timer, a task handle, and a mutex and readers-writer lock, all of
-//! which every async runtime already has; the host examples in the repository show the shape
-//! for Tokio and for a plain `polling` event loop.
-//!
-//! [`Builder::runtime`]: crate::connection::Builder::runtime
-
-use std::{
-    future::Future,
-    io,
-    ops::{Deref, DerefMut},
-    pin::Pin,
-    task::{Context, Poll},
-    time::Instant,
-};
-
-use super::{Interest, IoSource};
-
-/// An async runtime, as seen by a connection.
-pub trait Runtime: Send + Sync + 'static {
-    type Registration: IoRegistration;
-    type Sleep: Future<Output = ()> + Send + 'static;
-    type Task<T: Send + 'static>: Task<T>;
-    type Mutex<T: Send + 'static>: Mutex<T>;
-    type RwLock<T: Send + Sync + 'static>: RwLock<T>;
-
-    /// Register a socket or pipe for readiness notifications.
-    ///
-    /// The registration must stop watching the source before the [`IoSource`] it was given is
-    /// released.
-    fn register(&self, source: IoSource) -> io::Result<Self::Registration>;
-
-    /// A future that completes at `deadline`. Dropping it cancels the timer.
-    fn sleep_until(&self, deadline: Instant) -> Self::Sleep;
-
-    /// Run `future` to completion in the background.
-    ///
-    /// The task runs concurrently with the caller, on whichever thread the runtime chooses. The
-    /// handle resolves to `Err` if the runtime loses the task. Dropping the handle cancels the
-    /// task; [`Task::detach`] lets it run on.
-    fn spawn<T>(&self, future: impl Future<Output = T> + Send + 'static) -> Self::Task<T>
-    where
-        T: Send + 'static;
-
-    /// A mutex holding `value`.
-    fn mutex<T: Send + 'static>(&self, value: T) -> Self::Mutex<T>;
-
-    /// A readers-writer lock holding `value`.
-    fn rwlock<T: Send + Sync + 'static>(&self, value: T) -> Self::RwLock<T>;
-
-    /// Run `work` off the event loop.
-    ///
-    /// `None` means the runtime offers no such service; zbus then reports the operation that
-    /// needed it as unsupported instead of blocking anything. The future resolves to `Err` if the
-    /// runtime loses the work.
-    fn spawn_blocking<T>(
-        &self,
-        work: impl FnOnce() -> T + Send + 'static,
-    ) -> Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + 'static>>>
-    where
-        T: Send + 'static,
-    {
-        let _ = work;
-        None
-    }
-}
-
-/// Readiness for one registered [`IoSource`].
-pub trait IoRegistration: Send + Sync + 'static {
-    /// Wait for `interest`, then run `operation` on the polling thread.
-    ///
-    /// Return the first success (a partial write counts) or any error other than `WouldBlock`
-    /// immediately. On `WouldBlock`, clear the readiness that was observed, arrange for `cx` to
-    /// be woken when the source is ready again, and return `Pending`. Bound the number of
-    /// retries, never spin, never block, and never keep `operation` beyond the call.
-    fn poll_io<T>(
-        &self,
-        cx: &mut Context<'_>,
-        interest: Interest,
-        operation: impl FnMut() -> io::Result<T>,
-    ) -> Poll<io::Result<T>>;
-}
-
-/// A handle to a spawned task.
-///
-/// Dropping the handle cancels the task. A Tokio implementation wraps its `JoinHandle` in a
-/// newtype that aborts on drop; an async-task style handle already behaves this way.
-pub trait Task<T>: Future<Output = io::Result<T>> + Send + Unpin + 'static {
-    /// Let the task run to completion on its own.
-    fn detach(self);
-}
-
-/// A mutual-exclusion lock whose guard can be held across an `.await`.
-pub trait Mutex<T>: Send + Sync + 'static {
-    type Guard<'a>: DerefMut<Target = T> + Send
-    where
-        Self: 'a;
-
-    fn lock(&self) -> impl Future<Output = Self::Guard<'_>> + Send;
-}
-
-/// A readers-writer lock whose guards can be held across an `.await`.
-pub trait RwLock<T>: Send + Sync + 'static {
-    type ReadGuard<'a>: Deref<Target = T> + Send + Sync
-    where
-        Self: 'a;
-    type WriteGuard<'a>: DerefMut<Target = T> + Send
-    where
-        Self: 'a;
-
-    fn read(&self) -> impl Future<Output = Self::ReadGuard<'_>> + Send;
-    fn write(&self) -> impl Future<Output = Self::WriteGuard<'_>> + Send;
-}
-```
-
-- [ ] **Step 3: wire and check**
-
-In `zbus/src/runtime/mod.rs`, add at the top of the item list:
-
-```rust
-pub mod traits;
-
-mod io_source;
-pub use io_source::{Interest, IoSource};
-```
-
-Run `cargo +nightly fmt --all`, `cargo check -p zbus`, `cargo check -p zbus --no-default-features
---features tokio,proxy,service`, `cargo check -p zbus --target x86_64-pc-windows-gnu`,
-`RUSTDOCFLAGS="-D warnings" cargo doc -p zbus --all-features --no-deps`, `cargo clippy -p zbus
---all-targets -- -D warnings`. Expected: clean.
-
-- [ ] **Step 4: Commit**
-
-```bash
-/usr/bin/git add zbus/src/runtime
-/usr/bin/git -c core.hooksPath=/dev/null commit --no-verify --no-gpg-sign -F - <<'EOF'
-✨ zb: Add the traits through which a runtime serves a connection
-
-A connection needs four things from an async runtime: readiness for its
-socket, timers, somewhere to run its tasks and locks it can hold across
-an await. Until now only the two compiled-in backends could supply them.
-These traits describe exactly that surface so that any runtime can, with
-the readiness registration kept separate from the socket itself: zbus
-keeps creating, connecting and reading the socket, the runtime only
-says when it is ready.
-
-Nothing uses the traits yet; the built-in backend and the builder follow.
-
-Assisted-by: Claude Fable 5.1 (claude-fable-5-1)
-Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ
-EOF
-```
+- Non-goals: remove "Routing native Tokio through the trait"; Decision 1 becomes "one I/O path for
+  every runtime, Tokio included"; Decision 5 becomes "one PR".
+- Public API: `AsyncIo` is not public; `Builder::runtime` is for external runtimes; the
+  `unix_stream`/`tcp_stream`/`vsock_stream` constructors replace both backend-typed families and
+  the backend-typed `Socket` impls go; `tokio-vsock` goes; the Windows+Tokio TCP fallback keeps a
+  crate-private `tokio::net::TcpStream` socket for that one case.
+- Built-in runtime section: add `Tokio`; `register` semantics per platform.
+- Ancillary table: one implementation per operation over `spawn_blocking`, which always works
+  (default: a std thread per call); processes via std for every runtime; drop `async-process`.
+  Goal "no zbus thread on the external path" gains the documented `spawn_blocking` exception.
+- Testing strategy: polling host as the reference host; GLib example dropped (not in #1960).
+- Follow-ups: keep #1959 and the `blocking` facade.
 
 ---
 
-### Task 2: One runtime value per connection for the built-in backends
-
-This is the large task. It turns the cfg-selected executor and locks into a per-connection
-`Runtime` value with a zero-cost variant per compiled backend, moves the async-io backend into
-`AsyncIo`, and removes `internal_executor`, `Connection::executor`, `Executor` and the public
-`Task`. No external runtime yet: that is Task 3.
+### Task 1: Built-in backends through the trait (fixups into commits 1-3 and 5)
 
 **Files:**
-- Create: `zbus/src/runtime/async_io.rs`, `zbus/src/runtime/locks.rs`
-- Rewrite: `zbus/src/runtime/executor.rs`, `zbus/src/runtime/timeout.rs`, `zbus/src/runtime/mod.rs`
-- Delete: `zbus/src/runtime/async_lock.rs`
-- Modify: `zbus/src/lib.rs`, `zbus/src/connection/{mod,builder,socket_reader}.rs`,
-  `zbus/src/object_server/{mod,interface/mod,interface/interface_ref,interface/interface_deref}.rs`,
-  `zbus/src/proxy/mod.rs`, `zbus/src/address/transport/mod.rs` (only the `select_runtime!` import
-  path if it moves)
+- Modify: `zbus/src/runtime/{mod,traits,async_io,executor,locks,timeout,erased,tests}.rs`,
+  `zbus/src/connection/builder.rs`, `zbus/src/blocking/connection/builder.rs`,
+  `book/src/upgrading-to-6.md`, `zbus/README.md`
+- Create: `zbus/src/runtime/tokio_rt.rs` (`#[cfg(feature = "tokio")]`),
+  `zbus/src/runtime/tokio_lock.rs`
+  (`traits::Mutex`/`RwLock` impls for `tokio::sync` types, `#[cfg(feature = "tokio")]`)
 
-**Interfaces:**
-- Consumes: Task 1's traits and `IoSource`.
-- Produces (crate-private): `runtime::Runtime` enum with `default_for_build() -> Result<Self>`,
-  `spawn(&self, fut, name) -> Task<T>`, the free function `runtime::spawn_blocking(f, name)`,
-  `mutex(&self, v) -> locks::Mutex<T>`, `rwlock(&self, v) -> locks::RwLock<T>`,
-  `timeout(&self, fut, dur) -> Result<T>`; `Connection::runtime(&self) -> &Runtime`;
-  `runtime::Task<T>` (`Future<Output = io::Result<T>>`, `detach`, drop cancels);
-  `locks::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard}` with `lock`/`read`/
-  `write`. Public: `zbus::runtime::AsyncIo` (`async-io` feature), `Builder` without
-  `internal_executor`, `Connection` without `executor`.
-
-- [ ] **Step 1: `async_io.rs`, the built-in implementor**
-
+**Interfaces produced:**
 ```rust
-//! The built-in runtime: async-io for readiness and timers, async-executor for tasks, async-lock
-//! for locks, `blocking` for blocking work.
-
-use std::{
-    future::Future,
-    io,
-    pin::Pin,
-    sync::{Arc, OnceLock, Weak},
-    task::{Context, Poll},
-    time::Instant,
-};
-
-use async_executor::Executor;
-use async_io::{Async, Timer};
-
-use super::{
-    Interest, IoSource,
-    traits::{self, IoRegistration},
-};
-
-/// The runtime zbus uses by default: async-io, async-executor and async-lock.
-///
-/// Every connection built without an explicit runtime on the `async-io` feature runs on an
-/// instance of this type, with one executor thread per instance that starts on the first spawn
-/// and exits once the instance is gone and its tasks have finished. Handing an instance to
-/// [`Builder::runtime`] selects it explicitly, even inside a Tokio runtime.
-///
-/// [`Builder::runtime`]: crate::connection::Builder::runtime
-#[derive(Clone, Debug, Default)]
-pub struct AsyncIo {
-    inner: Arc<Inner>,
-}
-
-#[derive(Debug, Default)]
-struct Inner {
-    executor: Executor<'static>,
-    thread: OnceLock<()>,
-}
-
-impl AsyncIo {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Starts the executor thread if it is not running yet.
-    ///
-    /// The thread holds only a weak reference between ticks: it keeps running while tasks
-    /// remain, and exits once every `AsyncIo` clone is gone and the executor is empty, which is
-    /// what lets a connection's tasks finish during `graceful_shutdown`.
-    fn ensure_thread(&self) {
-        self.inner.thread.get_or_init(|| {
-            let weak = Arc::downgrade(&self.inner);
-            std::thread::Builder::new()
-                .name("zbus::Connection executor".into())
-                .spawn(move || run_executor(weak))
-                .expect("failed to spawn the zbus executor thread");
-        });
-    }
-}
-
-/// Runs `Inner::executor` until nobody needs it any more.
-///
-/// `utils::block_on` picks tokio when both backends are enabled, which would make tasks on this
-/// executor unexpectedly observe a tokio runtime, so the thread blocks on async-io directly.
-fn run_executor(weak: Weak<Inner>) {
-    async_io::block_on(async move {
-        while let Some(inner) = weak.upgrade() {
-            // Only this thread holds it and nothing is left to run: cancelled tasks were dropped
-            // by the tick that observed the cancellation.
-            if Arc::strong_count(&inner) == 1 && inner.executor.is_empty() {
-                break;
-            }
-            inner.executor.tick().await;
-        }
-    })
-}
-
-impl traits::Runtime for AsyncIo {
-    type Registration = Registration;
-    type Sleep = Sleep;
-    type Task<T: Send + 'static> = Task<T>;
-    type Mutex<T: Send + 'static> = async_lock::Mutex<T>;
-    type RwLock<T: Send + Sync + 'static> = async_lock::RwLock<T>;
-
-    fn register(&self, source: IoSource) -> io::Result<Registration> {
-        Async::new(source).map(Registration)
-    }
-
-    fn sleep_until(&self, deadline: Instant) -> Sleep {
-        Sleep(Timer::at(deadline))
-    }
-
-    fn spawn<T>(&self, future: impl Future<Output = T> + Send + 'static) -> Task<T>
-    where
-        T: Send + 'static,
-    {
-        let task = self.inner.executor.spawn(future);
-        self.ensure_thread();
-        Task(task)
-    }
-
-    fn mutex<T: Send + 'static>(&self, value: T) -> async_lock::Mutex<T> {
-        async_lock::Mutex::new(value)
-    }
-
-    fn rwlock<T: Send + Sync + 'static>(&self, value: T) -> async_lock::RwLock<T> {
-        async_lock::RwLock::new(value)
-    }
-
-    fn spawn_blocking<T>(
-        &self,
-        work: impl FnOnce() -> T + Send + 'static,
-    ) -> Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + 'static>>>
-    where
-        T: Send + 'static,
-    {
-        Some(Box::pin(async move { Ok(blocking::unblock(work).await) }))
-    }
-}
-
-/// An async-io registration.
-#[derive(Debug)]
-pub struct Registration(Async<IoSource>);
-
-impl IoRegistration for Registration {
-    fn poll_io<T>(
-        &self,
-        cx: &mut Context<'_>,
-        interest: Interest,
-        mut operation: impl FnMut() -> io::Result<T>,
-    ) -> Poll<io::Result<T>> {
-        loop {
-            match operation() {
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                result => return Poll::Ready(result),
-            }
-            // async-io re-arms the interest and returns `Pending` unless a newer readiness
-            // event is already there, so this loop cannot spin.
-            let ready = match interest {
-                Interest::Readable => self.0.poll_readable(cx),
-                Interest::Writable => self.0.poll_writable(cx),
-            };
-            if let Err(e) = std::task::ready!(ready) {
-                return Poll::Ready(Err(e));
-            }
-        }
-    }
-}
-
-/// An async-io timer with the completion instant dropped.
-#[derive(Debug)]
-pub struct Sleep(Timer);
-
-impl Future for Sleep {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        Pin::new(&mut self.0).poll(cx).map(drop)
-    }
-}
-
-/// An async-task handle: dropping it cancels the task.
-#[derive(Debug)]
-pub struct Task<T>(async_task::Task<T>);
-
-impl<T: Send + 'static> traits::Task<T> for Task<T> {
-    fn detach(self) {
-        self.0.detach();
-    }
-}
-
-impl<T> Future for Task<T> {
-    type Output = io::Result<T>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx).map(Ok)
-    }
-}
-```
-
-The trait impls for async-lock's types live in their own file, `zbus/src/runtime/async_lock.rs`
-(replacing the old selector of that name), declared `#[cfg(any(feature = "async-io", test))]
-mod async_lock;` in `mod.rs`, because both `AsyncIo` and the `cfg(test)` test runtime of Task 3
-use them and a test build without the `async-io` feature still has the crate as a
-dev-dependency:
-
-```rust
-//! The runtime lock traits for async-lock's types, used by `AsyncIo` and the test runtime.
-
-use std::future::Future;
-
-use super::traits;
-
-impl<T: Send + 'static> traits::Mutex<T> for async_lock::Mutex<T> {
-    type Guard<'a>
-        = async_lock::MutexGuard<'a, T>
-    where
-        Self: 'a;
-
-    fn lock(&self) -> impl Future<Output = Self::Guard<'_>> + Send {
-        self.lock()
-    }
-}
-
-impl<T: Send + Sync + 'static> traits::RwLock<T> for async_lock::RwLock<T> {
-    type ReadGuard<'a>
-        = async_lock::RwLockReadGuard<'a, T>
-    where
-        Self: 'a;
-    type WriteGuard<'a>
-        = async_lock::RwLockWriteGuard<'a, T>
-    where
-        Self: 'a;
-
-    fn read(&self) -> impl Future<Output = Self::ReadGuard<'_>> + Send {
-        self.read()
-    }
-
-    fn write(&self) -> impl Future<Output = Self::WriteGuard<'_>> + Send {
-        self.write()
-    }
-}
-```
-
-(`async_lock::Mutex::lock` and friends are inherent methods, so `self.lock()` inside the trait
-impl resolves to them, not to the trait; if rustc reports a recursion warning, call them as
-`async_lock::Mutex::lock(self)`.)
-
-`async-executor 1.14` implements `Default` and `Debug` for `Executor`; `blocking::unblock`
-returns an `async_task::Task<T>` whose output is `T`. `Registration` and `Sleep` are only reached
-through the trait's associated types, so they need no re-export; `Task` here is private to the
-crate through the module (`pub(crate) mod async_io` with `pub use async_io::AsyncIo`).
-
-Unit tests in the same file (`#[cfg(test)]`, each with `#[ntest::timeout(15000)]`): a spawned
-task's output arrives; the executor thread exists after a spawn (`is_empty` false while a
-`pending()` task lives, true after dropping its handle, and the thread name can be seen through
-a task that reads `std::thread::current().name()`); `register` on one end of a
-`std::os::unix::net::UnixStream::pair()` (unix only) reports readable after the other end writes,
-using `poll_fn` + `poll_io(Readable, || stream.read(..))`; `sleep_until` in the past resolves
-and one 20 ms ahead resolves after at least 20 ms.
-
-- [ ] **Step 2: `locks.rs`**
-
-```rust
-//! Async locks selected by the connection's runtime.
-//!
-//! Each backend has its own lock types; an enum with one variant per compiled backend keeps them
-//! at zero cost and leaves a slot for an external runtime's locks, which are reached through an
-//! erased interface. Only the operations the crate uses exist: `lock`, `read`, `write`.
-
-use std::{
-    fmt,
-    ops::{Deref, DerefMut},
-};
-
-pub(crate) enum Mutex<T> {
-    #[cfg(feature = "async-io")]
-    AsyncLock(async_lock::Mutex<T>),
-    #[cfg(feature = "tokio")]
-    Tokio(tokio::sync::Mutex<T>),
-}
-
-impl<T> Mutex<T> {
-    pub(crate) async fn lock(&self) -> MutexGuard<'_, T> {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncLock(mutex) => MutexGuard::AsyncLock(mutex.lock().await),
-            #[cfg(feature = "tokio")]
-            Self::Tokio(mutex) => MutexGuard::Tokio(mutex.lock().await),
-        }
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncLock(mutex) => mutex.fmt(f),
-            #[cfg(feature = "tokio")]
-            Self::Tokio(mutex) => mutex.fmt(f),
-        }
-    }
-}
-
-pub(crate) enum MutexGuard<'a, T> {
-    #[cfg(feature = "async-io")]
-    AsyncLock(async_lock::MutexGuard<'a, T>),
-    #[cfg(feature = "tokio")]
-    Tokio(tokio::sync::MutexGuard<'a, T>),
-}
-
-impl<T> Deref for MutexGuard<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncLock(guard) => guard,
-            #[cfg(feature = "tokio")]
-            Self::Tokio(guard) => guard,
-        }
-    }
-}
-
-impl<T> DerefMut for MutexGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncLock(guard) => guard,
-            #[cfg(feature = "tokio")]
-            Self::Tokio(guard) => guard,
-        }
-    }
-}
-```
-
-`RwLock<T>`, `RwLockReadGuard<'a, T>` and `RwLockWriteGuard<'a, T>` follow the same pattern with
-`read()`/`write()`, `Deref` on both guards and `DerefMut` on the write guard. The `Debug` impl
-matters: `ConnectionInner` and `ObjectServer` derive `Debug` and hold these.
-
-- [ ] **Step 3: `executor.rs` becomes the crate-private `Task`**
-
-Replace the file with:
-
-```rust
-//! The handle to a task a connection spawned on its runtime.
-
-use std::{
-    future::Future,
-    io,
-    pin::Pin,
-    task::{Context, Poll},
-};
-
-/// A spawned task. Dropping the handle cancels the task; [`Task::detach`] lets it run on.
-#[derive(Debug)]
-pub(crate) struct Task<T>(pub(super) TaskInner<T>);
-
-#[derive(Debug)]
-pub(super) enum TaskInner<T> {
-    #[cfg(feature = "async-io")]
-    AsyncIo(super::async_io::Task<T>),
-    #[cfg(feature = "tokio")]
-    Tokio(TokioTask<T>),
-}
-
-impl<T> Task<T> {
-    /// Detaches the task to let it keep running in the background.
-    pub(crate) fn detach(self) {
-        match self.0 {
-            #[cfg(feature = "async-io")]
-            TaskInner::AsyncIo(task) => super::traits::Task::detach(task),
-            #[cfg(feature = "tokio")]
-            TaskInner::Tokio(task) => task.detach(),
-        }
-    }
-}
-
-impl<T> Future for Task<T> {
-    type Output = io::Result<T>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match &mut self.get_mut().0 {
-            #[cfg(feature = "async-io")]
-            TaskInner::AsyncIo(task) => Pin::new(task).poll(cx),
-            #[cfg(feature = "tokio")]
-            TaskInner::Tokio(task) => Pin::new(task).poll(cx),
-        }
-    }
-}
-
-/// A tokio task handle that aborts the task when dropped, matching `async_task::Task`.
-#[cfg(feature = "tokio")]
-#[derive(Debug)]
-pub(super) struct TokioTask<T>(Option<tokio::task::JoinHandle<T>>);
-
-#[cfg(feature = "tokio")]
-impl<T> TokioTask<T> {
-    pub(super) fn new(handle: tokio::task::JoinHandle<T>) -> Self {
-        Self(Some(handle))
-    }
-
-    fn detach(mut self) {
-        // Dropping a tokio `JoinHandle` detaches it.
-        drop(self.0.take());
-    }
-}
-
-#[cfg(feature = "tokio")]
-impl<T> Drop for TokioTask<T> {
-    fn drop(&mut self) {
-        if let Some(handle) = self.0.take() {
-            handle.abort();
-        }
-    }
-}
-
-#[cfg(feature = "tokio")]
-impl<T> Future for TokioTask<T> {
-    type Output = io::Result<T>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let handle = self
-            .get_mut()
-            .0
-            .as_mut()
-            .expect("a `TokioTask` is only polled before it is detached or dropped");
-        Pin::new(handle).poll(cx).map(|r| match r {
-            Ok(v) => Ok(v),
-            Err(e) => {
-                if e.is_cancelled() {
-                    Err(io::Error::other("tokio::task cancelled"))
-                } else {
-                    panic!("tokio::task::JoinHandle error: {e}")
-                }
-            }
-        })
-    }
-}
-
-/// Spawns `future` on tokio, naming the task when `tokio_unstable` is on.
-#[cfg(feature = "tokio")]
-pub(super) fn tokio_spawn<T: Send + 'static>(
-    future: impl Future<Output = T> + Send + 'static,
-    #[allow(unused)] name: &str,
-) -> tokio::task::JoinHandle<T> {
-    // ... (the existing `tokio_spawn` body, unchanged)
-}
-
-/// Like [`tokio_spawn`], for blocking work.
-#[cfg(feature = "tokio")]
-pub(super) fn tokio_spawn_blocking<F, T>(
-    f: F,
-    #[allow(unused)] name: &str,
-) -> tokio::task::JoinHandle<T>
+// runtime/traits.rs (commit 1): spawn_blocking without Option, with the default body
+fn spawn_blocking<T>(
+    &self,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Pin<Box<dyn Future<Output = T> + Send + 'static>>
 where
-    F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    // ... (the existing `tokio_spawn_blocking` body, unchanged)
+    blocking_thread::run(work)   // private helper in runtime/blocking_thread.rs: std thread +
+                                 // event_listener::Event + std::sync::Mutex<Option<T>>
+}
+
+// runtime/tokio_rt.rs
+pub(crate) struct Tokio { handle: tokio::runtime::Handle }
+impl Tokio {
+    /// The runtime current on this thread, or `None` outside one.
+    pub(crate) fn current() -> Option<Self>;
+}
+impl traits::Runtime for Tokio {
+    type Registration = Registration;   // unix: AsyncFd<IoSource>; windows: a struct whose
+                                        // `register` never constructs it (Unsupported)
+    type Sleep = tokio::time::Sleep;
+    type Task<T> = TokioTask<T>;        // moved here from executor.rs
+    type Mutex<T> = tokio::sync::Mutex<T>;
+    type RwLock<T> = tokio::sync::RwLock<T>;
+    // unix: AsyncFd::new under handle.enter()
+    fn register(&self, source: IoSource) -> io::Result<Registration>;
+    fn sleep_until(&self, deadline: Instant) -> Self::Sleep; // sleep_until(deadline.into())
+    fn spawn<T>(&self, fut) -> TokioTask<T> { TokioTask::new(self.handle.spawn(fut)) }
+    fn mutex / rwlock -> tokio::sync::*::new(value)
+    fn spawn_blocking<T>(&self, work) -> Pin<Box<dyn Future<Output = T> + Send + 'static>> {
+        let task = self.handle.spawn_blocking(work);
+        Box::pin(async move { task.await.expect("blocking work neither panics nor is cancelled") })
+    }
 }
 ```
-
-- [ ] **Step 4: `mod.rs`: the `Runtime` enum**
-
-Replace `zbus/src/runtime/mod.rs`'s body after the module doc (keep the doc, rewritten as
-below) with:
-
+`Registration::poll_io` (unix):
 ```rust
-//! Integration with the async runtime that drives a connection.
-//!
-//! zbus does not ship a runtime of its own. A connection waits for socket readiness and timers,
-//! runs its internal tasks and takes its locks on `async-io` (the default), on Tokio, or on any
-//! implementation of [`traits::Runtime`] handed to [`Builder::runtime`]. The built-in async-io
-//! backend is itself such an implementation, [`AsyncIo`]. [`AsyncDrop`] is the async counterpart
-//! of [`Drop`] that zbus's own types implement.
-//!
-//! [`Builder::runtime`]: crate::connection::Builder::runtime
-
-pub mod traits;
-
-mod io_source;
-pub use io_source::{Interest, IoSource};
-#[cfg(feature = "async-io")]
-pub(crate) mod async_io;
-#[cfg(feature = "async-io")]
-pub use async_io::AsyncIo;
-mod async_drop;
-pub use async_drop::AsyncDrop;
-mod executor;
-pub(crate) use executor::Task;
-pub(crate) mod locks;
-pub(crate) mod timeout;
-
-// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands.
-#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
-pub(crate) mod process;
-
-use std::future::Future;
-
-use crate::{Error, Result};
-
-/// The runtime a connection runs on, chosen once when it is built.
-#[derive(Clone, Debug)]
-pub(crate) enum Runtime {
-    #[cfg(feature = "async-io")]
-    AsyncIo(AsyncIo),
-    #[cfg(feature = "tokio")]
-    Tokio,
+loop {
+    let mut guard = match interest {
+        Interest::Readable => ready!(self.0.poll_read_ready(cx))?,
+        Interest::Writable => ready!(self.0.poll_write_ready(cx))?,
+    };
+    match operation() {
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => guard.clear_ready(),
+        result => return Poll::Ready(result),
+    }
 }
+```
+`Runtime` enum: `AsyncIo(AsyncIo)`, `Tokio(Tokio)`, `External(Arc<dyn ErasedRuntime>)`;
+`default_for_build`: `Tokio::current().map(Self::Tokio)` first when `tokio` is on, then `AsyncIo`,
+then `Err(Error::Unsupported)`. `from_external` is `Self::External(Arc::new(runtime))` only.
+`executor::TaskInner::Tokio(tokio_rt::TokioTask<T>)`; `locks::Mutex::Tokio(tokio::sync::Mutex<T>)`
+constructed through `traits::Runtime::mutex(runtime, value)`. `timeout.rs`: one `sleep` over
+`traits::Runtime::sleep_until` per built-in arm and the erased `sleep_until` for `External`; no
+`tokio::time::sleep`/`Timer::after` calls remain. `ErasedRuntime` gains `spawn_blocking` (boxed
+future of `Box<dyn Any + Send>`, downcast by the enum). The enum gains
+`pub(crate) async fn spawn_blocking<T>(&self, work, name: &str) -> T`.
 
+- [ ] Step 1: `traits.rs`: drop the `Option`, add `blocking_thread.rs` and the doc listing the
+  uses; `AsyncIo::spawn_blocking` returns `Box::pin(blocking::unblock(work))`.
+- [ ] Step 2: create `tokio_rt.rs` and `tokio_lock.rs`; move `TokioTask` there.
+- [ ] Step 3: change the enum, `default_for_build`, `from_external`, `spawn`/`mutex`/`rwlock`,
+  `spawn_blocking`, `timeout.rs`; make `AsyncIo` `pub(crate)` and remove
+  `pub use async_io::AsyncIo`.
+- [ ] Step 4: tests. Rename `an_explicit_runtime_beats_tokio_detection` to assert only
+  `Runtime::External(_)` with `TestRuntime`. Add in `runtime/tests.rs`:
+  `the_default_blocking_hook_runs_the_work_on_a_short_lived_thread` (a `cfg(test)` runtime
+  keeping the trait default; `spawn_blocking(|| thread::current().name().map(String::from))`
+  resolves to `Some("zbus blocking work")`; on linux `/proc/self/task` returns to the starting
+  count, polled until true under the test timeout); `#[cfg(feature = "tokio")]`
+  `a_tokio_connection_keeps_working_outside_the_runtime_context` (build a p2p `Channel` pair
+  connection inside `rt.block_on`, then from a plain thread `futures_lite::future::block_on` a
+  method call on it). Keep every other test.
+- [ ] Step 5: docs: `runtime/mod.rs` and `traits.rs` module docs describe both built-ins as
+  implementations; `Builder::runtime` doc drops the async-io override sentence; book/README lose
+  the "force async-io inside Tokio" text.
+- [ ] Step 6: verification: `cargo +nightly fmt --all`; clippy `-D warnings` on default,
+  `--no-default-features --features async-io`, `tokio,p2p,proxy,service`, EXT, `--all-features`
+  (all `--all-targets`); docs on all-features, tokio-only, EXT;
+  `dbus-run-session -- cargo test -p zbus`
+  default, `--no-default-features --features tokio,proxy,service --tests`, EXT `--lib`,
+  `--all-features -- --skip fdpass_systemd`.
+- [ ] Step 7: fixups: trait change into commit 1; enum/Tokio/timeout/docs into commit 2
+  (`♻️ zb: Take a connection's tasks, locks and timers from one runtime`); `from_external`/test
+  changes into commit 3; book/README into commit 5. Amend commit 2's body to mention the Tokio
+  implementor and the captured handle.
+
+### Task 2: The registered socket wrapper (new commit)
+
+**Commit:** `✨ zb: Do every socket's I/O through the connection's runtime`
+
+**Files:**
+- Create: `zbus/src/runtime/io.rs` (`Registered<K>`, `Registration`, kinds, halves),
+  `zbus/src/runtime/io/unix.rs` (`Unix` kind: recvmsg/sendmsg/credentials), `io/tcp.rs`,
+  `io/vsock.rs`, `io/pipe.rs`, `io/connect.rs` (non-blocking connect helper), `io/tests.rs`
+- Modify: `zbus/src/runtime/mod.rs` (`Runtime::register`), `zbus/src/runtime/erased.rs`
+  (`ErasedRegistration`, `register` mirror), `zbus/src/runtime/io_source.rs` (`IoSource::new`
+  un-gated; `From<OwnedFd>`/`From<OwnedSocket>`; `IoSource::from_socket(socket2::Socket)`),
+  `zbus/Cargo.toml` (`socket2` under `comms`), `Cargo.toml` (workspace pin via `cargo add`)
+
+**Interfaces produced:**
+```rust
+pub(crate) enum Registration {
+    #[cfg(feature = "async-io")] AsyncIo(async_io::Registration),
+    #[cfg(feature = "tokio")]    Tokio(tokio_rt::Registration),
+    External(Box<dyn ErasedRegistration>),
+}
+impl Registration {
+    pub(crate) fn poll_io<T>(&self, cx, interest, op: impl FnMut() -> io::Result<T>)
+        -> Poll<io::Result<T>>;
+    // poll_fn over poll_io
+    pub(crate) async fn io<T>(&self, interest, op: impl FnMut() -> io::Result<T>) -> io::Result<T>;
+}
 impl Runtime {
-    /// The runtime for a connection built without an explicit one.
-    ///
-    /// Tokio when it is compiled in and a runtime is current on this thread, otherwise async-io
-    /// when that is compiled in. This keeps the features additive: enabling `tokio` elsewhere in
-    /// the dependency graph doesn't force every zbus user into a tokio runtime.
-    pub(crate) fn default_for_build() -> Result<Self> {
-        #[cfg(feature = "tokio")]
-        if tokio::runtime::Handle::try_current().is_ok() {
-            return Ok(Self::Tokio);
-        }
-        #[cfg(feature = "async-io")]
-        {
-            Ok(Self::AsyncIo(AsyncIo::new()))
-        }
-        #[cfg(not(feature = "async-io"))]
-        {
-            Err(Error::Unsupported)
-        }
-    }
-
-    /// Spawns a task onto the runtime.
-    pub(crate) fn spawn<T: Send + 'static>(
-        &self,
-        future: impl Future<Output = T> + Send + 'static,
-        #[allow(unused)] name: &str,
-    ) -> Task<T> {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => {
-                Task(executor::TaskInner::AsyncIo(traits::Runtime::spawn(runtime, future)))
-            }
-            #[cfg(feature = "tokio")]
-            Self::Tokio => Task(executor::TaskInner::Tokio(executor::TokioTask::new(
-                executor::tokio_spawn(future, name),
-            ))),
-        }
-    }
-
-    pub(crate) fn mutex<T: Send + 'static>(&self, value: T) -> locks::Mutex<T> {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => {
-                locks::Mutex::AsyncLock(traits::Runtime::mutex(runtime, value))
-            }
-            #[cfg(feature = "tokio")]
-            Self::Tokio => locks::Mutex::Tokio(tokio::sync::Mutex::new(value)),
-        }
-    }
-
-    pub(crate) fn rwlock<T: Send + Sync + 'static>(&self, value: T) -> locks::RwLock<T> {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => {
-                locks::RwLock::AsyncLock(traits::Runtime::rwlock(runtime, value))
-            }
-            #[cfg(feature = "tokio")]
-            Self::Tokio => locks::RwLock::Tokio(tokio::sync::RwLock::new(value)),
-        }
-    }
+    pub(crate) fn register(&self, source: IoSource) -> io::Result<Registration>;
 }
-```
-
-Add to `async_io.rs` the constructor the blocking arm needs:
-
-```rust
-impl<T> Task<T> {
-    /// Wraps a `blocking::unblock` task, which is an async-task handle like the executor's.
-    pub(super) fn from_blocking(task: async_task::Task<T>) -> Self {
-        Self(task)
-    }
+pub(crate) struct Registered<K> {
+    registration: Registration, source: IoSource, runtime: Runtime, kind: K,
 }
-```
-
-`use_tokio()` and the `select_runtime!` macro are still needed by `zbus/src/address/transport/`
-until PR 3; keep both in `mod.rs`, unchanged, below the enum (`use_tokio` stays gated on both
-features as it is now). `Runtime::default_for_build` inlines the same check rather than calling
-`use_tokio`, so the gate on `use_tokio` need not change. One visible difference in a tokio-only
-build: building a connection with no Tokio runtime current now fails with `Error::Unsupported`
-where it used to panic inside `tokio::spawn`; say so in the commit body if a test covers it.
-
-- [ ] **Step 5: `timeout.rs`**
-
-```rust
-use std::{future::Future, io::ErrorKind, time::Duration};
-
-use futures_lite::FutureExt;
-
-use super::Runtime;
-use crate::{Error, Result};
-
-impl Runtime {
-    /// Sleeps for `duration` on this runtime's timer.
-    async fn sleep(&self, duration: Duration) {
-        match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(_) => {
-                async_io::Timer::after(duration).await;
-            }
-            #[cfg(feature = "tokio")]
-            Self::Tokio => tokio::time::sleep(duration).await,
-        }
-    }
-
-    /// Awaits `fut`, failing with a timed-out error once `duration` has passed.
-    pub(crate) async fn timeout<F, T>(&self, fut: F, duration: Duration) -> Result<T>
-    where
-        F: Future<Output = Result<T>>,
-    {
-        fut.or(async {
-            self.sleep(duration).await;
-            Err(Error::from(std::io::Error::new(
-                ErrorKind::TimedOut,
-                "timed out",
-            )))
-        })
-        .await
-    }
+// field order: registration is declared first, so it drops before the source
+impl<K: Kind> Registered<K> {
+    pub(crate) fn new(runtime: &Runtime, source: IoSource, kind: K) -> io::Result<Self>;
+    pub(crate) async fn read_with<T>(&self, op) -> io::Result<T>;   // io(Readable, op)
+    pub(crate) async fn write_with<T>(&self, op) -> io::Result<T>;  // io(Writable, op)
 }
-```
-
-`Connection::call_method` (`zbus/src/connection/mod.rs:296`) becomes
-`self.inner.runtime.timeout(reply_fut, timeout).await` (adapt the exact expression at the site).
-
-- [ ] **Step 6: `lib.rs`**
-
-```rust
-#[cfg(feature = "comms")]
-pub mod runtime;
-#[cfg(feature = "comms")]
-pub use runtime::AsyncDrop;
-```
-
-Search the crate for `crate::Executor`, `crate::Task` and `zbus::Task` (`/usr/bin/grep -rn
-"crate::Task\b\|crate::Executor\|zbus::Task\|zbus::Executor" zbus zbus_macros book/src`) and
-repoint each to `crate::runtime::Task` or to `Runtime` methods as the steps below describe.
-
-- [ ] **Step 7: `connection/mod.rs`**
-
-1. `ConnectionInner`: replace `executor: Executor<'static>` with `runtime: Runtime`; the four
-   lock fields keep their names with types `runtime::locks::Mutex<..>`; add
-   `serial_lock: locks::Mutex<()>`. Import `runtime::{Runtime, Task, locks::{Mutex, MutexGuard}}`
-   and drop the `async_lock::{Semaphore, SemaphorePermit}` and `timeout::timeout` imports.
-2. `Connection::new(auth, bus_connection, runtime: Runtime, method_timeout)`: create every lock
-   through `runtime.mutex(..)` (`msg_senders: Arc::new(runtime.mutex(msg_senders))`,
-   `subscriptions`, `socket_write`, `registered_names`, `serial_lock: runtime.mutex(())`) and
-   store `runtime`.
-3. Replace `pub fn executor(&self) -> &Executor<'static>` and its whole doc comment with
-
-   ```rust
-   /// The runtime this connection runs on.
-   pub(crate) fn runtime(&self) -> &Runtime {
-       &self.inner.runtime
-   }
-   ```
-
-4. Every `self.executor().spawn(..)`, `inner.executor.spawn(..)` and `self.inner.executor.spawn`
-   becomes the same call on `runtime()`/`inner.runtime`. `Task<()>` in `NameStatus` and the two
-   `OnceLock<Task<()>>` fields refer to `runtime::Task`.
-5. The flatpak workaround: delete `static SERIAL_NUM_SEMAPHORE` and `acquire_serial_num_semaphore`
-   and add, in the same place,
-
-   ```rust
-   impl Connection {
-       /// Makes serial assignment and sending one atomic step, but only inside Flatpak, where
-       /// xdg-dbus-proxy needs it: <https://github.com/flatpak/xdg-dbus-proxy/issues/46>.
-       async fn serial_lock(&self) -> Option<MutexGuard<'_, ()>> {
-           if is_flatpak() {
-               Some(self.inner.serial_lock.lock().await)
-           } else {
-               None
-           }
-       }
-   }
-   ```
-
-   and change the five `let _permit = acquire_serial_num_semaphore().await;` call sites to
-   `let _permit = self.serial_lock().await;`.
-6. Tests: `client1.executor().spawn(..)` → `client1.runtime().spawn(..)`;
-   `unix_p2p_async_io_backend` replaces the two `needs_internal_driver()` assertions with
-   `assert!(matches!(server1.runtime(), Runtime::AsyncIo(_)))` (same for `client1`) and spawns
-   its probe task with `server1.runtime().spawn(..)`; import `crate::runtime::Runtime` in the
-   test module.
-
-- [ ] **Step 8: `connection/builder.rs`**
-
-1. Delete the `internal_executor` field, the `internal_executor` setter and its doc, the
-   `start_internal_executor` function, and the `use crate::Executor` import.
-2. `build_inner`:
-
-   ```rust
-   let runtime = Runtime::default_for_build()?;
-   // Box the future as it's large and can cause stack overflow.
-   Box::pin(self.build_(runtime, activate_msg_stream)).await
-   ```
-
-   (`build_` takes `runtime: Runtime` and passes it to `Connection::new`.) There is no
-   `executor.run(..)` any more: the runtime runs what setup spawns.
-3. `Interfaces<'a>` becomes
-   `HashMap<ObjectPath<'a>, HashMap<InterfaceName<'static>, Box<dyn Interface>>>`; `serve_at`
-   inserts `Box::new(iface)`; in `build_` the loop wraps each with
-   `ArcInterface::new(&runtime, iface)` (see Step 9) before `add_arc_interface`. Check that
-   `Interface` is object-safe with `Send + Sync + 'static` supertraits
-   (`/usr/bin/grep -n "pub trait Interface" -A3 zbus/src/object_server/interface/mod.rs`); it is
-   already used as `dyn Interface`.
-
-- [ ] **Step 9: object server**
-
-1. `ArcInterface { instance: Arc<RwLock<Box<dyn Interface>>>, spawn_tasks_for_methods: bool }`
-   with
-
-   ```rust
-   impl ArcInterface {
-       pub fn new(runtime: &Runtime, iface: Box<dyn Interface>) -> Self {
-           let spawn_tasks_for_methods = iface.spawn_tasks_for_methods();
-           Self {
-               instance: Arc::new(runtime.rwlock(iface)),
-               spawn_tasks_for_methods,
-           }
-       }
-   }
-   ```
-
-   (`RwLock` is `crate::runtime::locks::RwLock`; the manual `Debug` impl keeps printing
-   `Arc<RwLock<dyn Interface>>`, adjust the name to the new type.)
-2. `ObjectServer` gains a `runtime: Runtime` field set in `new(conn)` from `conn.runtime().clone()`
-   and creates `root` with `runtime.rwlock(Node::new(..))`; `root()` returns `&locks::RwLock<Node>`.
-3. `at()` builds with `ArcInterface::new(&self.runtime, Box::new(iface))` inside the closure.
-4. `dispatch_call_to_iface(iface: Arc<RwLock<Box<dyn Interface>>>, ..)` and the spawn in the
-   `with_spawn` branch use `connection.runtime().spawn(..)` instead of `connection.executor()`.
-5. `InterfaceRef::lock: Arc<RwLock<Box<dyn Interface>>>`; `InterfaceDeref::iface:
-   RwLockReadGuard<'d, Box<dyn Interface>>` and the write guard likewise, from
-   `crate::runtime::locks`. The `downcast_ref`/`downcast_mut` calls auto-deref through the
-   `Box`, so their bodies do not change.
-6. Anything else in `object_server/` naming `async_lock` (`/usr/bin/grep -rn async_lock
-   zbus/src`) moves to `runtime::locks`.
-
-- [ ] **Step 10: `socket_reader.rs` and `proxy/mod.rs`**
-
-`SocketReader::spawn(self, runtime: &Runtime) -> Task<()>` calls `runtime.spawn(..)`;
-`init_socket_reader` passes `&inner.runtime`. `PropertiesCache::new(.., runtime: &Runtime, ..)`
-spawns on it; its caller passes `conn.runtime()`. The proxy test's
-`server_conn.executor().spawn(server_fut, "server_task")` becomes `server_conn.runtime().spawn`.
-
-- [ ] **Step 11: blocking work call sites**
-
-`crate::Task::spawn_blocking(f, name)` is called from backend-specific socket code
-(`connection/socket/{unix,tcp,vsock}.rs`) and from the transports
-(`address/transport/{mod,tcp}.rs`).
-Those files are not on this PR's path and stay backend-selected until PR 3; give them the
-minimal change: a crate-private free function in `runtime/mod.rs`,
-
-```rust
-/// Blocking work for code that does not have a connection's runtime at hand yet.
-///
-/// Transports and sockets are rewritten to take the runtime in the I/O-path PR; until then they
-/// pick the backend per call, as `select_runtime!` does.
-pub(crate) fn spawn_blocking<F, T>(f: F, #[allow(unused)] name: &str) -> Task<T>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    select_runtime! {
-        tokio: Task(executor::TaskInner::Tokio(executor::TokioTask::new(
-            executor::tokio_spawn_blocking(f, name),
-        ))),
-        async_io: Task(executor::TaskInner::AsyncIo(async_io::Task::from_blocking(
-            blocking::unblock(f),
-        ))),
-    }
+pub(crate) trait Kind: Send + Sync + 'static {
+    fn recv(&self, source: &IoSource, buf: &mut [u8]) -> RecvmsgResult;
+    fn send(&self, source: &IoSource, buf: &[u8], #[cfg(unix)] fds: &[BorrowedFd<'_>])
+        -> io::Result<usize>;
+    fn can_pass_unix_fd(&self) -> bool { false }
+    fn auth_mechanism(&self) -> AuthMechanism { AuthMechanism::External }
+    fn peer_credentials(&self, source: &IoSource, runtime: &Runtime)
+        -> impl Future<Output = io::Result<ConnectionCredentials>> + Send;
+    // socket2 shutdown(Both); no-op for pipes
+    fn shutdown(&self, source: &IoSource) -> io::Result<()>;
 }
+pub(crate) struct Unix; pub(crate) struct Tcp; pub(crate) struct Vsock; pub(crate) struct Pipe;
+impl<K: Kind> ReadHalf for Arc<Registered<K>> {
+    // recvmsg = read_with(|| kind.recv(..)); can_pass_unix_fd; peer_credentials; auth_mechanism
+}
+impl<K: Kind> WriteHalf for Arc<Registered<K>> {
+    // sendmsg = write_with(|| kind.send(..)); close = kind.shutdown(..);
+    // send_zero_byte on freebsd/dragonfly for Unix
+}
+impl<K: Kind> Socket for Registered<K> { split = Arc twice }
+// io/connect.rs
+pub(crate) async fn connect(runtime: &Runtime, domain: socket2::Domain, ty: socket2::Type,
+                            addr: &socket2::SockAddr) -> io::Result<IoSource>
 ```
+`connect`: `Socket::new(domain, ty.nonblocking().cloexec(), None)`, `socket.connect(addr)`; on
+`Ok` return; on `EINPROGRESS`/`WouldBlock` (`raw_os_error() == Some(libc::EINPROGRESS)` on unix,
+`WSAEWOULDBLOCK` on windows) register the source, `io(Writable, || match socket.take_error()? {
+Some(e) => Err(e), None => Ok(()) })`, then drop the temporary registration and return the
+source; any other error returns. The `Unix` kind's `recv`/`send` are the existing
+`fd_recvmsg`/`fd_sendmsg` moved from `socket/unix.rs`; `peer_credentials` is the existing
+`get_unix_peer_creds_blocking` split in two: the syscalls run inline, the `getpwuid_r`/
+`getgrouplist` lookup runs through `runtime.spawn_blocking(..)`. `Tcp` on windows looks up
+credentials through the existing `win32::socket_addr_get_pid` inline; on unix `auth_mechanism`
+is `Anonymous`. `Vsock`: recv/send, `Anonymous`. `Pipe`: `rustix::io::read`/`write`, `Anonymous`,
+`shutdown` is a no-op.
 
-and change the call sites to `crate::runtime::spawn_blocking(..)`. `Runtime` gets no
-`spawn_blocking` method in this PR: nothing on this PR's path would call it, and the I/O and
-ancillary PRs add it where the transports start taking the runtime.
+- [ ] Step 1: `cargo add socket2` to the workspace and `zbus` (optional, under `comms`).
+- [ ] Step 2: write `io_source.rs` constructors, `erased.rs` mirror, `Runtime::register`,
+  `Registration`.
+- [ ] Step 3: write `io.rs` and the kinds; nothing calls them yet except tests.
+- [ ] Step 4: tests in `io/tests.rs`, each under every runtime variant the build has (a helper
+  `fn runtimes() -> Vec<Runtime>` yielding `AsyncIo`, `Tokio` inside a runtime,
+  `External(TestRuntime)`):
+  - `a_partial_write_is_reported_as_success`: a unix socketpair with a 1 KiB send buffer
+    (`SO_SNDBUF`), `sendmsg` of 64 KiB returns `Ok(n)` with `n < 65536`.
+  - `file_descriptors_cross_a_unix_socket`: send a pipe fd with `sendmsg`; `recvmsg` returns it
+    and reading through it yields the written bytes.
+  - `readiness_written_before_registration_is_seen`: the peer writes before `Registered::new`;
+    the first `recvmsg` returns the bytes without hanging.
+  - `a_pending_connect_resolves_on_writable`: a listening unix socket with `listen(0)` plus one
+    queued connect makes the second `connect` pend; accepting releases it.
+  - `a_pending_connect_reports_the_socket_error`: connecting to a closed TCP port returns
+    `ConnectionRefused` from `take_error`.
+  - `a_registration_is_dropped_before_its_source`: a test-only `Kind` whose `Drop` records order
+    into a shared log; assert the registration's drop precedes the source close.
+- [ ] Step 5: verification as Task 1 step 6 plus the `cargo tree` EXT assertion (socket2 is
+  allowed).
+- [ ] Step 6: commit.
 
-- [ ] **Step 12: verify**
+### Task 3: Transports and builder targets on the runtime (new commit)
 
-```bash
-cargo +nightly fmt --all
-cargo check -p zbus
-cargo check -p zbus --no-default-features --features tokio,proxy,service
-cargo check -p zbus --all-features
-cargo check -p zbus --no-default-features
-cargo check -p zbus --target x86_64-pc-windows-gnu
-cargo check -p zbus --target x86_64-apple-darwin
-cargo clippy -p zbus --all-targets -- -D warnings
-cargo clippy -p zbus --no-default-features --all-targets --features tokio,p2p,proxy,service \
-    -- -D warnings
-cargo clippy -p zbus --all-features --all-targets -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc -p zbus --all-features --no-deps
-/usr/bin/grep -rn "internal_executor\|\.executor()\|needs_internal_driver\|Executor" zbus/src \
-    book/src zbus_macros/src | /usr/bin/grep -v "async_executor\|AsyncExecutor"
-dbus-run-session -- cargo test -p zbus
-dbus-run-session -- cargo test -p zbus --no-default-features --features tokio,proxy,service --tests
-dbus-run-session -- cargo test -p zbus --all-features -- --skip fdpass_systemd
-```
-
-Expected: all clean; the grep prints only the `book/src` mentions that Task 5 rewrites and
-nothing in `zbus/src`; every suite passes except the environmental `ibus_connection`. The
-`connection::Connection::executor` doctest no longer exists, so the tokio-only doc run in CI
-(`--features tokio,service connection::Connection::executor`) will find nothing; Task 4 updates
-that CI line.
-
-- [ ] **Step 13: Commit**
-
-```bash
-/usr/bin/git add -A zbus/src
-/usr/bin/git -c core.hooksPath=/dev/null commit --no-verify --no-gpg-sign -F - <<'EOF'
-♻️ zb: Take a connection's tasks, locks and timers from one runtime value
-
-The executor, the locks and the timeout each picked their backend on
-their own, some by cargo feature and some per call, and the builder
-started a driver thread by hand. A connection now carries one `Runtime`
-value chosen when it is built, and everything that spawns, locks or
-sleeps goes through it. The async-io backend becomes `AsyncIo`, an
-implementor of the new runtime traits that owns its executor and starts
-the executor thread on the first spawn, so the default path and an
-explicitly selected async-io runtime are the same code.
-
-With the runtime doing the driving there is nothing left to tick:
-`Builder::internal_executor`, `Connection::executor` and the public
-`Executor` and `Task` types go. Whoever ticked zbus's executor from
-their own runtime will implement `Runtime::spawn` instead, which the
-next commit makes possible. Two internal consequences: the flatpak
-serial-number semaphore becomes a per-connection mutex, since no lock
-can exist before a runtime does, and interfaces are wrapped in the
-runtime's lock when the object server adds them rather than when the
-builder collects them.
-
-Assisted-by: Claude Fable 5.1 (claude-fable-5-1)
-Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ
-EOF
-/usr/bin/git log -1 --format=%B | awk 'length > 74 {print "LONG: " $0}'
-```
-
----
-
-### Task 3: External runtimes and the external-only build
+**Commit:** `♻️ zb: Connect every transport on the connection's runtime`
 
 **Files:**
-- Create: `zbus/src/runtime/erased.rs`, `zbus/src/runtime/test_runtime.rs`
-- Modify: `zbus/src/runtime/{mod,locks,executor,timeout}.rs`, `zbus/src/connection/builder.rs`,
-  `zbus/src/{lib,utils}.rs`, `zbus/Cargo.toml` (dev-dependencies), and every site the
-  external-only build fails on (see Step 6)
+- Modify: `zbus/src/address/transport/{mod,tcp,unix,vsock}.rs`, `zbus/src/address/mod.rs`
+  (`Address::connect(self, runtime: &Runtime)`), `zbus/src/connection/builder.rs`,
+  `zbus/src/blocking/connection/builder.rs`, `zbus/src/connection/socket/{mod,unix,tcp,vsock}.rs`
+  (delete the `Async<T>`/tokio impls; `unix.rs`'s FFI helpers move to `runtime/io/unix.rs`),
+  `zbus/src/runtime/mod.rs` (remove `select_runtime!`, `use_tokio`, the free `spawn_blocking`),
+  `zbus/src/runtime/async_io.rs` (remove `Task::from_blocking`), `zbus/Cargo.toml`
+  (`vsock = ["dep:vsock"]`, remove `tokio-vsock`), `zbus/tests/{e2e,builder_message_stream,
+  builder_feature_additivity,connection_closed}.rs`, `zbus/src/connection/mod.rs` tests,
+  `zbus/src/address/mod.rs` tests, `zbus/src/connection/handshake/mod.rs` tests
+- Create: `zbus/src/connection/socket/tokio_tcp.rs` (`#[cfg(all(windows, feature = "tokio"))]`)
 
-**Interfaces:**
-- Consumes: Task 2's `Runtime` enum and enums.
-- Produces: `Builder::runtime(impl traits::Runtime)`; `Runtime::External(Arc<dyn ErasedRuntime>)`
-  with `External` variants on `Task`, `Mutex`, `RwLock` and their guards; a valid
-  `--no-default-features --features $EXT` build.
+**Behaviour:**
+- `Transport::connect(self, address: Address, runtime: &Runtime) -> Result<Stream>`; `Stream`
+  variants keep `BoxedSplit`.
+- Unix: `SockAddr::unix(path)` / `SockAddr::unix_abstract` (linux) → `connect(runtime, Domain::UNIX,
+  Type::STREAM, &addr)` → `Registered::new(runtime, source, Unix)`. Windows: same over `AF_UNIX`
+  for `AsyncIo`/`External`; for `Runtime::Tokio(_)` return `Error::Unsupported` (as today).
+- Tcp: parse `host` as `IpAddr` first; a literal skips DNS; otherwise
+  `runtime.spawn_blocking(move || (host, port).to_socket_addrs(), "resolve host")` filtered by
+  family; try each address through `connect`. Nonce: `runtime.spawn_blocking(|| std::fs::read(path),
+  "read nonce")` then `write_with` until written. `Runtime::Tokio(_)` on windows:
+  `tokio::net::TcpStream::connect` into `TokioTcp` (nonce written with `AsyncWriteExt`).
+- Vsock: `SockAddr::vsock(cid, port)`, `Domain::VSOCK`; `Registered<Vsock>`.
+- Builder: `Target::{UnixStream(std UnixStream | uds_windows), TcpStream(std), VsockStream(vsock)}`
+  → at `target_connect`, `set_nonblocking(true)`, `IoSource::from(OwnedFd::from(stream))`,
+  `Registered::new(conn runtime, ..)`. Constructors `unix_stream`, `tcp_stream`, `vsock_stream`;
+  remove `async_io_*` and `tokio_*`; keep `socket`/`authenticated_socket`. The blocking builder
+  mirrors the renames.
+- Delete `runtime::spawn_blocking` (free fn), `select_runtime!`, `use_tokio`, the `Socket`,
+  `ReadHalf` and `WriteHalf` impls for `Async<T>`, `tokio::net::*` and `tokio_vsock::*`; grep
+  proves no caller remains.
 
-- [ ] **Step 1: `erased.rs`**
+- [ ] Step 1-3: transports, builder, socket module deletions; `cargo check` on default, EXT,
+  tokio-only, windows-gnu, apple-darwin targets after each.
+- [ ] Step 4: tests. Existing suites (rewrite `async_io_unix_stream`/`tokio_unix_stream` →
+  `unix_stream`, etc.; handshake tests build `UnixStream::pair()` and go through `Builder`-level
+  helpers or `Registered::new`). New in `zbus/src/connection/mod.rs` tests:
+  `a_session_connection_over_an_external_runtime` (`Builder::session().runtime(TestRuntime::new())`,
+  `Peer.Ping` through the bus; runs in every configuration, including EXT under
+  `dbus-run-session`); `a_tcp_host_name_resolves_through_spawn_blocking`
+  (`tcp:host=localhost,port=<closed>` on the default-hook test runtime reaches
+  `ConnectionRefused`, proving resolution ran); `a_tcp_literal_skips_resolution`
+  (`tcp:host=127.0.0.1,port=<closed>` on a test runtime whose `spawn_blocking` panics reaches
+  `ConnectionRefused` without panicking). `zbus/src/address/mod.rs`'s `connect_tcp`/
+  `connect_nonce_tcp` tests run against `AsyncIo`, `Tokio` and `External`.
+- [ ] Step 5: verification as before; EXT now runs `--tests` (integration tests included) under
+  `dbus-run-session`.
+- [ ] Step 6: commit.
 
-```rust
-//! Object-safe mirrors of the runtime traits.
-//!
-//! `Builder::runtime` takes any implementation and the connection must not be generic over it,
-//! so the implementation is boxed behind these traits once. Operations that are generic over a
-//! value type erase the value too: a task's output travels through a slot the typed handle reads,
-//! and a lock holds `Box<dyn Any + Send>` that the typed wrapper downcasts, which is a `TypeId`
-//! comparison per access.
+### Task 4: Processes on the runtime (new commit)
 
-use std::{
-    any::Any,
-    fmt,
-    future::Future,
-    io,
-    ops::{Deref, DerefMut},
-    pin::Pin,
-    sync::{Arc, Mutex as SyncMutex},
-    task::{Context, Poll},
-    time::Instant,
-};
-
-use super::{
-    Interest, IoSource,
-    traits::{self, IoRegistration},
-};
-
-pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-pub(crate) trait ErasedRuntime: Send + Sync {
-    fn register(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>>;
-    fn sleep_until(&self, deadline: Instant) -> BoxFuture<'static, ()>;
-    fn spawn(&self, future: BoxFuture<'static, ()>) -> Box<dyn ErasedTask>;
-    fn mutex(&self, value: Box<dyn Any + Send>) -> Box<dyn ErasedMutex>;
-    fn rwlock(&self, value: Box<dyn Any + Send + Sync>) -> Box<dyn ErasedRwLock>;
-    fn spawn_blocking(
-        &self,
-        work: Box<dyn FnOnce() + Send>,
-    ) -> Option<BoxFuture<'static, io::Result<()>>>;
-}
-
-impl fmt::Debug for dyn ErasedRuntime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<external runtime>")
-    }
-}
-
-impl<R: traits::Runtime> ErasedRuntime for R {
-    fn register(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>> {
-        traits::Runtime::register(self, source)
-            .map(|registration| Box::new(registration) as Box<dyn ErasedRegistration>)
-    }
-
-    fn sleep_until(&self, deadline: Instant) -> BoxFuture<'static, ()> {
-        Box::pin(traits::Runtime::sleep_until(self, deadline))
-    }
-
-    fn spawn(&self, future: BoxFuture<'static, ()>) -> Box<dyn ErasedTask> {
-        Box::new(traits::Runtime::spawn(self, future))
-    }
-
-    fn mutex(&self, value: Box<dyn Any + Send>) -> Box<dyn ErasedMutex> {
-        Box::new(traits::Runtime::mutex(self, value))
-    }
-
-    fn rwlock(&self, value: Box<dyn Any + Send + Sync>) -> Box<dyn ErasedRwLock> {
-        Box::new(traits::Runtime::rwlock(self, value))
-    }
-
-    fn spawn_blocking(
-        &self,
-        work: Box<dyn FnOnce() + Send>,
-    ) -> Option<BoxFuture<'static, io::Result<()>>> {
-        traits::Runtime::spawn_blocking(self, work)
-    }
-}
-
-pub(crate) trait ErasedRegistration: Send + Sync {
-    fn poll_io(
-        &self,
-        cx: &mut Context<'_>,
-        interest: Interest,
-        operation: &mut dyn FnMut() -> io::Result<()>,
-    ) -> Poll<io::Result<()>>;
-}
-
-impl<R: IoRegistration> ErasedRegistration for R {
-    fn poll_io(
-        &self,
-        cx: &mut Context<'_>,
-        interest: Interest,
-        operation: &mut dyn FnMut() -> io::Result<()>,
-    ) -> Poll<io::Result<()>> {
-        IoRegistration::poll_io(self, cx, interest, operation)
-    }
-}
-
-pub(crate) trait ErasedTask: Future<Output = io::Result<()>> + Send + Unpin {
-    fn detach(self: Box<Self>);
-}
-
-impl<T: traits::Task<()>> ErasedTask for T {
-    fn detach(self: Box<Self>) {
-        traits::Task::detach(*self)
-    }
-}
-
-/// A guard over an erased value; the typed wrapper downcasts through it.
-pub(crate) trait ErasedGuard<V: ?Sized>: DerefMut<Target = V> + Send {}
-
-impl<G, V: ?Sized> ErasedGuard<V> for G where G: DerefMut<Target = V> + Send {}
-
-pub(crate) trait ErasedMutex: Send + Sync {
-    fn lock(&self) -> BoxFuture<'_, Box<dyn ErasedGuard<Box<dyn Any + Send>> + '_>>;
-}
-
-impl<M: traits::Mutex<Box<dyn Any + Send>>> ErasedMutex for M {
-    fn lock(&self) -> BoxFuture<'_, Box<dyn ErasedGuard<Box<dyn Any + Send>> + '_>> {
-        Box::pin(async move {
-            Box::new(traits::Mutex::lock(self).await)
-                as Box<dyn ErasedGuard<Box<dyn Any + Send>> + '_>
-        })
-    }
-}
-
-/// A read guard: shared access only, so it is `Sync` too.
-pub(crate) trait ErasedReadGuard<V: ?Sized>: Deref<Target = V> + Send + Sync {}
-
-impl<G, V: ?Sized> ErasedReadGuard<V> for G where G: Deref<Target = V> + Send + Sync {}
-
-pub(crate) trait ErasedRwLock: Send + Sync {
-    fn read(&self) -> BoxFuture<'_, Box<dyn ErasedReadGuard<Box<dyn Any + Send + Sync>> + '_>>;
-    fn write(&self) -> BoxFuture<'_, Box<dyn ErasedGuard<Box<dyn Any + Send + Sync>> + '_>>;
-}
-
-impl<L: traits::RwLock<Box<dyn Any + Send + Sync>>> ErasedRwLock for L {
-    fn read(&self) -> BoxFuture<'_, Box<dyn ErasedReadGuard<Box<dyn Any + Send + Sync>> + '_>> {
-        Box::pin(async move {
-            Box::new(traits::RwLock::read(self).await)
-                as Box<dyn ErasedReadGuard<Box<dyn Any + Send + Sync>> + '_>
-        })
-    }
-
-    fn write(&self) -> BoxFuture<'_, Box<dyn ErasedGuard<Box<dyn Any + Send + Sync>> + '_>> {
-        Box::pin(async move {
-            Box::new(traits::RwLock::write(self).await)
-                as Box<dyn ErasedGuard<Box<dyn Any + Send + Sync>> + '_>
-        })
-    }
-}
-
-/// The output slot a typed task reads once its erased handle resolves.
-pub(crate) type OutputSlot<T> = Arc<SyncMutex<Option<T>>>;
-```
-
-If `impl<T: traits::Task<()>> ErasedTask for T` conflicts with coherence for some host type, the
-alternative is a private newtype `Erased<T>(T)`; try the blanket impl first.
-
-- [ ] **Step 2: `External` variants**
-
-- `Runtime::External(Arc<dyn ErasedRuntime>)` in `mod.rs`; each `match` gains an arm:
-  - `spawn`: box the future into `async move { *slot.lock().unwrap() = Some(future.await) }`
-    with an `OutputSlot<T>`, call `runtime.spawn(..)`, return
-    `Task(TaskInner::External { handle, output: slot })`.
-  - the free `runtime::spawn_blocking` gains no external arm (it is backend-only until PR 3);
-    gate it on `any(feature = "async-io", feature = "tokio")`.
-  - `mutex`/`rwlock`: `locks::Mutex::External(locks::Erased::new(runtime.mutex(Box::new(value))))`.
-- `locks.rs`: `Erased<T> { inner: Box<dyn ErasedMutex>, value: PhantomData<fn() -> T> }` and
-  `ErasedGuardTyped<'a, T> { inner: Box<dyn ErasedGuard<Box<dyn Any + Send>> + 'a>, .. }` whose
-  `Deref` is `self.inner.downcast_ref::<T>().expect("erased lock holds the value it was created
-  with")`; same for the `RwLock` side with the `Send + Sync` value type. `Debug` for the
-  `External` variants prints `<external>`.
-- `executor.rs`: `TaskInner::External { handle: Box<dyn ErasedTask>, output: OutputSlot<T> }`
-  polls the handle, then takes the slot: `Ok(value)` or
-  `Err(io::Error::other("task finished without producing its output"))` if the host reported
-  success but nothing was stored (cannot happen with a well-behaved host; do not panic).
-  `detach` calls `ErasedTask::detach`.
-- `timeout.rs`: `Self::External(runtime) => runtime.sleep_until(Instant::now() + duration).await`.
-- `Runtime::default_for_build` is unchanged; `Builder` gets a `runtime: Option<Runtime>` field:
-
-  ```rust
-  /// Use `runtime` for this connection's readiness, timers, tasks and locks.
-  ///
-  /// Without this, a connection runs on Tokio when that is compiled in and a runtime is
-  /// current, otherwise on the built-in async-io runtime. See [`crate::runtime`].
-  pub fn runtime(mut self, runtime: impl traits::Runtime) -> Self {
-      self.runtime = Some(Runtime::External(Arc::new(runtime)));
-      self
-  }
-  ```
-
-  and `build_inner` uses `self.runtime.take().map_or_else(Runtime::default_for_build, Ok)?`.
-
-- [ ] **Step 3: `test_runtime.rs` (`cfg(test)`)**
-
-An implementor built only from dev-dependencies, so it exists in every test build including the
-external-only one: `spawn` on an `async_executor::Executor<'static>` driven by one std thread
-running `futures_lite::future::block_on(executor.run(std::future::pending::<()>()))`;
-`sleep_until` = `async_io::Timer::at`; locks = `async_lock`'s; `register` = `async_io::Async`
-(same `poll_io` loop as `AsyncIo`'s); `spawn_blocking` = `Some(Box::pin(async {
-Ok(blocking::unblock(work).await) }))`. Add `async-io`, `async-executor`, `async-task`,
-`async-lock` and `blocking` to `[dev-dependencies]` in `zbus/Cargo.toml` with `workspace = true`
-(all already in `Cargo.lock`; confirm `git diff Cargo.lock` stays empty). Name it `TestRuntime`
-with `TestRuntime::new()`.
-
-- [ ] **Step 4: tests for the external path** (in `zbus/src/runtime/mod.rs`'s test module, or a
-  `runtime/tests.rs`; all gated `cfg(all(test, feature = "p2p"))` where a `Channel` is used;
-  each `#[ntest::timeout(15000)]`):
-
-```rust
-#[test]
-#[timeout(15000)]
-fn external_runtime_drives_a_channel_connection() {
-    futures_lite::future::block_on(async {
-        let guid = crate::Guid::generate();
-        let (c1, c2) = crate::connection::socket::Channel::pair();
-        let server = Builder::authenticated_socket(c1, guid.clone())
-            .p2p()
-            .runtime(TestRuntime::new())
-            .build()
-            .await
-            .unwrap();
-        let client = Builder::authenticated_socket(c2, guid)
-            .p2p()
-            .runtime(TestRuntime::new())
-            .build()
-            .await
-            .unwrap();
-        assert!(matches!(server.runtime(), Runtime::External(_)));
-
-        // A Peer.Ping round trip proves the reader task, the write lock and the timeout all run
-        // on the external runtime.
-        let reply = client
-            .call_method(None::<()>, "/", Some("org.freedesktop.DBus.Peer"), "Ping", &())
-            .await
-            .unwrap();
-        assert!(reply.body().signature().is_empty());
-
-        // The client is gone before the server; shutting the server down must not hang.
-        drop(client);
-        server.graceful_shutdown().await;
-    });
-}
-```
-
-(Adapt `call_method`'s argument shapes to the current signature; `Peer` is served for every
-connection when `service` is on, so gate on `feature = "service"` or call a method that exists
-on a p2p connection without the object server — check `handshake`/`fdo` for what `Ping`
-needs.) Add: `#[cfg(not(any(feature = "async-io", feature = "tokio")))]`
-`session_without_runtime_is_unsupported` asserting
-`block_on(Builder::session().build()).unwrap_err()` matches `Error::Unsupported`; an erasure
-test that locks a `runtime.mutex(5u8)` on a `TestRuntime` through `Runtime::External`, holds the
-guard across a `yield_now().await`, and reads 5; a task test: spawn `async { 7 }` through
-`Runtime::External`, join `Ok(7)`; a cancelled task: spawn `pending()`, drop the `Task`, and the
-runtime's executor reports empty (expose `TestRuntime::is_empty()` for the test).
-
-- [ ] **Step 5: `utils::block_on` and `lib.rs`**
-
-Remove the `compile_error!` block in `lib.rs` (lines 57-66). In `utils.rs`:
-
-```rust
-#[cfg(all(not(feature = "tokio"), feature = "async-io"))]
-#[doc(hidden)]
-pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    async_io::block_on(future)
-}
-
-/// With neither backend a connection's tasks run on its runtime, so the blocking facade only
-/// has to poll the caller's future.
-#[cfg(not(any(feature = "tokio", feature = "async-io")))]
-#[doc(hidden)]
-pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    futures_lite::future::block_on(future)
-}
-```
-
-- [ ] **Step 6: make the external-only build compile**
-
-```bash
-EXT="blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p"
-cargo check -p zbus --no-default-features --features $EXT
-```
-
-Fix every error and warning the build reports, with these rules: code that only makes sense with
-a backend gets `#[cfg(any(feature = "async-io", feature = "tokio"))]`; a transport or discovery
-path that needs a backend returns `Err(Error::Unsupported)` in the no-backend build (the runtime
-path for those is PR 3 and PR 4); never delete functionality from the backend builds. Expected
-sites, from a dry run: `connection/builder.rs` (`use async_io::Async`, the stream `Target`
-variants), `address/transport/mod.rs` (`Transport::connect`: add
-a no-backend arm returning `Err(Error::Unsupported)`
-at the top and gate the rest), `address/transport/{unixexec,ibus,launchd}.rs` (`connect`/
-`bus_address` return `Unsupported` without a backend), `runtime/process.rs` (gate the module on a
-backend), `connection/socket/unix.rs` free functions used only by backend impls,
-`runtime/mod.rs` `spawn_blocking` (gate on a backend), `blocking/connection/builder.rs`. Repeat
-for `--target x86_64-pc-windows-gnu` and `--target x86_64-apple-darwin` with the same features,
-then `cargo clippy -p zbus --no-default-features --all-targets --features $EXT -- -D warnings`
-and `cargo test -p zbus --no-default-features --features $EXT --lib`.
-
-Then prove the dependency claim:
-
-```bash
-FORBIDDEN="async-io|async-executor|async-task|async-lock|async-process|blocking|polling"
-FORBIDDEN="$FORBIDDEN|async-channel|async-signal|piper"
-cargo tree -e normal -p zbus --no-default-features --features $EXT \
-    | /usr/bin/grep -E "$FORBIDDEN" \
-    && echo "FORBIDDEN CRATE PRESENT" || echo "dependency graph clean"
-```
-
-Expected: `dependency graph clean`.
-
-- [ ] **Step 7: full verification**
-
-Everything from Task 2 Step 12, plus the external-only check/clippy/test/tree commands above and
-`RUSTDOCFLAGS="-D warnings" cargo doc -p zbus --no-default-features --features $EXT --no-deps`.
-
-- [ ] **Step 8: Commit**
-
-```bash
-/usr/bin/git add -A zbus
-/usr/bin/git -c core.hooksPath=/dev/null commit --no-verify --no-gpg-sign -F - <<'EOF'
-✨ zb: Accept any runtime through Builder::runtime
-
-An application whose event loop is neither async-io nor Tokio can now
-hand zbus an implementation of the runtime traits and have every task,
-lock and timer of the connection run there, with none of the crates
-behind the `async-io` feature in its dependency graph. The
-implementation is boxed once behind object-safe mirrors of the traits;
-the built-in backends keep their zero-cost variants, so only the
-external path pays an allocation per spawn and per lock acquisition.
-
-A build with neither backend is now valid: it needs an explicit
-runtime for every connection and otherwise reports the connection as
-unsupported. Until the I/O path learns to create sockets on the
-runtime, such a build connects over a user-supplied `Socket`; the
-transports and discovery helpers that need a backend say so with an
-unsupported-operation error rather than failing to compile.
-
-Assisted-by: Claude Fable 5.1 (claude-fable-5-1)
-Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ
-EOF
-/usr/bin/git log -1 --format=%B | awk 'length > 74 {print "LONG: " $0}'
-```
-
----
-
-### Task 4: CI: the external-only leg
+**Commit:** `♻️ zb: Run transport helper processes on the connection's runtime`
 
 **Files:**
-- Modify: `.github/workflows/rust.yml`
+- Modify: `zbus/src/runtime/process.rs` (rewrite over `std::process`),
+  `zbus/src/address/transport/{unixexec,ibus,launchd,mod}.rs`, `zbus/src/connection/socket/mod.rs`
+  (drop `command`), `zbus/Cargo.toml` (`async-io` feature loses `async-process`; tokio loses
+  `process`), `zbus/tests/basic.rs` (ibus test), `zbus/tests/unixexec.rs`
+- Delete: `zbus/src/connection/socket/command.rs`
 
-- [ ] **Step 1: edit the workflow**
-
-1. `check` job: after the wire-format-only checks, add
-   ```yaml
-   # The external-runtime-only build: no async-io, no tokio.
-   EXT=blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p
-   cargo --locked check -p zbus --no-default-features --features $EXT
-   cargo --locked check -p zbus --no-default-features --features $EXT \
-     --target x86_64-pc-windows-gnu
-   cargo --locked check -p zbus --no-default-features --features $EXT \
-     --target x86_64-apple-darwin
-   ```
-2. `clippy` job: the same feature set with `--all-targets -- -D warnings`.
-3. `linux_test` matrix: add `external` to `suite`, and a step
-   ```yaml
-   - name: Test the external-runtime-only build
-     if: matrix.suite == 'external'
-     run: |
-       FEATURES=blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p
-       cargo --locked test --release --verbose -p zbus --no-default-features \
-         --features $FEATURES --lib
-       # Nothing behind the async-io feature may reach an external-runtime user.
-       FORBIDDEN="async-io|async-executor|async-task|async-lock|async-process|blocking"
-       FORBIDDEN="$FORBIDDEN|polling|async-channel|async-signal|piper"
-       if cargo --locked tree -e normal -p zbus --no-default-features --features $FEATURES \
-           | grep -E "$FORBIDDEN"; then
-         echo "a crate owned by the async-io feature is in the external-only graph" >&2
-         exit 1
-       fi
-   ```
-4. The tokio doc step: replace the `connection::Connection::executor` doctest filter (the doctest
-   no longer exists) with the whole `--doc` run for `--features tokio,service`, keeping the `-p
-   zbus` comment.
-
-- [ ] **Step 2: validate the YAML** (`python3 -c 'import yaml; yaml.safe_load(open("FILE"))'`
-  with the workflow path, if PyYAML is available, otherwise a careful re-read) and run the three
-  new check commands and the test step's commands locally.
-
-- [ ] **Step 3: Commit**
-
-```bash
-/usr/bin/git add .github/workflows/rust.yml
-/usr/bin/git -c core.hooksPath=/dev/null commit --no-verify --no-gpg-sign -F - <<'EOF'
-👷 zb: Check the external-runtime-only build in CI
-
-The promise of an external runtime is a dependency graph without the
-crates behind the `async-io` feature, which only holds if something
-checks it. This leg builds, lints and unit-tests zbus with neither
-backend and fails if any of those crates shows up in the normal
-dependency tree. The tokio doc run loses its filter for the executor
-doctest, which no longer exists.
-
-Assisted-by: Claude Fable 5.1 (claude-fable-5-1)
-Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ
-EOF
+**Interfaces produced:**
+```rust
+// runtime/process.rs,
+// #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+pub(crate) struct Child {
+    stdin: Option<Arc<Registered<Pipe>>>,
+    stdout: Arc<Registered<Pipe>>,
+    reaper: Task<io::Result<ExitStatus>>,
+}
+pub(crate) fn spawn(runtime: &Runtime, command: std::process::Command) -> Result<Child>;
+    // stdin/stdout piped, stderr inherited; both pipes non-blocking; wrapped as Registered<Pipe>;
+    // reaper = runtime.spawn(spawn_blocking(move || child.wait()), "reap <program>")
+pub(crate) async fn output(runtime: &Runtime, command: std::process::Command) -> Result<Output>;
+    // spawn, read stdout to EOF through read_with, await the reaper, build std::process::Output
+impl Child { pub(crate) fn into_split(self) -> BoxedSplit }  // for unixexec; detaches the reaper
 ```
+`unixexec`: `spawn` then `into_split`; the child is not killed on drop (as today); closing stdin
+ends it and the reaper collects it. `ibus`/`launchd`: `output`.
 
----
+- [ ] Step 1-2: rewrite, wire the transports, drop the crate features.
+- [ ] Step 3: tests: `zbus/tests/unixexec.rs` unchanged in intent (runs when
+  `systemd-stdio-bridge` exists) and additionally over the default-hook test runtime;
+  `ibus_connection` in `basic.rs` unchanged; new `a_helper_process_is_reaped` in
+  `runtime/process.rs` tests: run `true` through `output` under each runtime variant and assert
+  `status.success()` and, on linux for `External`, that `/proc/self/task` returns to its starting
+  count (polled under the test timeout).
+- [ ] Step 4: verification incl. `cargo tree` EXT and `cargo tree -p zbus -e normal` on the
+  default features no longer listing `async-process`.
+- [ ] Step 5: commit.
 
-### Task 5: The 6.0 upgrade guide
+### Task 5: The reference host and the thread-free proof (new commit)
+
+**Commit:** `✅ zb: Prove a single-threaded host runs a connection without zbus threads`
 
 **Files:**
-- Modify: `book/src/upgrading-to-6.md` (a `###` subsection under "Other changes in 6.0"),
-  `book/src/faq.md` (the entry that mentions `internal_executor`, if any:
-  `/usr/bin/grep -n "internal_executor\|executor()" book/src/*.md`)
+- Create: `zbus/tests/polling_host.rs`, `zbus/tests/polling_host/host.rs` (the runtime)
+- Modify: `zbus/Cargo.toml` (`[dev-dependencies] polling`), `zbus/src/runtime/traits.rs` docs
+  (point at the host as the reference implementation)
 
-- [ ] **Step 1: write the subsection**, placed before `### Logging through `tracing` is a feature`:
+**Host shape (≈200 lines, test code):** the `Runtime` must be `Send + Sync + 'static`, so the host
+hands zbus a `Handle { poller: Arc<Poller>, queue: Arc<Mutex<VecDeque<Runnable>>>, timers:
+Arc<Mutex<BTreeMap<(Instant, u64), Waker>>> }` with `std::sync::Mutex`; `spawn` builds a task
+with `async_task::spawn` (dev-dependency) pushing runnables onto the queue and waking the poller
+with `poller.notify()`; `register` adds the fd to the poller with `Event::none(key)` and `poll_io`
+re-arms with `modify(readable/writable)`; `sleep_until` inserts a waker keyed by deadline; locks
+are `async_lock` (dev-dependency); `spawn_blocking` keeps the trait default. The host's
+`run(fut)` loop: drain runnables, poll `fut`, compute the next timer deadline,
+`poller.wait(events, timeout)`, wake registrations and expired timers. The test: count threads
+(`/proc/self/task` entries on linux), `run(async { session connection with the host; serve an
+interface at a path; call it via a proxy with `method_timeout(1s)`; `graceful_shutdown` })`,
+count threads again, assert equal. Also `a_timed_out_call_on_the_host_is_cancelled`: call a method
+on a served interface that never replies, assert `Error::InputOutput(TimedOut)` within the
+timeout and that the host's timer map is empty afterwards.
 
-```markdown
-### `Builder::runtime` replaces `internal_executor`
+- [ ] Steps: write host, tests, run in default and EXT configurations.
+- [ ] Commit.
 
-A connection used to pick its executor and locks by cargo feature, with
-`Builder::internal_executor(false)` and `Connection::executor().tick()` as the way to drive
-zbus's tasks from another runtime. That pair is gone, together with the `Executor` and `Task`
-types. A connection now takes its readiness, timers, tasks and locks from one runtime: Tokio when
-the `tokio` feature is on and a runtime is current, otherwise the built-in async-io runtime, or
-whatever you pass to `Builder::runtime`:
+### Task 6: CI (fixup into commit `👷 zb: Check the external-runtime-only build in CI`)
 
-```rust,ignore
-let conn = zbus::connection::Builder::session()
-    .runtime(my_runtime)
-    .build()
-    .await?;
-```
+- External leg: `--tests` (not `--lib`) so `polling_host` and the session tests run; keep the
+  `cargo tree` guard (file-based). `socket2` is allowed.
+- `windows_test` matrix gains `tokio-only` (`--no-default-features --features tokio,proxy,service`).
+- The `tokio` and `tokio-async-io` suites drop their `tokio-vsock` lines.
+- Verify with `python3 -c "import yaml..."` and by running the external leg's commands locally.
 
-`my_runtime` implements `zbus::runtime::traits::Runtime`: a readiness registration, a timer, a
-task handle and two locks, all of which every async runtime already has. Code that ticked the
-executor from Tokio implements `spawn` with `tokio::spawn` and is done. Nothing changes for
-connections built without `runtime`.
+### Task 7: Documentation and spec (fixup into commit `📝 book: ...` plus a spec commit)
 
-A build with `comms` but neither `async-io` nor `tokio` is now valid; every connection in it
-needs a `runtime`, and until the standard transports learn to create sockets on it, such a build
-connects over a socket you supply.
-```
+- `book/src/connection.md`: new section "Runtimes": built-ins by feature; `Builder::runtime` with
+  the requirement list (readiness, timers, spawning, locks) and the `spawn_blocking` default with
+  the exact list of operations that use it; pointer to `zbus/tests/polling_host/host.rs` as the
+  reference host. `faq.md`: update the Tokio entry. `upgrading-to-6.md`: constructor renames and
+  the `into_std()`/`into_inner()` conversions, `vsock` no longer implies `async-io`, `tokio-vsock`
+  gone, `unixexec` over std processes, removed API. `zbus/README.md`: runtime section rewritten to
+  the final model. `zbus/src/runtime/{mod,traits}.rs`: docs describe the delivered behaviour, the
+  `poll_io` contract verbatim from Global Constraints.
+- Spec: apply "Spec amendments"; commit on `external-runtime-spec` with `Changelog: skip`;
+  replace the plan file there with this document.
 
-(Use ```` ```rust,ignore ```` only because the snippet is a fragment; the book's other snippets
-do the same for fragments. Check `/usr/bin/grep -c "rust,ignore" book/src/upgrading-to-6.md`.)
+### Task 8: Final verification, history and PR
 
-- [ ] **Step 2: `mdbook build` if installed, `awk 'length > 100'` on the file, commit**
-
-```bash
-/usr/bin/git add book/src
-/usr/bin/git -c core.hooksPath=/dev/null commit --no-verify --no-gpg-sign -F - <<'EOF'
-📝 book: Document Builder::runtime in the 6.0 guide
-
-`internal_executor` and `Connection::executor` are gone and
-`Builder::runtime` is how a connection is put on another runtime now;
-the upgrade guide says so next to the other 6.0 API changes.
-
-Assisted-by: Claude Fable 5.1 (claude-fable-5-1)
-Claude-Session: https://claude.ai/code/session_01BZG5dKScVZhnycsSGwHUXZ
-EOF
-```
-
----
-
-### Task 6: Final verification and PR
-
-- [ ] **Step 1**: `/usr/bin/git fetch zeenix && /usr/bin/git rebase zeenix/runtime-module`, then the
-  CI-equivalent matrix: `cargo +nightly fmt --all -- --check`; the `check` job's commands
-  (including the new external-only ones and the three cross targets); the clippy job's feature
-  sets; `RUSTDOCFLAGS=-D warnings` doc builds for all-features, tokio-only and external-only;
-  `dbus-run-session -- cargo test --all-features -- --skip fdpass_systemd`;
-  `dbus-run-session -- cargo test -p zbus --no-default-features --features tokio,proxy,service
-  --tests`;
-  `cargo test -p zbus --no-default-features --features $EXT --lib`; the `cargo tree` assertion;
-  `/usr/bin/git status --short` clean; `Cargo.lock` unchanged; every commit body ≤ 74 columns.
-- [ ] **Step 2**: `/usr/bin/git log --oneline zeenix/runtime-module..HEAD` shows five commits in the
-  order above; a grep for `async_lock|async_executor|async_task|async_io::|blocking::` over
-  `zbus/src/runtime/{traits,io_source,erased,locks,executor,timeout}.rs` prints nothing (only
-  `async_io.rs`, `async_lock.rs`, `test_runtime.rs` and the gated arms may name them).
-- [ ] **Step 3**: push `runtime-abstraction` to `zeenix` and open the PR against `main`:
-  title `✨ zb: Let a connection run on any runtime through Builder::runtime`, body: second of
-  four PRs for #1960 (design #1961), based on #1962; the five commits in one paragraph each; the
-  note that the built-in paths are zero-cost enum variants and only the external path boxes; the
-  external-only build's current limits (user-supplied sockets until PR 3); the removed API; the
-  usual generated-with footer and session link.
+- History (nine commits): traits; runtime value (with Tokio); `Builder::runtime`; socket wrapper;
+  transports; processes; reference host; CI; book. Every commit builds and passes clippy on
+  default and EXT (`git rebase --exec` with the two clippy commands).
+- Matrix: fmt check; `cargo --locked check` default/EXT/tokio-only/wire + windows-gnu,
+  apple-darwin, freebsd for default and EXT; clippy on the five sets; docs on four sets; tests:
+  default, `--all-features -- --skip fdpass_systemd`, tokio-only `--tests`, EXT `--tests`, wire;
+  `cargo tree` guards for EXT and for default (`async-process` absent).
+- Force-push `runtime-abstraction`; edit PR #1964's title to
+  `✨ zb: Run a connection on any runtime, async-io and Tokio included` and rewrite its body:
+  one paragraph per commit, the selection table, the external-only build's transports and the
+  `spawn_blocking` rule, removed and renamed API, the thread-free proof.
