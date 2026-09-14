@@ -534,13 +534,17 @@ matching Tokio's own lack of `AsyncFd` on that platform.
 Every process, on every runtime, is spawned with `std::process::Command`; its pipes are
 registered like any other socket and its exit status is collected through `spawn_blocking`,
 which always has an implementation. The wait starts when the transport is done with the helper,
-not when the helper starts: `output()` reads to EOF first, and the `unixexec:` halves share a
-reaper that runs the wait when the last of them is dropped. A blocking worker is therefore
-occupied for the helper's exit latency, not for the connection's lifetime, whatever pool backs
-the hook. `Connection::close()` closes the helper's standard input (the write half drops its
-pipe, and a later write reports `NotConnected`), which is what tells a `unixexec:` helper to
-exit. `async-process` is not part of the `async-io` feature and `process` is not part of the
-`tokio` feature: no backend depends on either crate for subprocess handling.
+not when the helper starts: `output()` reads to EOF first, and for `unixexec:` the read half's
+drop starts it, with the reaper the two halves share running it as a fallback when the last of
+them drops. Nothing awaits the wait; the hook's contract that the work runs whether or not its
+future is kept is what leaves it with the pool. So a healthy connection occupies no blocking
+worker; a helper that exited on its own is reaped at once, even while an idle `Connection` clone
+still holds its input; and a connection that stops reading a helper still running parks a worker
+until that helper sees its input close, which is when the last clone drops the other pipe.
+`Connection::close()` closes the helper's standard input (the write half drops its pipe, and a later
+write reports `NotConnected`), which is what tells a `unixexec:` helper to exit. `async-process` is
+not part of the `async-io` feature and `process` is not part of the `tokio` feature: no backend
+depends on either crate for subprocess handling.
 
 ## Feature and dependency model
 
