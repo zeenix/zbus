@@ -528,7 +528,7 @@ matching Tokio's own lack of `AsyncFd` on that platform.
 | DNS for tcp hostnames | `spawn_blocking(\|\| (host, port).to_socket_addrs())` |
 | nonce-tcp file | `spawn_blocking(\|\| std::fs::read(path))` |
 | ibus/launchd `output()` | std process; stdout read to EOF via its registration, then reaped |
-| unixexec | std process; pipes as `Registered<Pipe>`; reaped once both are closed |
+| unixexec | std process; pipes as `Registered<Pipe>`; reaped when the read half is dropped |
 | autolaunch (Windows) | `spawn_blocking(autolaunch_bus_address)`: a named mutex, unbounded wait |
 
 Every process, on every runtime, is spawned with `std::process::Command`; its pipes are
