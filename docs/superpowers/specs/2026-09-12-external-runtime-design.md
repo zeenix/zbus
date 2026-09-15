@@ -20,17 +20,17 @@ Three points of the issue text are deliberately not followed:
 
 ## The problem
 
-A connection needs four things from a runtime: readiness wakeups for its socket, timers,
+A connection needs three things from a runtime: readiness wakeups for its socket, timers, and
 somewhere to run its tasks (the socket reader, the object server dispatcher, name-lost watchers,
-spawned method handlers), and async locks that are held across `.await` (the socket's write half,
-the message broadcasters, every interface behind the object server). Today all four are coupled
-to two compiled-in backends:
+spawned method handlers). It also needs async locks held across `.await` (the socket's write
+half, the message broadcasters, every interface behind the object server). Today all of it is
+coupled to two compiled-in backends:
 
 - `async-io`: sockets are `Arc<async_io::Async<T>>`, timers are `async_io::Timer`, tasks run on an
   `async_executor::Executor` ticked by a dedicated `zbus::Connection executor` thread that the
   builder spawns after setup (`internal_executor(false)` leaves ticking to the caller through
-  `Connection::executor().tick()`), locks are `async_lock`'s.
-- `tokio`: sockets are `tokio::net` types, timers `tokio::time`, tasks `tokio::spawn`ed, locks
+  `Connection::executor().tick()`); locks are `async_lock`'s.
+- `tokio`: sockets are `tokio::net` types, timers `tokio::time`, tasks `tokio::spawn`ed; locks are
   `tokio::sync`'s.
 
 Nothing else can supply them. A GLib, `polling`, `mio` or custom event loop host cannot use zbus
@@ -41,15 +41,16 @@ safe only for call sites that are independent of the socket's reactor.
 
 ## Goals
 
-- Let a host supply readiness, timers, task spawning, async locks and blocking work through one
-  public trait, while zbus keeps creating and connecting sockets, doing authentication, framing
-  and FD passing.
-- An external-runtime user depends on none of the crates behind the `async-io` feature:
-  `async-io`, `async-executor`, `async-task`, `async-lock`, `blocking` and their transitive
+- Let a host supply readiness, timers, task spawning and blocking work through one public trait,
+  while zbus keeps creating and connecting sockets, doing authentication, framing and FD passing.
+- An external-runtime user depends on none of the crates that give `async-io` its reactor and
+  executor: `async-io`, `async-executor`, `async-task`, `blocking` and their transitive
   dependencies. A build with `comms` and neither `async-io` nor `tokio` (an "external-only"
-  build) compiles and works with an explicit runtime.
-- zbus itself writes no scheduler and no synchronization primitive. Whatever a runtime cannot
-  provide through the trait, zbus does not need.
+  build) compiles and works with an explicit runtime, once the user also picks a lock feature
+  (`async-lock` or `tokio`).
+- zbus itself writes no scheduler and no lock implementation of its own. Locks come from a cargo
+  feature (`async-lock` or `tokio`), not from the runtime; whatever else a runtime cannot provide
+  through the trait, zbus does not need.
 - Keep the default behaviour: session/system connections stay automatic, `async-io` stays the
   default non-Tokio backend, the Tokio backend is an implementation of the trait like async-io.
 - Add no zbus thread on the external path, at any point of the connection's lifetime, with one
@@ -74,10 +75,10 @@ safe only for call sites that are independent of the socket's reactor.
    goes through one private registered-socket wrapper for every runtime, built-in or external.
    Each connection latches a private runtime choice at build time; `select_runtime!` and
    `use_tokio()` are removed.
-2. **The runtime supplies tasks and locks.** `traits::Runtime` has associated types for its task
-   handle, mutex and readers-writer lock, and constructors for them. zbus's `Executor`/`Task` and
-   its private lock wrappers become enums: a zero-cost variant per compiled backend and an erased
-   variant for external runtimes. No smol crate moves out of the `async-io` feature.
+2. **Locks are chosen by feature, not by the runtime.** `traits::Runtime` has an associated type
+   only for its task handle; zbus's `Executor`/`Task` become an enum: a zero-cost variant per
+   compiled backend and an erased variant for external runtimes. Locks are `async-lock`'s or
+   `tokio::sync`'s, picked by cargo feature, independent of which runtime a connection uses.
 3. **`spawn_blocking` always works.** It covers DNS, NSS group lookup, nonce-file reads and
    subprocess work. The default implementation runs the work on a std thread created for that
    call; `AsyncIo` and `Tokio` override it with their own pools (`blocking::unblock` and
@@ -100,14 +101,13 @@ Everything below is behind the `comms` feature and lives in `zbus::runtime` unle
 ```text
 zbus/src/runtime/
 ├── mod.rs           # pub mod traits; pub use IoSource, Interest, AsyncDrop; private Runtime
-├── traits.rs        # Runtime, PollIo, TaskHandle, Mutex, RwLock
+├── traits.rs        # Runtime, PollIo, TaskHandle
 ├── async_io.rs      # crate-private async-io implementor (feature = "async-io")
 ├── tokio_rt.rs      # crate-private Tokio implementor (feature = "tokio")
-├── tokio_lock.rs    # Mutex/RwLock over tokio::sync (feature = "tokio")
 ├── blocking_thread.rs  # default spawn_blocking hook: a std thread per call
-├── erased.rs        # ErasedRuntime, ErasedRegistration, ErasedTask, ErasedMutex, ErasedRwLock
+├── erased.rs        # ErasedRuntime, ErasedRegistration, ErasedTask
 ├── executor.rs      # private Executor, Task: enums over the compiled backends and erasure
-├── locks.rs         # Mutex, RwLock and guards: enums over the compiled backends and erasure
+├── locks.rs         # Mutex, RwLock and guards: cfg'd re-exports of async-lock or tokio::sync
 ├── io.rs            # Registered<K> socket wrapper and the connect helpers
 ├── timeout.rs       # timeout over the connection's runtime
 ├── async_drop.rs    # unchanged
@@ -124,8 +124,6 @@ pub mod traits {
         type Registration: PollIo;
         type Sleep: Future<Output = ()> + Send + 'static;
         type Task<T: Send + 'static>: TaskHandle<T>;
-        type Mutex<T: Send + 'static>: Mutex<T>;
-        type RwLock<T: Send + Sync + 'static>: RwLock<T>;
 
         /// Register a socket or pipe for readiness notifications.
         fn register(&self, source: IoSource) -> io::Result<Self::Registration>;
@@ -140,9 +138,6 @@ pub mod traits {
             -> Self::Task<T>
         where
             T: Send + 'static;
-
-        fn mutex<T: Send + 'static>(&self, value: T) -> Self::Mutex<T>;
-        fn rwlock<T: Send + Sync + 'static>(&self, value: T) -> Self::RwLock<T>;
 
         /// Run `work` off the event loop. The default implementation spawns a std thread that
         /// runs `work` and exits once it is done; a host with a thread pool overrides it. zbus
@@ -175,37 +170,6 @@ pub mod traits {
     pub trait TaskHandle<T>: Future<Output = io::Result<T>> + Send + Sync + Unpin + 'static {
         fn detach(self);
     }
-
-    pub trait Mutex<T>: Send + Sync + 'static {
-        type Guard<'a>: DerefMut<Target = T> + Send
-        where
-            Self: 'a;
-        /// Named rather than `impl Future`, so that the erased path can keep the pending lock
-        /// and then the guard in one heap object.
-        type Lock<'a>: Future<Output = Self::Guard<'a>> + Send
-        where
-            Self: 'a;
-
-        fn lock(&self) -> Self::Lock<'_>;
-    }
-
-    pub trait RwLock<T>: Send + Sync + 'static {
-        type ReadGuard<'a>: Deref<Target = T> + Send + Sync
-        where
-            Self: 'a;
-        type WriteGuard<'a>: DerefMut<Target = T> + Send
-        where
-            Self: 'a;
-        type Read<'a>: Future<Output = Self::ReadGuard<'a>> + Send
-        where
-            Self: 'a;
-        type Write<'a>: Future<Output = Self::WriteGuard<'a>> + Send
-        where
-            Self: 'a;
-
-        fn read(&self) -> Self::Read<'_>;
-        fn write(&self) -> Self::Write<'_>;
-    }
 }
 ```
 
@@ -227,12 +191,6 @@ Contracts, documented on the traits:
   downcast once, exactly as `spawn_blocking`'s does: one allocation at completion, no slot. The
   name is what zbus always passed to its executor; the Tokio backend hands it to
   `tokio::task::Builder` under `--cfg tokio_unstable`, where a tokio-console shows it.
-- Locks: the guards are `Send` so that zbus can hold them across `.await` inside `Send` futures;
-  a `RwLock` read guard is also `Sync`. The lock futures are named associated types: a runtime
-  whose lock is an `async fn`, as Tokio's is, names them as `Pin<Box<dyn Future + Send>>` and
-  pays that box itself, which the built-in Tokio backend never does since the crate's enum calls
-  Tokio's lock directly. Nothing else is required: no `try_` variants, no fairness, no `const`
-  construction, because the constructors are methods on the runtime.
 - `spawn_blocking` always resolves to `T`: the default spawns a dedicated std thread per call and
   joins it; `AsyncIo` and `Tokio` override it with their own thread pools. Its future is boxed;
   blocking work happens a handful of times per connection, at setup, and once more at the end of
@@ -265,7 +223,7 @@ pub(crate) struct AsyncIo { .. }   // `Clone` is an `Arc` clone
 pub(crate) struct Tokio { handle: tokio::runtime::Handle }
 ```
 
-`AsyncIo` implements `traits::Runtime` with async-io, async-executor and async-lock: `register`
+`AsyncIo` implements `traits::Runtime` with async-io and async-executor: `register`
 wraps the source in `async_io::Async::new` and `poll_io` is the `poll_readable`/`poll_writable`
 loop built on `Arc<Async<UnixStream>>`; `sleep` is `async_io::Timer::after` behind a small future
 that drops the `Instant`; `spawn` goes to an `async_executor::Executor` owned by the
@@ -325,13 +283,16 @@ At the start of `build_inner`, before any I/O or discovery, the builder picks on
 
 | Builder/feature state | Runtime | Tasks | Locks |
 | --- | --- | --- | --- |
-| `runtime(r)` given | any `traits::Runtime` the host supplies | `r.spawn` | `r.mutex`/`r.rwlock` |
-| `async-io` only | `AsyncIo` | async-executor | async-lock |
-| `tokio` only, a runtime current | `Tokio` | `tokio::spawn` | `tokio::sync` |
-| `tokio` only, no runtime current | `Error::Unsupported` | | |
-| both compiled, a runtime current | `Tokio` | `tokio::spawn` | `tokio::sync` |
-| both compiled, no runtime current | `AsyncIo` | async-executor | async-lock |
-| neither compiled, no `runtime(r)` | `Error::Unsupported` | | |
+| `runtime(r)` given | any `traits::Runtime` the host supplies | `r.spawn` | feature-picked |
+| `async-io` only | `AsyncIo` | async-executor | feature-picked |
+| `tokio` only, a runtime current | `Tokio` | `tokio::spawn` | feature-picked |
+| `tokio` only, no runtime current | `Error::Unsupported` | | feature-picked |
+| both compiled, a runtime current | `Tokio` | `tokio::spawn` | feature-picked |
+| both compiled, no runtime current | `AsyncIo` | async-executor | feature-picked |
+| neither compiled, no `runtime(r)` | `Error::Unsupported` | | feature-picked |
+
+Every row's Locks are `async-lock`'s if that feature is compiled in, `tokio::sync`'s otherwise;
+the choice is a cargo feature fixed at compile time, independent of which row applies.
 
 The private enum is
 
@@ -346,7 +307,7 @@ pub(crate) enum Runtime {
 ```
 
 stored in `ConnectionInner` and passed to `Transport::connect`, the handshake, `timeout` and
-every place that creates a lock or spawns.
+every place that spawns.
 
 ## Internals
 
@@ -358,8 +319,6 @@ trait ErasedRuntime: Send + Sync {
     fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
     fn spawn(&self, name: &str, future: Pin<Box<dyn Future<Output = Box<dyn Any + Send>> + Send>>)
         -> Box<dyn ErasedTask>;
-    fn mutex(&self, value: Box<dyn Any + Send>) -> Box<dyn ErasedMutex>;
-    fn rwlock(&self, value: Box<dyn Any + Send + Sync>) -> Box<dyn ErasedRwLock>;
     fn spawn_blocking(
         &self,
         work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
@@ -374,44 +333,24 @@ trait ErasedRegistration: Send + Sync {
 trait ErasedTask: Future<Output = io::Result<Box<dyn Any + Send>>> + Send + Sync + Unpin {
     fn detach(self: Box<Self>);
 }
-
-trait ErasedMutex: Send + Sync {
-    fn lock(&self) -> Pin<Box<dyn ErasedLock<'_> + Send + '_>>;
-}
-/// One heap object for an acquisition: the pending lock future, then the guard it resolved to.
-trait ErasedLock<'a>: Send {
-    fn poll_lock(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
-    fn value(&self) -> &(dyn Any + Send);                     // once held
-    fn value_mut(self: Pin<&mut Self>) -> &mut (dyn Any + Send);
-}
-// ErasedRwLock: read() and write() likewise, each with its own ErasedLock-shaped object.
 ```
 
 The typed side puts the public traits back on top of the boxed mirrors: `traits::Runtime` is
-implemented for `Arc<dyn ErasedRuntime>`, `traits::PollIo` for
-`Box<dyn ErasedRegistration>`, `traits::TaskHandle` for `Box<dyn ErasedTask>`, and
-`traits::Mutex<T>`/`traits::RwLock<T>` for typed wrappers over the boxed mirrors that downcast on
-access. So the crate's `Runtime` enum reaches the external runtime through the same trait calls
-as the two built-in backends; the mirrors exist only because the public traits, with their
-generic methods and associated types, cannot be trait objects themselves.
+implemented for `Arc<dyn ErasedRuntime>`, `traits::PollIo` for `Box<dyn ErasedRegistration>`, and
+`traits::TaskHandle` for `Box<dyn ErasedTask>`. So the crate's `Runtime` enum reaches the external
+runtime through the same trait calls as the two built-in backends; the mirrors exist only because
+the public traits, with their generic methods and associated types, cannot be trait objects
+themselves.
 
-A blanket `impl<R: traits::Runtime> ErasedRuntime for R` boxes each registration, sleep future,
-task and lock once. The generic-over-`T` operations are erased with the value type erased too:
-a lock stores `Box<dyn Any + Send>` and the typed wrapper downcasts on every access, which is a
-`TypeId` comparison; tasks have no output to erase. `poll_io` passes a closure that stores
-the `T` in a local `Option`, so an I/O poll is one virtual call and no allocation.
-`spawn_blocking` erases its output the same way a lock's value is erased: the closure returns
-`Box<dyn Any + Send>`, and the typed `Runtime::spawn_blocking` downcasts once the returned future
-resolves.
+A blanket `impl<R: traits::Runtime> ErasedRuntime for R` boxes each registration, sleep future and
+task once. `poll_io` passes a closure that stores the `T` in a local `Option`, so an I/O poll is
+one virtual call and no allocation. `spawn_blocking` erases its output the same way `spawn`'s
+future does: the closure returns `Box<dyn Any + Send>`, and the typed `Runtime::spawn_blocking`
+downcasts once the returned future resolves.
 
-Cost on the external path: a spawn boxes the future and the handle, a lock acquisition boxes one
-object that holds the pending lock and then the guard (a `pin-project-lite` struct, so no `unsafe`)
-and downcasts on each access, and a sleep or `spawn_blocking` call boxes its future. Locks are taken
-once per sent message, once per received message and once per method call; the message itself
-already costs more than that. On the built-in paths every operation is a `match` on the enum, and an
-interface now sits as a `Box<dyn Interface>` inside its lock, one indirection more per dispatch than
-the unsized `RwLock<dyn Interface>` it replaces. None of this is measured: the benchmarks in tree
-cover the wire format, not a connection.
+Cost on the external path: a spawn boxes the future and the handle, and a sleep or
+`spawn_blocking` call boxes its future. On the built-in paths every operation is a `match` on the
+enum. None of this is measured: the benchmarks in tree cover the wire format, not a connection.
 
 ### Registrations
 
@@ -425,7 +364,7 @@ pub(crate) enum Registration {
 }
 ```
 
-`poll_io` dispatches on the variant, mirroring `Task` and the lock enums: a zero-cost call into
+`poll_io` dispatches on the variant, mirroring `Task`: a zero-cost call into
 the built-in backend's own registration type for `AsyncIo` and `Tokio`, or one virtual call into
 the erased type for an external runtime. `Runtime::register` is what selects the variant, so
 every socket, pipe or transport connect that registers a source has a runtime in hand.
@@ -435,26 +374,30 @@ kind marker.
 ### Locks (`runtime::locks`)
 
 ```rust
-pub(crate) enum Mutex<T> {
-    #[cfg(feature = "async-io")]
-    AsyncLock(async_lock::Mutex<T>),
-    #[cfg(feature = "tokio")]
-    Tokio(tokio::sync::Mutex<T>),
-    External(ExternalMutex<T>),    // Box<dyn ErasedMutex> + PhantomData<T>, in erased.rs
-}
+#[cfg(feature = "async-lock")]
+pub(crate) use async_lock::Mutex;
+#[cfg(all(feature = "async-lock", feature = "service"))]
+pub(crate) use async_lock::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+#[cfg(all(feature = "tokio", not(feature = "async-lock")))]
+pub(crate) use tokio::sync::Mutex;
+#[cfg(all(feature = "tokio", not(feature = "async-lock"), feature = "service"))]
+pub(crate) use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 ```
 
-`lock()` is an `async fn` matching on the variant and returning a `MutexGuard<'_, T>` enum with
-the same three shapes; `RwLock` and its two guards follow the same pattern. Locks are created
-through the connection's runtime (`runtime.mutex(value)`), which is what selects the variant, so
-every site that creates one has a runtime in hand:
+Only the object server takes readers-writer locks, so those come with the `service` feature.
+`lib.rs` raises a `compile_error!` for `comms` with neither `async-lock` nor `tokio`, next to the
+one for `vsock` off Linux: "Either \"async-lock\" (enabled by the default \"async-io\" feature)
+or \"tokio\" must be enabled: zbus takes its async locks from one of the two."
+
+The choice is fixed at compile time by cargo feature, not per connection and not through any
+trait, so locks are created wherever the value they protect is created, with no runtime in hand:
 
 - `Connection::new` creates the four connection locks (`socket_write`, `msg_senders`,
-  `subscriptions`, `registered_names`).
-- The object server wraps each interface as `Arc<RwLock<Box<dyn Interface>>>` when it is added
-  (`ObjectServer::at`, which has the connection), not in `ArcInterface::new` at
-  `Builder::serve_at` time: the builder stores `Box<dyn Interface>` and wraps at build. The
-  `Box` is needed because an enum cannot hold an unsized `T`; `InterfaceDeref` derefs through it.
+  `subscriptions`, `registered_names`) with `Mutex::new`.
+- `ArcInterface::new` wraps an interface in `RwLock<dyn Interface>` as soon as it is added,
+  whether by `Builder::serve_at` before the connection exists or by `ObjectServer::at`
+  afterwards; the unsized `dyn Interface` sits in the lock directly, and `ObjectServer` holds no
+  runtime for locks.
 
 The proxy's property cache keeps its `std::sync::RwLock`; it is never held across an `.await`.
 
@@ -582,9 +525,13 @@ depends on either crate for subprocess handling.
 
 ## Feature and dependency model
 
-`async-io` keeps every smol crate it already carries except `async-process`; `tokio` keeps
-`tokio` without its `process` feature; `comms` gains `socket2`. There is no `compile_error!` for
-`comms` without a backend: such a build's `Builder::session()` and friends fail with
+`async-io` keeps every smol crate it already carries except `async-process`, and lists the
+`async-lock` feature so it keeps supplying locks the way it always has; `tokio` keeps `tokio`
+without its `process` feature; `comms` gains `socket2`. `async-lock` is its own feature
+(`async-lock = ["comms", "dep:async-lock"]`), so an external-runtime user can turn it on (or
+`tokio`) without pulling in `async-io`'s reactor and executor crates; `comms` compiled with
+neither is a `compile_error!` naming both features. There is no `compile_error!` for `comms`
+without a backend runtime: such a build's `Builder::session()` and friends fail with
 `Error::Unsupported` unless `runtime(..)` was called; `utils::block_on` is
 `futures_lite::future::block_on` (futures-lite is already a shared dependency with `std` on), so
 `zbus::blocking` compiles and works when the host loop runs on another thread. The `vsock`
@@ -592,10 +539,11 @@ feature depends only on the `vsock` crate, not on `async-io`, and there is no `t
 feature.
 
 - CI runs an external-only leg (`check`, `clippy` and `--tests` with `--no-default-features
-  --features comms,proxy,service`), plus `cargo tree -e normal` asserting that none of the
-  `async-io`-owned crates appear in that graph. Dev-dependencies (async-lock for the test
-  runtime, tokio for the Tokio host test, `polling` for the reference host) are allowed; they
-  never reach users.
+  --features comms,proxy,service,async-lock`), plus `cargo tree -e normal` asserting that none
+  of the other `async-io`-owned crates appear in that graph: `async-lock` is the one exception to
+  "no smol crate reaches an external-runtime user", since it is a lock crate with no threads and
+  no reactor. Dev-dependencies (tokio for the Tokio host test, `polling` for the reference host)
+  are allowed; they never reach users.
 - The Windows CI matrix adds a tokio-only leg (`--no-default-features --features
   tokio,proxy,service`) alongside the default and external-only legs.
 - MSRV stays 1.87.
@@ -621,12 +569,12 @@ feature.
 The existing suite runs in every feature combination, unmodified in behaviour. Added coverage:
 
 - A `cfg(test)` test runtime (`zbus/src/runtime/test_runtime.rs`, dev-dependencies only):
-  `spawn` on std threads running `futures_lite::future::block_on`, `sleep` on a thread
-  timer, `async-lock` locks, and the trait's default `spawn_blocking`; a p2p `socket::Channel`
-  pair with one end on it covers method calls both ways, a served interface, property access and
-  `graceful_shutdown` with retained clones.
-- Erasure: a spawned task's output arrives, cancel on drop, `detach`; a lock guard held across an
-  `.await` in a `Send` future; a downcast that never fails, checked with a debug assertion.
+  `spawn` on std threads running `futures_lite::future::block_on`, `sleep` on a thread timer, and
+  the trait's default `spawn_blocking`; a p2p `socket::Channel` pair with one end on it covers
+  method calls both ways, a served interface, property access and `graceful_shutdown` with
+  retained clones.
+- Erasure: a spawned task's output arrives, cancel on drop, `detach`; a downcast that never
+  fails, checked with a debug assertion.
 - A no-backend `Builder::session().build()` resolves to `Error::Unsupported`.
 - Socket wrapper tests: a partial write reported as success, FD passing over a unix socket, a
   readiness race (a peer that writes before the reader registers), timer cancellation (dropping a
@@ -659,14 +607,9 @@ Required checks: `cargo test --all-features -- --skip fdpass_systemd`, `--no-def
 
 ## Risks
 
-- **Trait surface.** Five traits, two of them with GATs for the lock guards, is more to
-  implement than a reactor alone. Mitigated
-  by the `polling`-based reference host in tree, under 200 lines, and by `AsyncIo` and `Tokio`
-  being the same implementors the default path runs.
-- **Erased lock cost** on the external path: one allocation per acquisition, not measured (no
-  benchmark in tree exercises a connection). Going to none would need the guard to live somewhere
-  sized, which erasure cannot provide; a stateless `poll_lock`/`unlock` pair on the mirror is not
-  an option, since an async mutex needs per-waiter state and that pair would serialise waiters.
+- **Trait surface.** Three traits — `Runtime`, `PollIo`, `TaskHandle` — is more to implement than
+  a reactor alone. Mitigated by the `polling`-based reference host in tree, under 200 lines, and
+  by `AsyncIo` and `Tokio` being the same implementors the default path runs.
 - **Default-path regressions** from routing the built-in runtime through the wrapper. Mitigated by
   the wrapper being the same `poll_readable`/`recvmsg` loop, and by the full suite running on the
   default features.
@@ -677,5 +620,6 @@ Required checks: `cargo test --all-features -- --skip fdpass_systemd`, `--no-def
 
 ## Follow-ups (out of scope)
 
-- #1959: replacing the smol crates behind `AsyncIo`; the withdrawn #1963 branch is its seed.
+- #1959: replacing the smol crates behind `AsyncIo`, and possibly `async-lock`/`tokio::sync` with
+  a lock implementation of zbus's own; the withdrawn #1963 branch is its seed.
 - A thread-free `blocking` facade.
