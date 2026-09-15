@@ -121,12 +121,12 @@ zbus/src/runtime/
 ```rust
 pub mod traits {
     pub trait Runtime: Send + Sync + 'static {
-        type Registration: PollIo;
+        type RegisteredIoSource: PollIo;
         type Sleep: Future<Output = ()> + Send + 'static;
         type Task<T: Send + 'static>: TaskHandle<T>;
 
         /// Register a socket or pipe for readiness notifications.
-        fn register(&self, source: IoSource) -> io::Result<Self::Registration>;
+        fn register_io_source(&self, source: IoSource) -> io::Result<Self::RegisteredIoSource>;
 
         /// A future that completes once `duration` has passed on this runtime's own clock.
         /// Dropping it cancels the timer.
@@ -210,8 +210,8 @@ pub struct IoSource(Arc<Owned>);   // Owned = OwnedFd on unix, OwnedSocket on wi
 
 Implements `AsFd` and `AsRawFd` (unix) or `AsSocket` and `AsRawSocket` (windows). It is a shared
 owner: the socket wrapper keeps one clone for I/O and the registration keeps whatever it needs.
-Users receive one from `register` and never construct one. `async_io::Async::new` accepts it
-directly because `Arc<T>: AsFd` where `T: AsFd`.
+Users receive one from `register_io_source` and never construct one. `async_io::Async::new` accepts
+it directly because `Arc<T>: AsFd` where `T: AsFd`.
 
 ### Built-in runtime
 
@@ -223,7 +223,7 @@ pub(crate) struct AsyncIo { .. }   // `Clone` is an `Arc` clone
 pub(crate) struct Tokio { handle: tokio::runtime::Handle }
 ```
 
-`AsyncIo` implements `traits::Runtime` with async-io and async-executor: `register`
+`AsyncIo` implements `traits::Runtime` with async-io and async-executor: `register_io_source`
 wraps the source in `async_io::Async::new` and `poll_io` is the `poll_readable`/`poll_writable`
 loop built on `Arc<Async<UnixStream>>`; `sleep` is `async_io::Timer::after` behind a small future
 that drops the `Instant`; `spawn` goes to an `async_executor::Executor` owned by the
@@ -236,7 +236,7 @@ forever in an idle executor once the connection is gone, and one that held only 
 would cancel detached tasks.
 
 `Tokio` captures `Handle::current()` at build time, so a connection keeps working when it is
-later polled from outside a runtime context. `register` wraps the source in
+later polled from outside a runtime context. `register_io_source` wraps the source in
 `tokio::io::unix::AsyncFd` on unix; on Windows it returns `Error::Unsupported`, except that a
 crate-private `tokio::net::TcpStream` socket covers TCP, and unix sockets stay unsupported.
 `sleep` is `tokio::time::sleep` entered on the captured handle, so it runs on that runtime's
@@ -315,7 +315,7 @@ every place that spawns.
 
 ```rust
 trait ErasedRuntime: Send + Sync {
-    fn register(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>>;
+    fn register_io_source(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>>;
     fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
     fn spawn(&self, name: &str, future: Pin<Box<dyn Future<Output = Box<dyn Any + Send>> + Send>>)
         -> Box<dyn ErasedTask>;
