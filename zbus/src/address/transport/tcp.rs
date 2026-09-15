@@ -132,7 +132,7 @@ impl Tcp {
     pub(super) async fn connect(self, address: &Address) -> Result<Async<TcpStream>> {
         let address_clone = address.clone();
         let family = self.family();
-        let addrs = crate::Task::spawn_blocking(
+        let addrs = crate::runtime::spawn_blocking(
             move || -> Result<Vec<SocketAddr>> {
                 let addrs = (self.host(), self.port())
                     .to_socket_addrs()

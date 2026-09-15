@@ -91,7 +91,7 @@ impl super::WriteHalf for Arc<Async<UnixStream>> {
 
     async fn close(&mut self) -> std::io::Result<()> {
         let stream = self.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || stream.get_ref().shutdown(std::net::Shutdown::Both),
             "close socket",
         )
@@ -231,7 +231,7 @@ impl super::ReadHalf for Arc<Async<UnixStream>> {
 
     async fn peer_credentials(&mut self) -> std::io::Result<crate::fdo::ConnectionCredentials> {
         let stream = self.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || {
                 use crate::win32::{ProcessToken, unix_stream_get_peer_pid};
 
@@ -261,7 +261,7 @@ impl super::WriteHalf for Arc<Async<UnixStream>> {
 
     async fn close(&mut self) -> std::io::Result<()> {
         let stream = self.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || stream.get_ref().shutdown(std::net::Shutdown::Both),
             "close socket",
         )
@@ -362,7 +362,7 @@ async fn get_unix_peer_creds(fd: &impl AsFd) -> std::io::Result<crate::fdo::Conn
     let fd = fd.as_fd().as_raw_fd();
     // FIXME: Is it likely enough for sending of 1 byte to block, to justify a task (possibly
     // launching a thread in turn)?
-    crate::Task::spawn_blocking(move || get_unix_peer_creds_blocking(fd), "peer credentials")
+    crate::runtime::spawn_blocking(move || get_unix_peer_creds_blocking(fd), "peer credentials")
         .await?
 }
 
@@ -499,7 +499,7 @@ fn get_unix_peer_creds_blocking(fd: RawFd) -> std::io::Result<crate::fdo::Connec
 #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
 async fn send_zero_byte(fd: &impl AsFd) -> std::io::Result<usize> {
     let fd = fd.as_fd().as_raw_fd();
-    crate::Task::spawn_blocking(move || send_zero_byte_blocking(fd), "send zero byte").await?
+    crate::runtime::spawn_blocking(move || send_zero_byte_blocking(fd), "send zero byte").await?
 }
 
 #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]

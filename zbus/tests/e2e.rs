@@ -11,7 +11,7 @@ use tokio::net::UnixStream;
 
 use ntest::timeout;
 use test_log::test;
-use tokio::sync::mpsc::channel;
+use tokio::sync::{mpsc::channel, oneshot};
 use tracing::{debug, instrument};
 #[cfg(feature = "object-manager")]
 use zbus::fdo::ObjectManager;
@@ -139,9 +139,12 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     debug!("Service connection created: {:?}", service_conn);
 
     let listen = event.listen();
-    let child = client_conn
-        .executor()
-        .spawn(my_iface_test(client_conn.clone(), event), "client_task");
+    // zbus keeps its runtime to itself, so the client side of the test gets a thread of its own.
+    let (done_tx, done_rx) = oneshot::channel();
+    let client = client_conn.clone();
+    let child = std::thread::spawn(move || {
+        let _ = done_tx.send(block_on(my_iface_test(client, event)));
+    });
     debug!("Child task spawned.");
     // Wait for the listener to be ready
     listen.await;
@@ -217,7 +220,10 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     drop(client_conn);
     debug!("Connection closed.");
 
-    let val = child.await.unwrap();
+    let val = done_rx.await.unwrap();
+    // Joining after the result is in keeps a panic on that thread from surfacing as a bare
+    // `RecvError`.
+    child.join().unwrap();
     debug!("Client task done.");
     assert_eq!(val.unwrap(), 2);
 

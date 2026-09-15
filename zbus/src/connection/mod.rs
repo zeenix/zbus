@@ -18,12 +18,12 @@ use crate::ObjectServer;
 #[cfg(feature = "service")]
 use crate::log::debug;
 use crate::{
-    DBusError, Error, Executor, MatchRule, ObjectPath, OwnedGuid, OwnedMatchRule, Result, Task,
+    DBusError, Error, MatchRule, ObjectPath, OwnedGuid, OwnedMatchRule, Result,
     fdo::{ConnectionCredentials, ReleaseNameReply, RequestNameFlags, RequestNameReply},
     log::{Instrument, info, info_span, trace, trace_span, warn},
     message::{self, Flags, Message, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
-    runtime::{async_lock::Mutex, timeout::timeout},
+    runtime::{Runtime, Task, locks::Mutex},
 };
 
 mod builder;
@@ -58,9 +58,6 @@ pub(crate) struct ConnectionInner {
     socket_status: Arc<SocketStatus>,
     socket_write: Mutex<Box<dyn socket::WriteHalf>>,
 
-    // Our executor
-    executor: Executor<'static>,
-
     // Socket reader task
     #[allow(unused)]
     socket_reader_task: OnceLock<Task<()>>,
@@ -76,11 +73,33 @@ pub(crate) struct ConnectionInner {
     #[cfg(feature = "service")]
     object_server_dispatch_task: OnceLock<Task<()>>,
 
+    // The runtime that runs our tasks and times our calls out. Declared after the task handles
+    // so that it outlives them.
+    runtime: Runtime,
+
     drop_event: Event,
 
     method_timeout: Option<Duration>,
     // Cache the credentials.
     credentials: OnceLock<Arc<ConnectionCredentials>>,
+}
+
+impl ConnectionInner {
+    /// Whether the connection is closed, in the sense [`Connection::is_closed`] reports.
+    ///
+    /// The `Acquire` load pairs with the `Release` store whoever closed the connection made, so
+    /// everything they did on their way out is visible to whoever sees `true` here.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.socket_status.closed.load(Ordering::Acquire)
+    }
+
+    /// A listener for the moment the connection closes.
+    ///
+    /// Arming one before reading the flag above is what makes the pair race-free: a connection
+    /// that closes between the two still wakes the listener.
+    pub(crate) fn closed_listener(&self) -> EventListener {
+        self.socket_status.closed_event.listen()
+    }
 }
 
 impl Drop for ConnectionInner {
@@ -292,7 +311,7 @@ impl Connection {
             .expect("no reply");
 
         if let Some(tout) = self.method_timeout() {
-            timeout(method, tout).await
+            self.inner.runtime.timeout(method, tout).await
         } else {
             method.await
         }
@@ -761,7 +780,8 @@ impl Connection {
                 let well_known_name = well_known_name.to_owned();
                 let task_name = format!("monitor_name_acquired{{name={well_known_name}}}");
                 let task_name_span = info_span!("monitor_name_acquired", name = %well_known_name);
-                let task = self.executor().spawn(
+                let task = self.runtime().spawn(
+                    &task_name,
                     async move {
                         loop {
                             let signal = acquired_stream.next().await;
@@ -775,7 +795,7 @@ impl Connection {
                                         let mut names = inner.registered_names.lock().await;
                                         if let Some(status) = names.get_mut(&well_known_name) {
                                             let task = name_lost_fut.map(|fut| {
-                                                inner.executor.spawn(fut, &lost_task_name)
+                                                inner.runtime.spawn(&lost_task_name, fut)
                                             });
                                             *status = NameStatus::Owner(task);
 
@@ -795,13 +815,12 @@ impl Connection {
                         }
                     }
                     .instrument(task_name_span),
-                    &task_name,
                 );
 
                 NameStatus::Queued(task)
             }
             RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner => {
-                let task = name_lost_fut.map(|fut| self.executor().spawn(fut, &lost_task_name));
+                let task = name_lost_fut.map(|fut| self.runtime().spawn(&lost_task_name, fut));
 
                 NameStatus::Owner(task)
             }
@@ -913,57 +932,9 @@ impl Connection {
         &self.inner.server_guid
     }
 
-    /// The underlying executor.
-    ///
-    /// When a connection is built with internal_executor set to false, zbus will not spawn a
-    /// thread to run the executor. You're responsible to continuously [tick the executor][tte].
-    /// Failure to do so will result in hangs.
-    ///
-    /// # Examples
-    ///
-    /// Here is how one would typically run the zbus executor through tokio's scheduler:
-    ///
-    /// ```
-    /// use zbus::connection::Builder;
-    /// use tokio::task::spawn;
-    ///
-    /// # #[cfg(feature = "service")]
-    /// # struct SomeIface;
-    /// #
-    /// # #[cfg(feature = "service")]
-    /// # #[zbus::interface]
-    /// # impl SomeIface {
-    /// # }
-    /// #
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let builder = Builder::session().internal_executor(false);
-    /// #   // This is only for testing a deadlock that used to happen with this combo.
-    /// #   #[cfg(feature = "service")]
-    /// #   let builder = builder.serve_at("/some/iface", SomeIface);
-    ///     let conn = builder.build().await.unwrap();
-    ///     {
-    ///        let conn = conn.clone();
-    ///        spawn(async move {
-    ///            loop {
-    ///                conn.executor().tick().await;
-    ///            }
-    ///        });
-    ///     }
-    ///
-    ///     // All your other async code goes here.
-    /// }
-    /// ```
-    ///
-    /// **Note**: zbus 2.1 added support for tight integration with tokio. This means, if you use
-    /// zbus with tokio, you do not need to worry about this at all. All you need to do is enable
-    /// `tokio` feature. You should also disable the (default) `async-io` feature in your
-    /// `Cargo.toml` to avoid unused dependencies. Also note that **prior** to zbus 3.0, disabling
-    /// `async-io` was required to enable tight `tokio` integration.
-    ///
-    /// [tte]: https://docs.rs/async-executor/1.4.1/async_executor/struct.Executor.html#method.tick
-    pub fn executor(&self) -> &Executor<'static> {
-        &self.inner.executor
+    /// The runtime this connection runs on.
+    pub(crate) fn runtime(&self) -> &Runtime {
+        &self.inner.runtime
     }
 
     /// Get a reference to the associated [`ObjectServer`].
@@ -1001,7 +972,8 @@ impl Connection {
             trace!("starting ObjectServer task");
             let weak_conn = WeakConnection::from(self);
 
-            self.inner.executor.spawn(
+            self.inner.runtime.spawn(
+                "obj_server_task",
                 async move {
                     let mut stream = match weak_conn.upgrade() {
                         Some(conn) => {
@@ -1079,7 +1051,6 @@ impl Connection {
                     }
                 }
                 .instrument(info_span!("obj_server_task")),
-                "obj_server_task",
             )
         });
     }
@@ -1176,9 +1147,12 @@ impl Connection {
     pub(crate) fn queue_remove_match(&self, rule: OwnedMatchRule) {
         let conn = self.clone();
         let task_name = format!("Remove match `{}`", *rule);
-        let remove_match =
-            async move { conn.remove_match(rule).await }.instrument(trace_span!("{}", task_name));
-        self.inner.executor.spawn(remove_match, &task_name).detach()
+        // Nobody is waiting for the outcome: the stream that held the rule is already gone.
+        let remove_match = async move {
+            let _ = conn.remove_match(rule).await;
+        }
+        .instrument(trace_span!("{}", task_name));
+        self.inner.runtime.spawn(&task_name, remove_match).detach()
     }
 
     /// The method_timeout (if any). See [Builder::method_timeout] for details.
@@ -1189,7 +1163,7 @@ impl Connection {
     pub(crate) async fn new(
         auth: Authenticated,
         #[allow(unused)] bus_connection: bool,
-        executor: Executor<'static>,
+        runtime: Runtime,
         method_timeout: Option<Duration>,
     ) -> Result<Self> {
         #[cfg(unix)]
@@ -1212,6 +1186,8 @@ impl Connection {
         let msg_senders = Arc::new(Mutex::new(msg_senders));
         let pending_method_calls = PendingMethodCalls::default();
         let subscriptions = Mutex::new(HashMap::new());
+        let registered_names = Mutex::new(HashMap::new());
+        let socket_write = Mutex::new(auth.socket_write);
 
         let connection = Self {
             inner: Arc::new(ConnectionInner {
@@ -1220,7 +1196,7 @@ impl Connection {
                     closed: AtomicBool::new(false),
                     closed_event: Event::new(),
                 }),
-                socket_write: Mutex::new(auth.socket_write),
+                socket_write,
                 server_guid: auth.server_guid,
                 #[cfg(unix)]
                 cap_unix_fd,
@@ -1232,12 +1208,12 @@ impl Connection {
                 object_server: OnceLock::new(),
                 #[cfg(feature = "service")]
                 object_server_dispatch_task: OnceLock::new(),
-                executor,
                 socket_reader_task: OnceLock::new(),
                 msg_senders,
                 pending_method_calls,
                 msg_receiver,
-                registered_names: Mutex::new(HashMap::new()),
+                registered_names,
+                runtime,
                 drop_event: Event::new(),
                 method_timeout,
                 credentials: OnceLock::new(),
@@ -1273,7 +1249,7 @@ impl Connection {
     /// A connection is considered closed either when the remote peer disconnects, an I/O error
     /// occurs on the socket, or [`Connection::close`] is called.
     pub fn is_closed(&self) -> bool {
-        self.inner.socket_status.closed.load(Ordering::Relaxed)
+        self.inner.is_closed()
     }
 
     /// Waits until the connection is closed.
@@ -1420,7 +1396,7 @@ impl Connection {
                     already_received_fds,
                     inner.socket_status.clone(),
                 )
-                .spawn(&inner.executor),
+                .spawn(&inner.runtime),
             )
             .expect("Attempted to set `socket_reader_task` twice");
     }
@@ -1651,6 +1627,8 @@ mod p2p_tests {
     use test_log::test;
 
     use super::{Builder, Connection, socket};
+    #[cfg(all(unix, feature = "tokio", feature = "async-io"))]
+    use crate::runtime::Runtime;
     use crate::{Guid, Message, MessageStream, Result, conn::AuthMechanism};
 
     // Same numbered client and server are already paired up.
@@ -1678,10 +1656,9 @@ mod p2p_tests {
                 async move { sink.send(&msg).await }
             })
         };
-        let _forward_task = client1.executor().spawn(
-            async move { futures_util::try_join!(forward1, forward2) },
-            "forward_task",
-        );
+        let _forward_task = client1.runtime().spawn("forward_task", async move {
+            let _ = futures_util::try_join!(forward1, forward2);
+        });
 
         let server_ready = Event::new();
         let server_ready_listener = server_ready.listen();
@@ -1847,20 +1824,17 @@ mod p2p_tests {
 
         async_io::block_on(async {
             let (server1, client1) = async_io_unix_p2p_pipe().await.unwrap();
-            assert!(server1.executor().needs_internal_driver());
-            assert!(client1.executor().needs_internal_driver());
+            assert!(matches!(server1.runtime(), Runtime::AsyncIo(_)));
+            assert!(matches!(client1.runtime(), Runtime::AsyncIo(_)));
 
             server1
-                .executor()
-                .spawn(
-                    async {
-                        assert!(
-                            tokio::runtime::Handle::try_current().is_err(),
-                            "async-io executor task unexpectedly entered a tokio runtime",
-                        );
-                    },
-                    "verify async-io runtime",
-                )
+                .runtime()
+                .spawn("verify async-io runtime", async {
+                    assert!(
+                        tokio::runtime::Handle::try_current().is_err(),
+                        "async-io executor task unexpectedly entered a tokio runtime",
+                    );
+                })
                 .or(async {
                     async_io::Timer::after(Duration::from_secs(5)).await;
                     panic!("async-io executor task did not run");
@@ -1912,7 +1886,7 @@ mod p2p_tests {
         let server = async {
             #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
             let server =
-                crate::Task::spawn_blocking(move || listener.incoming().next(), "").await?;
+                crate::runtime::spawn_blocking(move || listener.incoming().next(), "").await?;
             #[cfg(feature = "tokio-vsock")]
             let server = listener.incoming().next().await;
             #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]

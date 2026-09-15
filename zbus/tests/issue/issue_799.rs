@@ -1,4 +1,7 @@
+use std::pin::pin;
+
 use event_listener::Event;
+use futures_util::future::{Either, select};
 use test_log::test;
 use tracing::instrument;
 use zbus::block_on;
@@ -45,18 +48,19 @@ fn concurrent_interface_methods() {
 
         let proxy = IfaceProxy::new(&conn).await.unwrap();
         let proxy_clone = proxy.clone();
-        conn.executor()
-            .spawn(
-                async move {
-                    proxy_clone.method1().await.unwrap();
-                },
-                "method1",
-            )
-            .detach();
-        // Wait till the `method1`` is called.
-        listener.await;
+        // `method1` never returns, so it is raced against the rest of the test rather than
+        // awaited.
+        let method1 = pin!(async move {
+            proxy_clone.method1().await.unwrap();
+        });
+        let rest = pin!(async {
+            // Wait till the `method1`` is called.
+            listener.await;
 
-        // Now while the `method1` is in progress, a call to `method2` should just work.
-        proxy.method2().await.unwrap();
+            // Now while the `method1` is in progress, a call to `method2` should just work.
+            proxy.method2().await.unwrap();
+        });
+        let done = select(method1, rest).await;
+        assert!(matches!(done, Either::Right(..)), "`method1` returned");
     })
 }

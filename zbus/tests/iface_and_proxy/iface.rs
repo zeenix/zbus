@@ -123,22 +123,20 @@ impl MyIface {
     #[instrument]
     fn test_response_notify(
         &self,
-        #[zbus(connection)] conn: &Connection,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<ResponseDispatchNotifier<String>> {
         debug!("`TestResponseNotify` called.");
         let (response, listener) = ResponseDispatchNotifier::new(String::from("Meaning of life"));
         let emitter = emitter.to_owned();
-        conn.executor()
-            .spawn(
-                async move {
-                    listener.await;
+        // The signal has to wait for the response this method is still returning, and zbus keeps
+        // its runtime to itself, so the wait gets a thread of its own.
+        std::thread::spawn(move || {
+            zbus::block_on(async move {
+                listener.await;
 
-                    Self::test_response_notified(emitter).await.unwrap();
-                },
-                "TestResponseNotify",
-            )
-            .detach();
+                Self::test_response_notified(emitter).await.unwrap();
+            })
+        });
 
         Ok(response)
     }

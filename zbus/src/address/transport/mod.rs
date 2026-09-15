@@ -100,7 +100,7 @@ impl Transport {
                         return Err(Error::Unsupported);
                     }
                 };
-                let stream = crate::Task::spawn_blocking(
+                let stream = crate::runtime::spawn_blocking(
                     move || -> Result<_> {
                         #[cfg(unix)]
                         let stream = UnixStream::connect_addr(&addr)

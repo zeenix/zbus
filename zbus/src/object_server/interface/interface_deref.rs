@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::runtime::async_lock::{RwLockReadGuard, RwLockWriteGuard};
+use crate::runtime::locks::{RwLockReadGuard, RwLockWriteGuard};
 
 use super::Interface;
 

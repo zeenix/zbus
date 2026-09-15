@@ -4,9 +4,9 @@
 //! `async-io` (the default), on Tokio, or on whatever implements [`Runtime`] and is handed to
 //! `Builder::runtime`; the socket it is given supplies its own readiness. Implementing the trait
 //! takes a timer and a task handle, both of which every async runtime already has, together with
-//! a readiness registration and a hook for blocking work that a connection does not ask for yet;
-//! the host examples in the repository show the shape for Tokio and for a plain `polling` event
-//! loop.
+//! a readiness registration and a hook for blocking work that a connection does not ask for yet.
+//! Both built-in backends are implementations of these traits, picked by the `async-io` and
+//! `tokio` features.
 //!
 //! The async locks a connection holds are not part of the trait: zbus takes those from
 //! `async-lock` or from Tokio, whichever cargo feature is on, exactly as it always has.

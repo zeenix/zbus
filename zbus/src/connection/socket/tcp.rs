@@ -29,7 +29,7 @@ impl ReadHalf for Arc<Async<TcpStream>> {
     #[cfg(windows)]
     async fn peer_credentials(&mut self) -> io::Result<crate::fdo::ConnectionCredentials> {
         let stream = self.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || {
                 use crate::win32::{ProcessToken, tcp_stream_get_peer_pid};
 
@@ -74,7 +74,7 @@ impl WriteHalf for Arc<Async<TcpStream>> {
 
     async fn close(&mut self) -> io::Result<()> {
         let stream = self.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || stream.get_ref().shutdown(std::net::Shutdown::Both),
             "close socket",
         )
@@ -117,7 +117,7 @@ impl ReadHalf for tokio::net::tcp::OwnedReadHalf {
     #[cfg(windows)]
     async fn peer_credentials(&mut self) -> io::Result<crate::fdo::ConnectionCredentials> {
         let peer_addr = self.peer_addr()?.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || win32_credentials_from_addr(&peer_addr),
             "peer credentials",
         )
@@ -158,7 +158,7 @@ impl WriteHalf for tokio::net::tcp::OwnedWriteHalf {
     #[cfg(windows)]
     async fn peer_credentials(&mut self) -> io::Result<crate::fdo::ConnectionCredentials> {
         let peer_addr = self.peer_addr()?.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || win32_credentials_from_addr(&peer_addr),
             "peer credentials",
         )

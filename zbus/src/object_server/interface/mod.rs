@@ -19,7 +19,7 @@ use crate::{
     message::{self, Header, Message},
     names::{InterfaceName, MemberName},
     object_server::SignalEmitter,
-    runtime::async_lock::RwLock,
+    runtime::locks::RwLock,
 };
 
 /// Write `lines` as an XML comment at the given indentation level.

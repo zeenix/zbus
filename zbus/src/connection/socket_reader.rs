@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    io,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -9,11 +10,11 @@ use std::{
 use event_listener::Event;
 
 use crate::{
-    Executor, Message, OwnedMatchRule, Task,
+    Message, OwnedMatchRule,
     connection::{MsgBroadcaster, PendingMethodCalls},
     log::{debug, trace},
     message::Type,
-    runtime::async_lock::Mutex,
+    runtime::{Runtime, Task, locks::Mutex},
 };
 
 use super::socket::ReadHalf;
@@ -51,8 +52,8 @@ impl SocketReader {
         }
     }
 
-    pub fn spawn(self, executor: &Executor<'_>) -> Task<()> {
-        executor.spawn(self.receive_msg(), "socket reader")
+    pub fn spawn(self, runtime: &Runtime) -> Task<()> {
+        runtime.spawn("socket reader", self.receive_msg())
     }
 
     // Keep receiving messages and put them on the queue.
@@ -162,6 +163,27 @@ impl SocketReader {
         self.prev_seq = seq;
 
         Ok(msg)
+    }
+}
+
+/// Ends the connection whenever the reader stops, however it stopped.
+///
+/// A runtime is free to drop or abort a task it was handed, and one that does would otherwise
+/// leave [`Connection::closed`], every pending method call and every [`MessageStream`] waiting
+/// for a reader that is never coming back. Running this from `Drop` covers every way out,
+/// including a future dropped before it was ever polled. The reader's own error path does the
+/// same for the errors it sees, and doing it a second time here changes nothing: the connection
+/// is already closed and there are no calls left to fail.
+///
+/// [`Connection::closed`]: super::Connection::closed
+/// [`MessageStream`]: crate::MessageStream
+impl Drop for SocketReader {
+    fn drop(&mut self) {
+        self.socket_status.closed.store(true, Ordering::Release);
+        self.socket_status.closed_event.notify(usize::MAX);
+        self.fail_pending_method_calls(crate::Error::from(io::Error::other(
+            "the socket reader task was cancelled",
+        )));
     }
 }
 

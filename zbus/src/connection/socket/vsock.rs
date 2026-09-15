@@ -45,7 +45,7 @@ impl super::WriteHalf for std::sync::Arc<async_io::Async<vsock::VsockStream>> {
 
     async fn close(&mut self) -> std::io::Result<()> {
         let stream = self.clone();
-        crate::Task::spawn_blocking(
+        crate::runtime::spawn_blocking(
             move || stream.get_ref().shutdown(std::net::Shutdown::Both),
             "close socket",
         )
