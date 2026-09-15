@@ -100,7 +100,7 @@ Everything below is behind the `comms` feature and lives in `zbus::runtime` unle
 ```text
 zbus/src/runtime/
 ├── mod.rs           # pub mod traits; pub use IoSource, Interest, AsyncDrop; private Runtime
-├── traits.rs        # Runtime, Registration, TaskHandle, Mutex, RwLock
+├── traits.rs        # Runtime, PollIo, TaskHandle, Mutex, RwLock
 ├── async_io.rs      # crate-private async-io implementor (feature = "async-io")
 ├── tokio_rt.rs      # crate-private Tokio implementor (feature = "tokio")
 ├── tokio_lock.rs    # Mutex/RwLock over tokio::sync (feature = "tokio")
@@ -121,7 +121,7 @@ zbus/src/runtime/
 ```rust
 pub mod traits {
     pub trait Runtime: Send + Sync + 'static {
-        type Registration: Registration;
+        type Registration: PollIo;
         type Sleep: Future<Output = ()> + Send + 'static;
         type Task<T: Send + 'static>: TaskHandle<T>;
         type Mutex<T: Send + 'static>: Mutex<T>;
@@ -161,7 +161,7 @@ pub mod traits {
         }
     }
 
-    pub trait Registration: Send + Sync + 'static {
+    pub trait PollIo: Send + Sync + 'static {
         /// Wait for `interest` readiness, then run `operation` on the polling thread.
         fn poll_io<T>(
             &self,
@@ -388,7 +388,7 @@ trait ErasedLock<'a>: Send {
 ```
 
 The typed side puts the public traits back on top of the boxed mirrors: `traits::Runtime` is
-implemented for `Arc<dyn ErasedRuntime>`, `traits::Registration` for
+implemented for `Arc<dyn ErasedRuntime>`, `traits::PollIo` for
 `Box<dyn ErasedRegistration>`, `traits::TaskHandle` for `Box<dyn ErasedTask>`, and
 `traits::Mutex<T>`/`traits::RwLock<T>` for typed wrappers over the boxed mirrors that downcast on
 access. So the crate's `Runtime` enum reaches the external runtime through the same trait calls
