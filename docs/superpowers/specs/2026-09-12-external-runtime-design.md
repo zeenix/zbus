@@ -123,7 +123,7 @@ pub mod traits {
     pub trait Runtime: Send + Sync + 'static {
         type Registration: Registration;
         type Sleep: Future<Output = ()> + Send + 'static;
-        type Task: TaskHandle;
+        type Task<T: Send + 'static>: TaskHandle<T>;
         type Mutex<T: Send + 'static>: Mutex<T>;
         type RwLock<T: Send + Sync + 'static>: RwLock<T>;
 
@@ -136,8 +136,10 @@ pub mod traits {
 
         /// Run `future` to completion in the background, starting now or soon. `name` is for
         /// diagnostics (a task list, a console) and a runtime may ignore it.
-        fn spawn(&self, name: &str, future: impl Future<Output = ()> + Send + 'static)
-            -> Self::Task;
+        fn spawn<T>(&self, name: &str, future: impl Future<Output = T> + Send + 'static)
+            -> Self::Task<T>
+        where
+            T: Send + 'static;
 
         fn mutex<T: Send + 'static>(&self, value: T) -> Self::Mutex<T>;
         fn rwlock<T: Send + Sync + 'static>(&self, value: T) -> Self::RwLock<T>;
@@ -170,7 +172,7 @@ pub mod traits {
     }
 
     /// A handle to a spawned task. Dropping it cancels the task; `detach` lets it run on.
-    pub trait TaskHandle: Future<Output = io::Result<()>> + Send + Sync + Unpin + 'static {
+    pub trait TaskHandle<T>: Future<Output = io::Result<T>> + Send + Sync + Unpin + 'static {
         fn detach(self);
     }
 
@@ -217,11 +219,14 @@ Contracts, documented on the traits:
 - `spawn`: the task runs on the host's executor, concurrently with the caller, on any thread the
   host chooses; the handle resolves to `Err` if the host loses the task. Dropping the handle
   cancels: a Tokio host wraps its `JoinHandle` in an abort-on-drop newtype (ten lines, shown in
-  the example), an async-task-style host maps `detach` to its own. Tasks produce nothing: no
-  caller in zbus reads a task's result, the handles it keeps are held for cancellation, and a
-  unit output keeps the associated type free of a generic parameter and the erased path free of
-  an output slot. The name is what zbus always passed to its executor; the Tokio backend hands it
-  to `tokio::task::Builder` under `--cfg tokio_unstable`, where a tokio-console shows it.
+  the example), an async-task-style host maps `detach` to its own. A handle resolves to the
+  task's output. No caller in zbus reads one today (the handles it keeps are held so that
+  dropping a connection cancels its tasks), but a handle that could not carry one would have to
+  break the trait the day a caller wants it, and 6.0 is where the trait is fixed. On the erased
+  path the output travels as `Box<dyn Any + Send>` through the runtime's own handle and is
+  downcast once, exactly as `spawn_blocking`'s does: one allocation at completion, no slot. The
+  name is what zbus always passed to its executor; the Tokio backend hands it to
+  `tokio::task::Builder` under `--cfg tokio_unstable`, where a tokio-console shows it.
 - Locks: the guards are `Send` so that zbus can hold them across `.await` inside `Send` futures;
   a `RwLock` read guard is also `Sync`. The lock futures are named associated types: a runtime
   whose lock is an `async fn`, as Tokio's is, names them as `Pin<Box<dyn Future + Send>>` and
@@ -351,7 +356,7 @@ every place that creates a lock or spawns.
 trait ErasedRuntime: Send + Sync {
     fn register(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>>;
     fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
-    fn spawn(&self, name: &str, future: Pin<Box<dyn Future<Output = ()> + Send>>)
+    fn spawn(&self, name: &str, future: Pin<Box<dyn Future<Output = Box<dyn Any + Send>> + Send>>)
         -> Box<dyn ErasedTask>;
     fn mutex(&self, value: Box<dyn Any + Send>) -> Box<dyn ErasedMutex>;
     fn rwlock(&self, value: Box<dyn Any + Send + Sync>) -> Box<dyn ErasedRwLock>;
@@ -366,7 +371,7 @@ trait ErasedRegistration: Send + Sync {
                operation: &mut dyn FnMut() -> io::Result<()>) -> Poll<io::Result<()>>;
 }
 
-trait ErasedTask: Future<Output = io::Result<()>> + Send + Sync + Unpin {
+trait ErasedTask: Future<Output = io::Result<Box<dyn Any + Send>>> + Send + Sync + Unpin {
     fn detach(self: Box<Self>);
 }
 
@@ -456,18 +461,18 @@ The proxy's property cache keeps its `std::sync::RwLock`; it is never held acros
 ### Tasks
 
 ```rust
-pub(crate) struct Task(TaskInner);
+pub(crate) struct Task<T>(TaskInner<T>);
 
-enum TaskInner {
+enum TaskInner<T> {
     #[cfg(feature = "async-io")]
-    AsyncExecutor(async_task::Task<()>),
+    AsyncExecutor(async_task::Task<T>),
     #[cfg(feature = "tokio")]
-    Tokio(TokioTask),                    // abort-on-drop newtype over JoinHandle<()>
-    External(Box<dyn ErasedTask>),
+    Tokio(TokioTask<T>),                 // abort-on-drop newtype over JoinHandle<T>
+    External(ExternalTask<T>),           // Box<dyn ErasedTask> + PhantomData<T>
 }
 ```
 
-Spawning is `Runtime::spawn(&self, name, future) -> Task`, dispatching on the variant. There
+Spawning is `Runtime::spawn(&self, name, future) -> Task<T>`, dispatching on the variant. There
 is no public `Executor` type, no lifetime parameter, `tick`, `is_empty`, `run` or
 `needs_internal_driver`, and no `start_internal_executor` in the builder: the `AsyncIo` runtime
 owns its executor and thread. `build()` awaits its own setup steps like any other future, and the
@@ -620,7 +625,7 @@ The existing suite runs in every feature combination, unmodified in behaviour. A
   timer, `async-lock` locks, and the trait's default `spawn_blocking`; a p2p `socket::Channel`
   pair with one end on it covers method calls both ways, a served interface, property access and
   `graceful_shutdown` with retained clones.
-- Erasure: a spawned task runs, cancel on drop, `detach`; a lock guard held across an
+- Erasure: a spawned task's output arrives, cancel on drop, `detach`; a lock guard held across an
   `.await` in a `Send` future; a downcast that never fails, checked with a debug assertion.
 - A no-backend `Builder::session().build()` resolves to `Error::Unsupported`.
 - Socket wrapper tests: a partial write reported as success, FD passing over a unix socket, a
