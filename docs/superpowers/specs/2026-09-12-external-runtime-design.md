@@ -100,7 +100,7 @@ Everything below is behind the `comms` feature and lives in `zbus::runtime` unle
 ```text
 zbus/src/runtime/
 ├── mod.rs           # pub mod traits; pub use IoSource, Interest, AsyncDrop; private Runtime
-├── traits.rs        # Runtime, IoRegistration, Task, Mutex, RwLock
+├── traits.rs        # Runtime, Registration, TaskHandle, Mutex, RwLock
 ├── async_io.rs      # crate-private async-io implementor (feature = "async-io")
 ├── tokio_rt.rs      # crate-private Tokio implementor (feature = "tokio")
 ├── tokio_lock.rs    # Mutex/RwLock over tokio::sync (feature = "tokio")
@@ -121,9 +121,9 @@ zbus/src/runtime/
 ```rust
 pub mod traits {
     pub trait Runtime: Send + Sync + 'static {
-        type Registration: IoRegistration;
+        type Registration: Registration;
         type Sleep: Future<Output = ()> + Send + 'static;
-        type Task: Task;
+        type Task: TaskHandle;
         type Mutex<T: Send + 'static>: Mutex<T>;
         type RwLock<T: Send + Sync + 'static>: RwLock<T>;
 
@@ -159,7 +159,7 @@ pub mod traits {
         }
     }
 
-    pub trait IoRegistration: Send + Sync + 'static {
+    pub trait Registration: Send + Sync + 'static {
         /// Wait for `interest` readiness, then run `operation` on the polling thread.
         fn poll_io<T>(
             &self,
@@ -170,7 +170,7 @@ pub mod traits {
     }
 
     /// A handle to a spawned task. Dropping it cancels the task; `detach` lets it run on.
-    pub trait Task: Future<Output = io::Result<()>> + Send + Sync + Unpin + 'static {
+    pub trait TaskHandle: Future<Output = io::Result<()>> + Send + Sync + Unpin + 'static {
         fn detach(self);
     }
 
@@ -178,8 +178,13 @@ pub mod traits {
         type Guard<'a>: DerefMut<Target = T> + Send
         where
             Self: 'a;
+        /// Named rather than `impl Future`, so that the erased path can keep the pending lock
+        /// and then the guard in one heap object.
+        type Lock<'a>: Future<Output = Self::Guard<'a>> + Send
+        where
+            Self: 'a;
 
-        fn lock(&self) -> impl Future<Output = Self::Guard<'_>> + Send;
+        fn lock(&self) -> Self::Lock<'_>;
     }
 
     pub trait RwLock<T>: Send + Sync + 'static {
@@ -189,9 +194,15 @@ pub mod traits {
         type WriteGuard<'a>: DerefMut<Target = T> + Send
         where
             Self: 'a;
+        type Read<'a>: Future<Output = Self::ReadGuard<'a>> + Send
+        where
+            Self: 'a;
+        type Write<'a>: Future<Output = Self::WriteGuard<'a>> + Send
+        where
+            Self: 'a;
 
-        fn read(&self) -> impl Future<Output = Self::ReadGuard<'_>> + Send;
-        fn write(&self) -> impl Future<Output = Self::WriteGuard<'_>> + Send;
+        fn read(&self) -> Self::Read<'_>;
+        fn write(&self) -> Self::Write<'_>;
     }
 }
 ```
@@ -212,8 +223,11 @@ Contracts, documented on the traits:
   an output slot. The name is what zbus always passed to its executor; the Tokio backend hands it
   to `tokio::task::Builder` under `--cfg tokio_unstable`, where a tokio-console shows it.
 - Locks: the guards are `Send` so that zbus can hold them across `.await` inside `Send` futures;
-  a `RwLock` read guard is also `Sync`. Nothing else is required: no `try_` variants, no
-  fairness, no `const` construction, because the constructors are methods on the runtime.
+  a `RwLock` read guard is also `Sync`. The lock futures are named associated types: a runtime
+  whose lock is an `async fn`, as Tokio's is, names them as `Pin<Box<dyn Future + Send>>` and
+  pays that box itself, which the built-in Tokio backend never does since the crate's enum calls
+  Tokio's lock directly. Nothing else is required: no `try_` variants, no fairness, no `const`
+  construction, because the constructors are methods on the runtime.
 - `spawn_blocking` always resolves to `T`: the default spawns a dedicated std thread per call and
   joins it; `AsyncIo` and `Tokio` override it with their own thread pools. Its future is boxed;
   blocking work happens a handful of times per connection, at setup, and once more at the end of
@@ -357,10 +371,24 @@ trait ErasedTask: Future<Output = io::Result<()>> + Send + Sync + Unpin {
 }
 
 trait ErasedMutex: Send + Sync {
-    fn lock(&self) -> Pin<Box<dyn Future<Output = Box<dyn ErasedGuard<dyn Any + Send>> + '_>>;
+    fn lock(&self) -> Pin<Box<dyn ErasedLock<'_> + Send + '_>>;
 }
-// ErasedRwLock: read() and write() likewise; ErasedGuard<T>: DerefMut<Target = T> + Send.
+/// One heap object for an acquisition: the pending lock future, then the guard it resolved to.
+trait ErasedLock<'a>: Send {
+    fn poll_lock(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
+    fn value(&self) -> &(dyn Any + Send);                     // once held
+    fn value_mut(self: Pin<&mut Self>) -> &mut (dyn Any + Send);
+}
+// ErasedRwLock: read() and write() likewise, each with its own ErasedLock-shaped object.
 ```
+
+The typed side puts the public traits back on top of the boxed mirrors: `traits::Runtime` is
+implemented for `Arc<dyn ErasedRuntime>`, `traits::Registration` for
+`Box<dyn ErasedRegistration>`, `traits::TaskHandle` for `Box<dyn ErasedTask>`, and
+`traits::Mutex<T>`/`traits::RwLock<T>` for typed wrappers over the boxed mirrors that downcast on
+access. So the crate's `Runtime` enum reaches the external runtime through the same trait calls
+as the two built-in backends; the mirrors exist only because the public traits, with their
+generic methods and associated types, cannot be trait objects themselves.
 
 A blanket `impl<R: traits::Runtime> ErasedRuntime for R` boxes each registration, sleep future,
 task and lock once. The generic-over-`T` operations are erased with the value type erased too:
@@ -371,13 +399,14 @@ the `T` in a local `Option`, so an I/O poll is one virtual call and no allocatio
 `Box<dyn Any + Send>`, and the typed `Runtime::spawn_blocking` downcasts once the returned future
 resolves.
 
-Cost on the external path: a spawn boxes the future and the handle, a lock acquisition boxes
-the future and the guard and downcasts on each access, and a sleep or `spawn_blocking` call boxes
-its future. Locks are taken once per sent message, once per received message and once per method
-call; the message itself already costs more than that. On the built-in paths every operation is a
-`match` on the enum, and an interface now sits as a `Box<dyn Interface>` inside its lock, one
-indirection more per dispatch than the unsized `RwLock<dyn Interface>` it replaces. None of this
-is measured: the benchmarks in tree cover the wire format, not a connection.
+Cost on the external path: a spawn boxes the future and the handle, a lock acquisition boxes one
+object that holds the pending lock and then the guard (a `pin-project-lite` struct, so no `unsafe`)
+and downcasts on each access, and a sleep or `spawn_blocking` call boxes its future. Locks are taken
+once per sent message, once per received message and once per method call; the message itself
+already costs more than that. On the built-in paths every operation is a `match` on the enum, and an
+interface now sits as a `Box<dyn Interface>` inside its lock, one indirection more per dispatch than
+the unsized `RwLock<dyn Interface>` it replaces. None of this is measured: the benchmarks in tree
+cover the wire format, not a connection.
 
 ### Registrations
 
@@ -406,7 +435,7 @@ pub(crate) enum Mutex<T> {
     AsyncLock(async_lock::Mutex<T>),
     #[cfg(feature = "tokio")]
     Tokio(tokio::sync::Mutex<T>),
-    External(Erased<T>),           // Box<dyn ErasedMutex> + PhantomData<T>
+    External(ExternalMutex<T>),    // Box<dyn ErasedMutex> + PhantomData<T>, in erased.rs
 }
 ```
 
@@ -629,9 +658,10 @@ Required checks: `cargo test --all-features -- --skip fdpass_systemd`, `--no-def
   implement than a reactor alone. Mitigated
   by the `polling`-based reference host in tree, under 200 lines, and by `AsyncIo` and `Tokio`
   being the same implementors the default path runs.
-- **Erased lock cost** on the external path: two allocations per acquisition, not measured (no
-  benchmark in tree exercises a connection). If it shows, the guard box can go by giving
-  `ErasedMutex` a `poll_lock`/`unlock` pair in a later change without touching the public trait.
+- **Erased lock cost** on the external path: one allocation per acquisition, not measured (no
+  benchmark in tree exercises a connection). Going to none would need the guard to live somewhere
+  sized, which erasure cannot provide; a stateless `poll_lock`/`unlock` pair on the mirror is not
+  an option, since an async mutex needs per-waiter state and that pair would serialise waiters.
 - **Default-path regressions** from routing the built-in runtime through the wrapper. Mitigated by
   the wrapper being the same `poll_readable`/`recvmsg` loop, and by the full suite running on the
   default features.
