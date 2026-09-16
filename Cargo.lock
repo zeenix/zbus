@@ -254,6 +254,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "blocking_api_fixture"
+version = "0.0.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
