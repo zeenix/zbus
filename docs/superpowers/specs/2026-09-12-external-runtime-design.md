@@ -95,7 +95,7 @@ safe only for call sites that are independent of the socket's reactor.
    `Runtime::spawn`. The async-io backend's executor thread becomes an implementation detail of
    the built-in runtime.
 5. **One PR.** #1964 delivers the runtime abstraction, the registered-socket wrapper, transports,
-   ancillary operations, the reference host, examples and docs together; the module rename
+   ancillary operations, the reference runtime, examples and docs together; the module rename
    (#1962) is a separate, earlier PR.
 
 ## Public API
@@ -309,8 +309,8 @@ impl Builder<'_> {
 replaces the earlier one like any other setter. `Builder::internal_executor`,
 `Connection::executor`, `Executor` and `Task` are removed from the public API (the root re-export
 keeps only `AsyncDrop`). The manual-tick mode they served is expressed by implementing
-`Runtime::spawn` on the executor that used to tick; the reference host in
-`zbus/tests/polling_host/host.rs` shows the shape.
+`Runtime::spawn` on the executor that used to tick; the reference runtime in
+`zbus/tests/polling_runtime/` shows the shape.
 
 `unix_stream`, `tcp_stream` and `vsock_stream` take an owned stream and register it on the
 connection's runtime at build time. No `Socket`, `ReadHalf` or `WriteHalf` impl exists for
@@ -599,7 +599,8 @@ feature.
   `async-io`-owned crates appearing in it: `async-lock` is the one exception to "no smol crate
   reaches an external-runtime user", since it is a lock crate with no threads and no reactor.
   Dev-dependencies are allowed and never reach users: `polling` and `async-task` for the
-  reference host, the smol crates the in-tree test runtime is built on, and tokio for the suite.
+  reference runtime, the smol crates the in-tree test runtime is built on, and tokio for the
+  suite.
 - The Windows test matrix runs two suites: the default features, and a `--no-default-features` one
   covering the tokio-only (`--features tokio,proxy,service --tests`) and wire-format-only builds.
   The external-only build is checked for the Windows target rather than run there.
@@ -611,7 +612,7 @@ feature.
   the locks come from instead, and what each method of the contract asks of an implementation;
   `Builder::runtime`'s own docs say which runtime a connection picks when it is not called.
 - Book: a "Runtimes" section in `connection.md` with a caller-supplied runtime example, the
-  external-only build, what the blocking API needs of such a host, and the reference host in
+  external-only build, what the blocking API needs of such a host, and the reference runtime in
   zbus's integration tests as the worked example; the FAQ's Tokio entry updated to match.
 - `upgrading-to-6.md`: `Builder::runtime` replaces `internal_executor`; `Connection::executor`,
   `Executor` and `Task` are gone; `unix_stream`/`tcp_stream`/`vsock_stream` replace the
@@ -665,13 +666,14 @@ The existing suite runs in every feature combination, unmodified in behaviour. A
   call fails and a `MessageStream` ends.
 - A method timeout under Tokio's paused clock expiring after its duration of Tokio time, not at
   once.
-- The reference host releasing every task, registration, timer and task output when it is dropped
-  after its connections are gone, checked through a weak probe on its shared state, and a
-  timed-out call leaving no timer behind on it.
-- The `polling`-based reference host (`zbus/tests/polling_host/host.rs`) running a full
-  connection lifecycle — session connect, an interface served, a method call under a timeout,
-  `graceful_shutdown` — with the process's thread count unchanged before and after (Linux:
-  `/proc/self/task`), in both the default and external-only configurations.
+- The reference runtime releasing every task, registration, timer and task output when it is
+  dropped after its connections are gone, checked through a weak probe on its shared state, and
+  a timed-out call leaving no timer behind on it.
+- The `polling`-based reference runtime (`zbus/tests/polling_runtime/`) running a full
+  connection lifecycle — session connect, an interface with a method, a property and a signal
+  served and exercised through a proxy under a timeout, `graceful_shutdown` — with the process's
+  thread count unchanged before and after (Linux: `/proc/self/task`), in both the default and
+  external-only configurations.
 - The default `spawn_blocking` hook's thread exiting once its work is done and a panic in it
   reaching the awaiting caller; and, on every runtime in the sweep, blocking work running even
   when the future for it is dropped before it is ever polled.
@@ -685,7 +687,7 @@ and its `cargo tree` assertion, and the existing cross-platform `cargo check` ta
 ## Risks
 
 - **Trait surface.** Three traits — `Runtime`, `PollIo`, `TaskHandle` — is more to implement than
-  a reactor alone. Mitigated by the `polling`-based reference host in tree, about 500 lines of
+  a reactor alone. Mitigated by the `polling`-based reference runtime in tree, about 500 lines of
   which half is its run loop and teardown, and by `AsyncIo` and `Tokio` being the same
   implementors the default path runs.
 - **Default-path regressions** from routing the built-in runtime through the wrapper. Mitigated by
