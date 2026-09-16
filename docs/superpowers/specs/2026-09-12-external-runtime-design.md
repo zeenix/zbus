@@ -4,7 +4,7 @@ Resolves z-galaxy/zbus#1960 ("Support external runtimes while retaining the asyn
 The follow-up proposal in #1959 (replacing the smol-based internals of the built-in backend) is
 out of scope; this design only has to leave it possible.
 
-Three points of the issue text are deliberately not followed:
+Four points of the issue text are deliberately not followed:
 
 - "External connections reuse async-executor through zbus's existing Executor/Task abstractions."
   That sentence entered the issue when it was split out of #1959 and contradicts the point of the
@@ -45,19 +45,20 @@ safe only for call sites that are independent of the socket's reactor.
   while zbus keeps creating and connecting sockets, doing authentication, framing and FD passing.
 - An external-runtime user depends on none of the crates that give `async-io` its reactor and
   executor: `async-io`, `async-executor`, `async-task`, `blocking` and their transitive
-  dependencies. A build with `comms` and neither `async-io` nor `tokio` (an "external-only"
-  build) compiles and works with an explicit runtime, once the user also picks a lock feature
-  (`async-lock` or `tokio`).
+  dependencies. `async-lock` is the one exception, a crate of locks with no thread and no reactor
+  of its own. A build with `comms` and neither `async-io` nor `tokio` (an "external-only" build)
+  compiles and works with an explicit runtime, once the user also enables the `async-lock`
+  feature for its locks (`tokio` would compile the Tokio backend in).
 - zbus itself writes no scheduler and no lock implementation of its own. Locks come from a cargo
   feature (`async-lock` or `tokio`), not from the runtime; whatever else a runtime cannot provide
   through the trait, zbus does not need.
 - Keep the default behaviour: session/system connections stay automatic, `async-io` stays the
   default non-Tokio backend, the Tokio backend is an implementation of the trait like async-io.
 - Add no zbus thread on the external path, at any point of the connection's lifetime, with one
-  documented exception: the default `traits::Runtime::spawn_blocking` runs blocking work
-  (hostname lookup for `tcp:`, reading a `nonce-tcp:` file, the supplementary-group lookup for
-  peer credentials, waiting on the helper process of `unixexec:`/`ibus:`/`launchd:`) on a std
-  thread that exits with the work; a host with a pool overrides it.
+  documented exception: the default `traits::Runtime::spawn_blocking` runs blocking work (the
+  host-name lookup for `tcp:`, reading a `nonce-tcp:` file, the peer-credential lookups that leave
+  the socket, waiting on the helper process of `unixexec:`/`ibus:`/`launchd:`) on a std thread
+  that exits with the work; a host with a pool overrides it.
 - Keep `Builder` and `Connection` non-generic and keep wire-only builds untouched.
 
 ## Non-goals
@@ -72,13 +73,16 @@ safe only for call sites that are independent of the socket's reactor.
 
 1. **One I/O path for every runtime, Tokio included.** `AsyncIo` and `Tokio` are both ordinary,
    crate-private implementors of the public trait, chosen by feature. The transport connect path
-   goes through one private registered-socket wrapper for every runtime, built-in or external.
+   goes through one private registered-socket wrapper for every runtime, built-in or external,
+   with one exception stated below: Tokio on Windows keeps its own TCP stream.
    Each connection latches a private runtime choice at build time; `select_runtime!` and
    `use_tokio()` are removed.
-2. **Locks are chosen by feature, not by the runtime.** `traits::Runtime` has an associated type
-   only for its task handle; zbus's `Executor`/`Task` become an enum: a zero-cost variant per
-   compiled backend and an erased variant for external runtimes. Locks are `async-lock`'s or
-   `tokio::sync`'s, picked by cargo feature, independent of which runtime a connection uses.
+2. **Locks are chosen by feature, not by the runtime.** `traits::Runtime` names its registration,
+   its timer and its task handle as associated types, and nothing else; the public
+   `Executor`/`Task` types go, and the crate-private task handle left in their place is an enum: a
+   zero-cost variant per compiled backend and an erased variant for external runtimes. Locks are
+   `async-lock`'s or `tokio::sync`'s, picked by cargo feature, independent of which runtime a
+   connection uses.
 3. **`spawn_blocking` always works.** It covers DNS, NSS group lookup, nonce-file reads and
    subprocess work. The default implementation runs the work on a std thread created for that
    call; `AsyncIo` and `Tokio` override it with their own pools (`blocking::unblock` and
@@ -102,49 +106,64 @@ Everything below is behind the `comms` feature and lives in `zbus::runtime` unle
 zbus/src/runtime/
 ├── mod.rs           # pub mod traits; pub use IoSource, Interest, AsyncDrop; private Runtime
 ├── traits.rs        # Runtime, PollIo, TaskHandle
+├── io_source.rs     # IoSource and Interest
 ├── async_io.rs      # crate-private async-io implementor (feature = "async-io")
 ├── tokio_rt.rs      # crate-private Tokio implementor (feature = "tokio")
 ├── blocking_thread.rs  # default spawn_blocking hook: a std thread per call
-├── erased.rs        # ErasedRuntime, ErasedRegistration, ErasedTask
+├── unblock.rs       # spawn_blocking over the `blocking` crate's pool, for AsyncIo
+├── erased.rs        # ErasedRuntime, ErasedRegistration, ErasedTask, ExternalTask
 ├── task.rs          # private Task: an enum over the compiled backends and erasure
 ├── locks.rs         # Mutex, RwLock and guards: cfg'd re-exports of async-lock or tokio::sync
 ├── io/              # RegisteredIo<O>, the per-family SocketOps and the connect helpers
-├── timeout.rs       # Runtime::timeout, a method over the connection's own timer
+├── timeout.rs       # Runtime::sleep and Runtime::timeout over the connection's own timer
 ├── async_drop.rs    # unchanged
+├── test_runtime.rs  # cfg(test) runtimes the tests of the external path run on
 └── process.rs       # helper processes: std spawn, registered pipes, spawn_blocking reap
 ```
 
-`async_lock.rs` is replaced by `locks.rs`.
+The lock re-exports live in `locks.rs`.
 
 ### Traits
 
 ```rust
 pub mod traits {
     pub trait Runtime: Send + Sync + 'static {
+        /// How this runtime watches a registered `IoSource` for readiness.
         type RegisteredIoSource: PollIo;
+        /// The timer `sleep` hands back.
         type Sleep: Future<Output = ()> + Send + 'static;
-        type Task<T: Send + 'static>: TaskHandle<T>;
+        /// The handle to a task `spawn` hands back.
+        type Task<T>: TaskHandle<T>
+        where
+            T: Send + 'static;
 
-        /// Register a socket or pipe for readiness notifications.
+        /// Register a socket or pipe for readiness notifications. The registration must stop
+        /// watching the source before the `IoSource` it was given is released.
         fn register_io_source(&self, source: IoSource) -> io::Result<Self::RegisteredIoSource>;
 
         /// A future that completes once `duration` has passed on this runtime's own clock.
         /// Dropping it cancels the timer.
         fn sleep(&self, duration: Duration) -> Self::Sleep;
 
-        /// Run `future` to completion in the background, starting now or soon. `name` is for
-        /// diagnostics (a task list, a console) and a runtime may ignore it.
-        fn spawn<T>(&self, name: &str, future: impl Future<Output = T> + Send + 'static)
-            -> Self::Task<T>
+        /// Run `future` to completion in the background, starting now or soon. The handle
+        /// resolves to what `future` produced, or to `Err` where the runtime lost the task.
+        /// `name` is for diagnostics (a task list, a console) and a runtime may ignore it.
+        fn spawn<T>(
+            &self,
+            name: &str,
+            future: impl Future<Output = T> + Send + 'static,
+        ) -> Self::Task<T>
         where
             T: Send + 'static;
 
         /// Run `work` off the event loop. The default implementation spawns a std thread that
         /// runs `work` and exits once it is done; a host with a thread pool overrides it. zbus
-        /// uses it for: hostname lookup for `tcp:`, reading a `nonce-tcp:` file, the
-        /// supplementary-group lookup for peer credentials, reading the `autolaunch:` address
-        /// on Windows (a named Win32 mutex with an unbounded wait), and waiting on the helper
-        /// process of `unixexec:`/`ibus:`/`launchd:` once its pipes are closed.
+        /// uses it for: the host-name lookup for `tcp:`, reading a `nonce-tcp:` file, the
+        /// peer-credential lookups that go to the name service or to the operating system's
+        /// table of connections, reading the `autolaunch:` address on Windows (a named Win32
+        /// mutex with an unbounded wait), and waiting on the helper process of
+        /// `unixexec:`/`ibus:`/`launchd:` once the connection has let go of the pipe it reads
+        /// that process's output from.
         fn spawn_blocking<T>(
             &self,
             work: impl FnOnce() -> T + Send + 'static,
@@ -157,7 +176,7 @@ pub mod traits {
     }
 
     pub trait PollIo: Send + Sync + 'static {
-        /// Wait for `interest` readiness, then run `operation` on the polling thread.
+        /// Run `operation` on the polling thread while the source is ready for `interest`.
         fn poll_io<T>(
             &self,
             cx: &mut Context<'_>,
@@ -166,7 +185,8 @@ pub mod traits {
         ) -> Poll<io::Result<T>>;
     }
 
-    /// A handle to a spawned task. Dropping it cancels the task; `detach` lets it run on.
+    /// A handle to a spawned task, which resolves to what that task produced. Dropping it
+    /// cancels the task; `detach` lets it run on.
     pub trait TaskHandle<T>: Future<Output = io::Result<T>> + Send + Sync + Unpin + 'static {
         fn detach(self);
     }
@@ -178,28 +198,35 @@ Contracts, documented on the traits:
 - `poll_io`: return the first success (a partial write counts) or any error other than
   `WouldBlock` immediately; on `WouldBlock` clear the readiness observed, arrange a wakeup for
   `cx` and return `Pending`; bound retries, never spin, never block, never retain `operation`.
-  Deregister the source before its `IoSource` is released. `Interest` is
+  Whether readiness is looked at before or after the first attempt is the implementation's to
+  choose, and everything zbus asks for has to come out the same either way. Deregister the source
+  before its `IoSource` is released. `Interest` is a `non_exhaustive`
   `enum Interest { Readable, Writable }`.
 - `spawn`: the task runs on the host's executor, concurrently with the caller, on any thread the
   host chooses; the handle resolves to `Err` if the host loses the task. Dropping the handle
-  cancels: a Tokio host wraps its `JoinHandle` in an abort-on-drop newtype (ten lines, shown in
-  the example), an async-task-style host maps `detach` to its own. A handle resolves to the
-  task's output. No caller in zbus reads one today (the handles it keeps are held so that
-  dropping a connection cancels its tasks), but a handle that could not carry one would have to
-  break the trait the day a caller wants it, and 6.0 is where the trait is fixed. On the erased
-  path the output travels as `Box<dyn Any + Send>` through the runtime's own handle and is
-  downcast once, exactly as `spawn_blocking`'s does: one allocation at completion, no slot. The
-  name is what zbus always passed to its executor; the Tokio backend hands it to
-  `tokio::task::Builder` under `--cfg tokio_unstable`, where a tokio-console shows it.
+  cancels: a Tokio host wraps its `JoinHandle` in an abort-on-drop newtype, an async-task-style
+  host maps `detach` to its own. A handle resolves to the task's output, and a caller reads one:
+  the Tokio backend's `tcp:` connect on Windows spawns the connect on the connection's runtime
+  and awaits the stream it produces. On the erased path the output travels as
+  `Box<dyn Any + Send>` through the runtime's own handle and is downcast once, exactly as
+  `spawn_blocking`'s does: one allocation at completion, no slot. The name is a diagnostic; the
+  Tokio backend hands it to `tokio::task::Builder`, where a tokio-console shows it, which needs
+  both `--cfg tokio_unstable` and zbus's `tracing` feature, and drops it anywhere else.
 - `spawn_blocking` always resolves to `T`: the default spawns a dedicated std thread per call and
-  joins it; `AsyncIo` and `Tokio` override it with their own thread pools. Its future is boxed;
-  blocking work happens a handful of times per connection, at setup, and once more at the end of
-  a connection that ran a helper process. That last wait occupies a worker for the helper's exit
-  latency, whichever pool backs the hook, because it only starts once the connection has let go
-  of the helper's pipes.
+  collects its outcome through an event rather than a join; `AsyncIo` and `Tokio` override it
+  with their own thread pools. The work has to run to
+  completion whether or not the future is polled, and whether or not it is dropped — the wait for
+  a helper process owns that process, so a wait thrown away with its future is a process nothing
+  will ever reap. Its future is boxed; blocking work happens a handful of times per connection, at
+  setup, and once more at the end of a connection that ran a helper process. That last wait
+  occupies a worker for the helper's exit latency, whichever pool backs the hook, because it only
+  starts once the connection has let go of the pipe it reads that helper's output from.
+- Neither `spawn` nor `spawn_blocking` may require a task context of its own: both are called from
+  whichever thread let go of the last thing that needed them, the drop of a task the runtime
+  itself was handed included.
 
-The `Send` bounds on the returned futures use return-position `impl Trait` in traits (Rust 1.75),
-within MSRV 1.87.
+Every future a runtime hands back is an associated type, so its `Send` bound rides on that type;
+only `spawn_blocking`, whose output is the caller's own, boxes its future. MSRV stays 1.87.
 
 ### `IoSource`
 
@@ -210,8 +237,11 @@ pub struct IoSource(Arc<Owned>);   // Owned = OwnedFd on unix, OwnedSocket on wi
 
 Implements `AsFd` and `AsRawFd` (unix) or `AsSocket` and `AsRawSocket` (windows). It is a shared
 owner: the socket wrapper keeps one clone for I/O and the registration keeps whatever it needs.
-Users receive one from `register_io_source` and never construct one. `async_io::Async::new` accepts
-it directly because `Arc<T>: AsFd` where `T: AsFd`.
+zbus builds one from a descriptor it owns and hands it to `register_io_source`; the public
+`From<OwnedFd>`/`From<OwnedSocket>` impls exist for a host that wants one of its own. Those impls
+are what let a
+runtime hand the source straight to its own machinery: async-io registers an `Async<IoSource>` and
+Tokio an `AsyncFd<IoSource>`.
 
 ### Built-in runtime
 
@@ -224,30 +254,35 @@ pub(crate) struct Tokio { handle: tokio::runtime::Handle }
 ```
 
 `AsyncIo` implements `traits::Runtime` with async-io and async-executor: `register_io_source`
-wraps the source in `async_io::Async::new` and `poll_io` is the `poll_readable`/`poll_writable`
-loop built on `Arc<Async<UnixStream>>`; `sleep` is `async_io::Timer::after` behind a small future
-that drops the `Instant`; `spawn` goes to an `async_executor::Executor` owned by the
-`AsyncIo` instance, whose `zbus::Connection executor` thread starts on the first spawn, holds a
-strong reference to the executor, ticks it under `async_io::block_on` until it is empty, exits,
-and starts again on the next spawn (a running check under the same lock the spawner takes makes
-the hand-off race-free); the locks are `async_lock`'s; `spawn_blocking` returns
-`blocking::unblock`. A thread that instead waited for the last `AsyncIo` clone would block
-forever in an idle executor once the connection is gone, and one that held only a weak reference
-would cancel detached tasks.
+wraps the source in `async_io::Async::new`, giving an `Async<IoSource>`, and `poll_io` tries the
+operation and then waits on `poll_readable`/`poll_writable`; `sleep` is `async_io::Timer::after`
+behind a small future that drops the `Instant`; `spawn` goes to an `async_executor::Executor`
+owned by the `AsyncIo` instance, whose `zbus::Connection executor` thread starts on the first
+spawn, holds a strong reference to the executor, ticks it under `async_io::block_on` until it is
+empty, exits, and starts again on the next spawn (a running check under the same lock the spawner
+takes makes the hand-off race-free); `spawn_blocking` hands the work to `blocking::unblock` and
+detaches it, so that letting go of the future leaves the work with the pool. A thread that instead
+waited for the last `AsyncIo` clone would block forever in an idle executor once the connection is
+gone, and one that held only a weak reference would cancel detached tasks.
 
 `Tokio` captures `Handle::current()` at build time, so a connection keeps working when it is
 later polled from outside a runtime context. `register_io_source` wraps the source in
-`tokio::io::unix::AsyncFd` on unix; on Windows it returns `Error::Unsupported`, except that a
-crate-private `tokio::net::TcpStream` socket covers TCP, and unix sockets stay unsupported.
+`tokio::io::unix::AsyncFd` on unix; on Windows there is nothing to hand a descriptor of zbus's own
+to, so it reports an `Unsupported` I/O error, except that a crate-private `tokio::net::TcpStream`
+socket covers TCP, and unix sockets stay unsupported.
 `sleep` is `tokio::time::sleep` entered on the captured handle, so it runs on that runtime's
 clock and a paused or advanced Tokio clock is honoured; `spawn` is `handle.spawn` (a
-`tokio::task::Builder` carrying the name under `tokio_unstable`) behind an abort-on-drop task
-newtype, the locks are `tokio::sync`'s, and `spawn_blocking` is `handle.spawn_blocking`.
+`tokio::task::Builder` carrying the name where `tokio_unstable` and zbus's `tracing` feature are
+both on) behind an abort-on-drop task newtype, and `spawn_blocking` is `handle.spawn_blocking`.
+
+Neither backend has anything to say about locks: those come from `async-lock` or `tokio::sync` by
+cargo feature, whichever backend a connection runs on.
 
 Both types are reached through their own zero-cost variant of the private `Runtime` enum, so
 there is one implementation of each backend, chosen by feature, not a second code path for the
-default case. The `AsyncIo` executor thread is the only thread zbus ever starts, and only that
-runtime starts it.
+default case. The `AsyncIo` executor thread is the only long-lived thread zbus starts, and only
+that runtime starts it; the other thread zbus can start is the short-lived one the default
+`spawn_blocking` hook runs a single piece of work on, which no backend uses.
 
 ### Builder and Connection
 
@@ -257,10 +292,11 @@ impl Builder<'_> {
     /// cannot be named here.
     pub fn runtime(self, runtime: impl traits::Runtime) -> Self;
 
-    /// Connect over an already-established stream, registered on this connection's runtime.
-    pub fn unix_stream(self, stream: UnixStream) -> Self;  // std, or uds_windows on Windows
-    pub fn tcp_stream(self, stream: std::net::TcpStream) -> Self;
-    pub fn vsock_stream(self, stream: vsock::VsockStream) -> Self;
+    /// Constructors over an already-established stream, registered on the connection's
+    /// runtime when it is built.
+    pub fn unix_stream(stream: UnixStream) -> Self;  // std, or uds_windows on Windows
+    pub fn tcp_stream(stream: std::net::TcpStream) -> Self;
+    pub fn vsock_stream(stream: vsock::VsockStream) -> Self;  // feature = "vsock"
 }
 ```
 
@@ -268,7 +304,8 @@ impl Builder<'_> {
 replaces the earlier one like any other setter. `Builder::internal_executor`,
 `Connection::executor`, `Executor` and `Task` are removed from the public API (the root re-export
 keeps only `AsyncDrop`). The manual-tick mode they served is expressed by implementing
-`Runtime::spawn` on the executor that used to tick; the Tokio host example shows the shape.
+`Runtime::spawn` on the executor that used to tick; the reference host in
+`zbus/tests/polling_host/host.rs` shows the shape.
 
 `unix_stream`, `tcp_stream` and `vsock_stream` take an owned stream and register it on the
 connection's runtime at build time. No `Socket`, `ReadHalf` or `WriteHalf` impl exists for
@@ -306,38 +343,23 @@ pub(crate) enum Runtime {
 }
 ```
 
-stored in `ConnectionInner` and passed to `Transport::connect`, the handshake, `timeout` and
+stored in `ConnectionInner` and passed to `Transport::connect`, `timeout` and
 every place that spawns.
 
 ## Internals
 
 ### Erasure
 
-```rust
-trait ErasedRuntime: Send + Sync {
-    fn register_io_source(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>>;
-    fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>>;
-    fn spawn(&self, name: &str, future: Pin<Box<dyn Future<Output = Box<dyn Any + Send>> + Send>>)
-        -> Box<dyn ErasedTask>;
-    fn spawn_blocking(
-        &self,
-        work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
-    ) -> Pin<Box<dyn Future<Output = Box<dyn Any + Send>> + Send>>;
-}
-
-trait ErasedRegistration: Send + Sync {
-    fn poll_io(&self, cx: &mut Context<'_>, interest: Interest,
-               operation: &mut dyn FnMut() -> io::Result<()>) -> Poll<io::Result<()>>;
-}
-
-trait ErasedTask: Future<Output = io::Result<Box<dyn Any + Send>>> + Send + Sync + Unpin {
-    fn detach(self: Box<Self>);
-}
-```
+`Builder::runtime` takes any implementation and a connection must not be generic over it, so the
+implementation is boxed once behind object-safe mirrors of the public traits: `ErasedRuntime`,
+`ErasedRegistration` and `ErasedTask`, one per thing a runtime hands out, with everything generic
+erased on the way through — a task's output becomes a `Box<dyn Any + Send>` and every future a
+trait object of its own. See `zbus/src/runtime/erased.rs`.
 
 The typed side puts the public traits back on top of the boxed mirrors: `traits::Runtime` is
 implemented for `Arc<dyn ErasedRuntime>`, `traits::PollIo` for `Box<dyn ErasedRegistration>`, and
-`traits::TaskHandle` for `Box<dyn ErasedTask>`. So the crate's `Runtime` enum reaches the external
+`traits::TaskHandle` for `ExternalTask<T>`, the typed handle that holds a `Box<dyn ErasedTask>`
+and downcasts the boxed output back to `T`. So the crate's `Runtime` enum reaches the external
 runtime through the same trait calls as the two built-in backends; the mirrors exist only because
 the public traits, with their generic methods and associated types, cannot be trait objects
 themselves.
@@ -348,9 +370,14 @@ one virtual call and no allocation. `spawn_blocking` erases its output the same 
 future does: the closure returns `Box<dyn Any + Send>`, and the typed `Runtime::spawn_blocking`
 downcasts once the returned future resolves.
 
-Cost on the external path: a spawn boxes the future and the handle, and a sleep or
-`spawn_blocking` call boxes its future. On the built-in paths every operation is a `match` on the
-enum. None of this is measured: the benchmarks in tree cover the wire format, not a connection.
+What the layers cost, all of it on the external path alone: a registration is one allocation and
+so is a sleep; a spawn is two, the future and the handle, and a third as the task ends for the
+value it produced, which a task whose value is zero-sized does not pay for; a call to the blocking
+hook is three — the work, the value it hands back and the future that downcasts that value — on
+top of the boxed future the hook returns on any runtime. An I/O poll allocates nothing. On the
+built-in paths every operation is a `match` on the enum. None of it is measured: the only
+connection benchmark in tree, `zbus/benches/concurrent_method_calls.rs`, builds its peer-to-peer
+pair on the compiled-in backend, and nothing compares the two paths.
 
 ### Registrations
 
@@ -366,10 +393,10 @@ pub(crate) enum Registration {
 
 `poll_io` dispatches on the variant, mirroring `Task`: a zero-cost call into
 the built-in backend's own registration type for `AsyncIo` and `Tokio`, or one virtual call into
-the erased type for an external runtime. `Runtime::register` is what selects the variant, so
-every socket, pipe or transport connect that registers a source has a runtime in hand.
-`Registered<K>` (see "I/O path") wraps one `Registration` together with its `IoSource` and a
-kind marker.
+the erased type for an external runtime. `Runtime::register_io_source` is what selects the
+variant, so every socket, pipe or transport connect that registers a source has a runtime in hand.
+`RegisteredIo<O>` (see "I/O path") wraps one `Registration` together with its `IoSource`, the
+runtime it was made on and the operations of its socket family.
 
 ### Locks (`runtime::locks`)
 
@@ -404,14 +431,12 @@ The proxy's property cache keeps its `std::sync::RwLock`; it is never held acros
 ### Tasks
 
 ```rust
-pub(crate) struct Task<T>(TaskInner<T>);
-
-enum TaskInner<T> {
+pub(crate) enum Task<T> {
     #[cfg(feature = "async-io")]
-    AsyncExecutor(async_task::Task<T>),
+    AsyncIo(async_io::Task<T>),          // an async-task handle: dropping it cancels
     #[cfg(feature = "tokio")]
-    Tokio(TokioTask<T>),                 // abort-on-drop newtype over JoinHandle<T>
-    External(ExternalTask<T>),           // Box<dyn ErasedTask> + PhantomData<T>
+    Tokio(tokio_rt::TokioTask<T>),       // abort-on-drop newtype over JoinHandle<T>
+    External(ExternalTask<T>),           // Box<dyn ErasedTask> + PhantomData<fn() -> T>
 }
 ```
 
@@ -427,11 +452,12 @@ the crate's own use.
 ### Timers
 
 `Runtime::timeout(&self, fut, duration)`, a method on the crate-private enum, races `fut` against
-`self.sleep(duration)`, dispatching on the variant like every other operation; no call site reaches
-`tokio::time::sleep` or `async_io::Timer` directly. The duration, not a deadline, crosses the
-trait: each backend's timer keeps its own clock, and Tokio's can be paused or advanced by a
-test, so a deadline taken from `std::time::Instant` would already have passed there.
-`Connection::call_method` passes `self.inner.runtime`.
+`Runtime::sleep(duration)`, which dispatches on the variant like every other operation; no call
+site reaches `tokio::time::sleep` or `async_io::Timer` directly. The duration, not a deadline,
+crosses the trait: each backend's timer keeps its own clock, and Tokio's can be paused or advanced
+by a test, so a deadline taken from `std::time::Instant` would already have passed there.
+`Connection::call_method` passes `self.inner.runtime`, and the connect helper waits out a full
+listen backlog on the same timer.
 
 ### Driving
 
@@ -451,21 +477,25 @@ receiver).
 ### Registered sockets
 
 ```rust
-pub(crate) struct Registered<K> {
+pub(crate) struct RegisteredIo<O> {
     registration: Registration,   // drops before `source`
     source: IoSource,
     runtime: Runtime,
-    kind: K,
+    ops: O,
 }
 ```
 
-`K` selects the syscalls: `Unix` (recvmsg/sendmsg with SCM_RIGHTS via the existing
-`fd_recvmsg`/`fd_sendmsg` helpers, peer credentials), `Tcp` and `Vsock` (recv/send, no FDs), and
-`Pipe` (read/write, for a helper process's stdio). `ReadHalf` and `WriteHalf` are implemented on
-`Arc<Registered<K>>`, mirroring `Arc<Async<T>>`'s impls, with `read_with`/`write_with` helpers
-built on `poll_fn` + `poll_io`. `Builder::socket`/`authenticated_socket` and the public `Socket`
-trait remain the route for sockets that are not file descriptors; nothing implements `Socket`
-for `Async<T>` or a Tokio type.
+`O: SocketOps` selects the syscalls: `UnixOps` (recvmsg/sendmsg with SCM_RIGHTS via the existing
+`fd_recvmsg`/`fd_sendmsg` helpers, peer credentials), `TcpOps` and `VsockOps` (recv/send, no FDs),
+and `PipeOps` (read/write, for a helper process's stdio). The trait also answers what only the
+family knows: whether descriptors can travel, which mechanism to authenticate with, and how to
+shut the socket down. `ReadHalf` and `WriteHalf` are implemented on `Arc<RegisteredIo<O>>`,
+mirroring `Arc<Async<T>>`'s impls, with `read_with`/`write_with` helpers built on `poll_fn` +
+`poll_io`; a descriptor zbus was handed rather than opened is switched to non-blocking mode as it
+is registered, since a runtime that waits for readiness and then runs the operation would
+otherwise hold up the thread it is polled on. `Builder::socket`/`authenticated_socket` and the
+public `Socket` trait remain the route for sockets that are not file descriptors; no public
+`Socket` impl exists for `Async<T>` or a Tokio type.
 
 ### Connecting
 
@@ -474,24 +504,39 @@ pub(crate) async fn connect(
     runtime: &Runtime,
     domain: socket2::Domain,
     ty: socket2::Type,
-    addr: &socket2::SockAddr,
+    address: &socket2::SockAddr,
 ) -> io::Result<IoSource>;
 ```
 
-Transports build the socket with `socket2` (already in the lock through Tokio; added to `comms`)
-as non-blocking and close-on-exec, then call `connect`. It either succeeds or pends with
-`EINPROGRESS`; a pending connect registers the source, waits for writable readiness and then
-checks `take_error()` (on unix `getpeername` too, since a runtime that tries the operation before
-looking at readiness would otherwise take a half-connected socket for a connected one; on Windows
-`getpeername` succeeds as soon as a connect is issued, so one readiness report is waited for and
-`SO_ERROR` alone decides). A unix listener whose backlog is full turns a non-blocking connect
-away with `EAGAIN` rather than queueing it, where a blocking `connect(2)` would wait in the
-kernel for room; the helper waits on the runtime's timer instead and tries again with a fresh
-socket, for as long as the caller keeps waiting, so the caller's own timeout or cancellation
-bounds the wait as it bounds the handshake after it. This one helper serves unix, tcp and vsock
-addresses alike (`SockAddr::vsock` on Linux). Peer credentials on the runtime path call
-`SO_PEERCRED` / `getpeereid` / `SO_PEERPIDFD` directly; the supplementary-group lookup
-(`getpwuid_r`, `getgrouplist`) goes through `spawn_blocking`.
+Transports hand a domain, a type and an address to one connect helper, which builds the socket
+with `socket2` (already in the lock through Tokio; added to `comms`) as non-blocking and
+close-on-exec, then calls `connect`. It either succeeds or pends with
+`EINPROGRESS`; a pending connect registers the source, waits for writable readiness and asks the
+socket what has become of the connection. The two platforms are asked different questions, because
+they answer differently. A unix socket has no peer until its connection is made, so `SO_ERROR`
+holds the reason for one that failed and `getpeername` reporting `ENOTCONN` is the mark of one
+still under way. Winsock names the peer from the moment a connect is issued, so there the peer is
+evidence of nothing; a zero-timeout `select` is, putting the socket in `writefds` once the
+connection is made, in `exceptfds` — with the reason in `SO_ERROR` — once it has failed, and in
+neither while it is still under way. Either way a connection still under way is reported as a
+would-block, which is what makes the wait a readiness wait like any other, and what leaves both
+of the polling orders `PollIo` allows at the same answer: asked before the socket is known to be
+ready, the predicate says the connection is still under way and the caller waits; asked once the
+kernel has reported writability, it finds the settled answer.
+
+A unix listener whose backlog is full turns a non-blocking connect away with `EAGAIN` rather than
+queueing it, where a blocking `connect(2)` would wait in the kernel for room; the helper waits on
+the runtime's timer instead and tries again with a fresh socket, for as long as the caller keeps
+waiting, so the caller's own timeout or cancellation bounds the wait as it bounds the handshake
+after it. This one helper serves unix, tcp and vsock addresses alike (`SockAddr::vsock` on Linux).
+
+Peer credentials on the runtime path call
+`SO_PEERCRED` / `getpeereid` / `SO_PEERPIDFD` on the calling thread, since those are plain socket
+options; what goes through `spawn_blocking` is the lookups that reach past the socket: the
+supplementary groups the D-Bus specification asks for on Linux and Android (`getpwuid_r`,
+`getgrouplist`, which may go to a file, a daemon or the network) and, on Windows, the peer's
+process token for a unix socket and the walk of the machine's table of TCP connections for a
+`tcp:` one.
 
 On Windows, `AsyncIo` and an external runtime connect unix sockets over `socket2`'s `AF_UNIX`
 support the same way; a connection on the built-in `Tokio` runtime falls back to a crate-private
@@ -504,24 +549,27 @@ matching Tokio's own lack of `AsyncFd` on that platform.
 | --- | --- |
 | DNS for tcp hostnames | `spawn_blocking(\|\| (host, port).to_socket_addrs())` |
 | nonce-tcp file | `spawn_blocking(\|\| std::fs::read(path))` |
-| ibus/launchd `output()` | std process; stdout read to EOF via its registration, then reaped |
-| unixexec | std process; pipes as `Registered<Pipe>`; reaped when the read half is dropped |
+| ibus/launchd `stdout()` | std process; stdout read to EOF via its registration, then reaped |
+| unixexec | std process; pipes as `RegisteredIo<PipeOps>`; reaped when the read half is dropped |
 | autolaunch (Windows) | `spawn_blocking(autolaunch_bus_address)`: a named mutex, unbounded wait |
 
 Every process, on every runtime, is spawned with `std::process::Command`; its pipes are
 registered like any other socket and its exit status is collected through `spawn_blocking`,
 which always has an implementation. The wait starts when the transport is done with the helper,
-not when the helper starts: `output()` reads to EOF first, and for `unixexec:` the read half's
-drop starts it, with the reaper the two halves share running it as a fallback when the last of
-them drops. Nothing awaits the wait; the hook's contract that the work runs whether or not its
-future is kept is what leaves it with the pool. So a healthy connection occupies no blocking
-worker; a helper that exited on its own is reaped at once, even while an idle `Connection` clone
-still holds its input; and a connection that stops reading a helper still running parks a worker
-until that helper sees its input close, which is when the last clone drops the other pipe.
-`Connection::close()` closes the helper's standard input (the write half drops its pipe, and a later
-write reports `NotConnected`), which is what tells a `unixexec:` helper to exit. `async-process` is
-not part of the `async-io` feature and `process` is not part of the `tokio` feature: no backend
-depends on either crate for subprocess handling.
+not when the helper starts: a program asked for an address is read to EOF and then waited for by
+the call that ran it, and for `unixexec:` the drop of the read half — the helper's standard
+output — is what starts it. Closing or dropping the write half is the fallback: each half holds
+the reaper they share, so a child that never reached a read half, such as one a cancelled connection
+attempt gave up on, is still waited for as the last holder goes. Nothing awaits that wait; the
+hook's contract that the work runs whether or not its future is kept is what leaves it with the
+pool. So a healthy connection occupies no blocking worker; a helper that exited on its own is
+reaped at once, even while an idle `Connection` clone still holds its input; and a connection that
+stops reading a helper still running parks a worker until that helper sees its input close, which
+is when the last clone drops the other pipe. `Connection::close()` closes the helper's standard
+input (the write half lets go of its pipe, and a later write reports `NotConnected`), which is what
+tells a `unixexec:` helper to exit. `async-process` is not part of the `async-io` feature and
+`process` is not part of the `tokio` feature: no backend depends on either crate for subprocess
+handling.
 
 ## Feature and dependency model
 
@@ -538,24 +586,28 @@ without a backend runtime: such a build's `Builder::session()` and friends fail 
 feature depends only on the `vsock` crate, not on `async-io`, and there is no `tokio-vsock`
 feature.
 
-- CI runs an external-only leg (`check`, `clippy` and `--tests` with `--no-default-features
-  --features comms,proxy,service,async-lock`), plus `cargo tree -e normal` asserting that none
-  of the other `async-io`-owned crates appear in that graph: `async-lock` is the one exception to
-  "no smol crate reaches an external-runtime user", since it is a lock crate with no threads and
-  no reactor. Dev-dependencies (tokio for the Tokio host test, `polling` for the reference host)
-  are allowed; they never reach users.
-- The Windows CI matrix adds a tokio-only leg (`--no-default-features --features
-  tokio,proxy,service`) alongside the default and external-only legs.
+- CI runs an external-only leg throughout: `check` on the MSRV toolchain for Linux, Windows and
+  macOS targets, `clippy --all-targets`, and a test job running `--tests` under a session bus, all
+  with `--no-default-features --features
+  async-lock,blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p`. That test job
+  also writes out `cargo tree -e normal` for the same feature set and fails on any of the
+  `async-io`-owned crates appearing in it: `async-lock` is the one exception to "no smol crate
+  reaches an external-runtime user", since it is a lock crate with no threads and no reactor.
+  Dev-dependencies are allowed and never reach users: `polling` and `async-task` for the
+  reference host, the smol crates the in-tree test runtime is built on, and tokio for the suite.
+- The Windows test matrix runs two suites: the default features, and a `--no-default-features` one
+  covering the tokio-only (`--features tokio,proxy,service --tests`) and wire-format-only builds.
+  The external-only build is checked for the Windows target rather than run there.
 - MSRV stays 1.87.
 
 ## Documentation
 
-- Rustdoc on `zbus::runtime` explaining what a runtime supplies, the external-only build, and
-  which transport/authentication combinations an external runtime supports; a Tokio host example
-  showing zbus driven from Tokio's scheduler.
-- Book: a "Runtimes" section in `connection.md` with a caller-supplied runtime example and a
-  pointer to `zbus/tests/polling_host/host.rs`, the reference host; the FAQ's Tokio entry updated
-  to match.
+- Rustdoc on `zbus::runtime` and `zbus::runtime::traits` explaining what a runtime supplies, where
+  the locks come from instead, and what each method of the contract asks of an implementation;
+  `Builder::runtime`'s own docs say which runtime a connection picks when it is not called.
+- Book: a "Runtimes" section in `connection.md` with a caller-supplied runtime example, the
+  external-only build, what the blocking API needs of such a host, and the reference host in
+  zbus's integration tests as the worked example; the FAQ's Tokio entry updated to match.
 - `upgrading-to-6.md`: `Builder::runtime` replaces `internal_executor`; `Connection::executor`,
   `Executor` and `Task` are gone; `unix_stream`/`tcp_stream`/`vsock_stream` replace the
   async-io- and Tokio-typed constructors, taking an owned stream (`into_std()` for a Tokio
@@ -568,43 +620,62 @@ feature.
 
 The existing suite runs in every feature combination, unmodified in behaviour. Added coverage:
 
-- A `cfg(test)` test runtime (`zbus/src/runtime/test_runtime.rs`, dev-dependencies only): an async-
-  executor executor on a thread of its own, async-io registrations and timers, and
-  `blocking::unblock` for blocking work, with variants that keep the trait's default
-  `spawn_blocking`, wait for readiness before running an operation, or abort every task on demand; a
-  p2p `socket::Channel` pair with one end on it covers method calls both ways, a served interface,
-  property access and `graceful_shutdown` with retained clones.
-- Erasure: a spawned task's output arrives, cancel on drop, `detach`; a downcast that never
-  fails, checked with a debug assertion.
-- A no-backend `Builder::session().build()` resolves to `Error::Unsupported`.
+- `cfg(test)` test runtimes (`zbus/src/runtime/test_runtime.rs`, dev-dependencies only): an
+  async-executor executor on a thread of its own, async-io registrations and timers, and
+  `blocking::unblock` for blocking work, counting the blocking calls it is handed, with variants
+  that keep the trait's default `spawn_blocking`, wait for readiness before running an operation,
+  or abort every task on demand. A sweep runs a test body under the counting and the
+  readiness-first runtimes, and under Tokio and async-io where those are compiled in, so the same
+  expectations hold on every runtime and under both polling orders; the default-blocking and
+  aborting variants are reached by the tests that need them.
+- A p2p `socket::Channel` pair with both ends on test runtimes: an interface served on one, a
+  method call answered across it, and a `graceful_shutdown` that must not hang once the peer is
+  gone.
+- Erasure: a spawned task's output arrives through the erased mirror and through the typed handle,
+  cancel on drop, `detach`, and a timeout on the external runtime's own timer. A downcast that
+  cannot fail is an `expect`, and a registration that reports `Pending` for an operation that
+  produced a value is an assertion, because bytes taken off a socket and dropped surface much
+  later as a message that will not parse.
+- A no-backend `Builder::address(..).build()` with no runtime given resolves to
+  `Error::Unsupported`, and `Builder::session()` with an external runtime connects.
 - Socket wrapper tests: a partial write reported as success, FD passing over a unix socket, a
-  readiness race (a peer that writes before the reader registers), timer cancellation (dropping a
-  timed-out `call_method` future), and a pending connect that resolves on writable readiness or
-  reports the socket's error.
+  readiness race (a peer that writes before the reader registers), a registration released before
+  the source it watches, a connect still under way reading as a would-block, a pending connect
+  that resolves on writable readiness or reports the socket's error, a full listen backlog retried
+  until it is accepted, and a peer-credential lookup reaching the runtime only where zbus makes
+  one.
 - A session connection over an external runtime, in every feature configuration including the
   external-only build.
-- DNS resolution and `nonce-tcp:` file reads running through `spawn_blocking`, proven with a test
-  runtime whose hook panics on a literal address that should skip resolution entirely.
-- A helper process (`unixexec`, and `ibus`/`launchd`'s `output()`) reaped through
-  `spawn_blocking`, asserting a clean exit status, and a `unixexec:` helper's reap starting only
-  once its pipes are closed, with the default hook's thread gone afterwards.
+- DNS resolution through `spawn_blocking`, proven with a test runtime that counts the blocking
+  work it is handed: a host name resolves through the hook, an address that is already literal
+  through no call at all. `nonce-tcp:`, whose file read goes the same way, is covered by a connect
+  against a
+  listener under every runtime.
+- A helper process (`unixexec`, and the `ibus`/`launchd` program asked for an address) reaped
+  through `spawn_blocking`, asserting a clean exit status; a `unixexec:` helper's reap starting as
+  the read half goes rather than when its input is closed, and not a second time as the write half
+  follows; the helper leaving the process table; and, on Linux, the default hook's thread gone
+  afterwards.
 - A host that aborts the socket reader task: `Connection::closed()` resolves, a pending method
   call fails and a `MessageStream` ends.
 - A method timeout under Tokio's paused clock expiring after its duration of Tokio time, not at
   once.
-- The reference host releasing every task, registration and timer when it is dropped after its
-  connections are gone, checked through a weak probe on its shared state.
+- The reference host releasing every task, registration, timer and task output when it is dropped
+  after its connections are gone, checked through a weak probe on its shared state, and a
+  timed-out call leaving no timer behind on it.
 - The `polling`-based reference host (`zbus/tests/polling_host/host.rs`) running a full
   connection lifecycle — session connect, an interface served, a method call under a timeout,
   `graceful_shutdown` — with the process's thread count unchanged before and after (Linux:
   `/proc/self/task`), in both the default and external-only configurations.
-- The default `spawn_blocking` hook's thread exiting once its work is done, proven the same way.
+- The default `spawn_blocking` hook's thread exiting once its work is done and a panic in it
+  reaching the awaiting caller; and, on every runtime in the sweep, blocking work running even
+  when the future for it is dropped before it is ever polled.
 - A `Tokio`-backed connection, built inside a runtime context, staying usable when polled from a
   plain thread outside one.
 
 Required checks: `cargo test --all-features -- --skip fdpass_systemd`, `--no-default-features`,
-`--no-default-features --features tokio,proxy,service --tests`, the external-only leg's
-`--tests`, and the existing cross-platform `cargo check` targets.
+`--no-default-features --features tokio,proxy,service --tests`, the external-only leg's `--tests`
+and its `cargo tree` assertion, and the existing cross-platform `cargo check` targets.
 
 ## Risks
 
@@ -616,9 +687,10 @@ Required checks: `cargo test --all-features -- --skip fdpass_systemd`, `--no-def
   the wrapper being the same `poll_readable`/`recvmsg` loop, and by the full suite running on the
   default features.
 - **Windows unix-socket connect.** `uds_windows` has no non-blocking connect; `socket2` handles
-  `AF_UNIX` on Windows, so the same connect helper applies. If it does not on some Windows version,
-  the fallback is `spawn_blocking` on the runtime path, documented.
-- **GAT-free `spawn_blocking` boxes its future.** Deliberate; see the API section.
+  `AF_UNIX` on Windows, so the same connect helper applies, with the Winsock `select` above
+  standing in for the `getpeername` check unix makes.
+- **`spawn_blocking` boxes its future.** Deliberate: its output is the caller's own type, which no
+  associated type on the trait can name. See the API section.
 
 ## Follow-ups (out of scope)
 
