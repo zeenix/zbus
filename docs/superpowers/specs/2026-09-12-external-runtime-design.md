@@ -106,10 +106,10 @@ zbus/src/runtime/
 ├── tokio_rt.rs      # crate-private Tokio implementor (feature = "tokio")
 ├── blocking_thread.rs  # default spawn_blocking hook: a std thread per call
 ├── erased.rs        # ErasedRuntime, ErasedRegistration, ErasedTask
-├── executor.rs      # private Executor, Task: enums over the compiled backends and erasure
+├── task.rs          # private Task: an enum over the compiled backends and erasure
 ├── locks.rs         # Mutex, RwLock and guards: cfg'd re-exports of async-lock or tokio::sync
-├── io.rs            # Registered<K> socket wrapper and the connect helpers
-├── timeout.rs       # timeout over the connection's runtime
+├── io/              # RegisteredIo<O>, the per-family SocketOps and the connect helpers
+├── timeout.rs       # Runtime::timeout, a method over the connection's own timer
 ├── async_drop.rs    # unchanged
 └── process.rs       # helper processes: std spawn, registered pipes, spawn_blocking reap
 ```
@@ -426,8 +426,8 @@ the crate's own use.
 
 ### Timers
 
-`runtime::timeout(runtime, fut, duration)` races `fut` against `runtime.sleep(duration)`,
-dispatching on the `Runtime` enum's variant like every other operation; no call site reaches
+`Runtime::timeout(&self, fut, duration)`, a method on the crate-private enum, races `fut` against
+`self.sleep(duration)`, dispatching on the variant like every other operation; no call site reaches
 `tokio::time::sleep` or `async_io::Timer` directly. The duration, not a deadline, crosses the
 trait: each backend's timer keeps its own clock, and Tokio's can be paused or advanced by a
 test, so a deadline taken from `std::time::Instant` would already have passed there.
@@ -568,11 +568,12 @@ feature.
 
 The existing suite runs in every feature combination, unmodified in behaviour. Added coverage:
 
-- A `cfg(test)` test runtime (`zbus/src/runtime/test_runtime.rs`, dev-dependencies only):
-  `spawn` on std threads running `futures_lite::future::block_on`, `sleep` on a thread timer, and
-  the trait's default `spawn_blocking`; a p2p `socket::Channel` pair with one end on it covers
-  method calls both ways, a served interface, property access and `graceful_shutdown` with
-  retained clones.
+- A `cfg(test)` test runtime (`zbus/src/runtime/test_runtime.rs`, dev-dependencies only): an async-
+  executor executor on a thread of its own, async-io registrations and timers, and
+  `blocking::unblock` for blocking work, with variants that keep the trait's default
+  `spawn_blocking`, wait for readiness before running an operation, or abort every task on demand; a
+  p2p `socket::Channel` pair with one end on it covers method calls both ways, a served interface,
+  property access and `graceful_shutdown` with retained clones.
 - Erasure: a spawned task's output arrives, cancel on drop, `detach`; a downcast that never
   fails, checked with a debug assertion.
 - A no-backend `Builder::session().build()` resolves to `Error::Unsupported`.
@@ -608,8 +609,9 @@ Required checks: `cargo test --all-features -- --skip fdpass_systemd`, `--no-def
 ## Risks
 
 - **Trait surface.** Three traits — `Runtime`, `PollIo`, `TaskHandle` — is more to implement than
-  a reactor alone. Mitigated by the `polling`-based reference host in tree, under 200 lines, and
-  by `AsyncIo` and `Tokio` being the same implementors the default path runs.
+  a reactor alone. Mitigated by the `polling`-based reference host in tree, about 500 lines of
+  which half is its run loop and teardown, and by `AsyncIo` and `Tokio` being the same
+  implementors the default path runs.
 - **Default-path regressions** from routing the built-in runtime through the wrapper. Mitigated by
   the wrapper being the same `poll_readable`/`recvmsg` loop, and by the full suite running on the
   default features.
