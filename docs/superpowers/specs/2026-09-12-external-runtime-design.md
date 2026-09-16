@@ -8,7 +8,9 @@ Four points of the issue text are deliberately not followed:
 
 - "External connections reuse async-executor through zbus's existing Executor/Task abstractions."
   That sentence entered the issue when it was split out of #1959 and contradicts the point of the
-  split: an external-runtime user must not depend on any crate the `async-io` feature owns.
+  split: an external-runtime user must not depend on the crates that give the `async-io` feature
+  its reactor and executor. `async-lock`, a crate of locks with no thread and no reactor, is the
+  one exception, since zbus's locks are chosen by cargo feature rather than by the runtime.
 - A caller-polled `Connection::run()` driver. zbus writes no scheduler and no lock of its own
   (those are #1959's, should it be pursued); a runtime that wants to drive zbus has to be able to
   spawn a task, and the runtime abstraction requires exactly that.
@@ -226,7 +228,10 @@ Contracts, documented on the traits:
   itself was handed included.
 
 Every future a runtime hands back is an associated type, so its `Send` bound rides on that type;
-only `spawn_blocking`, whose output is the caller's own, boxes its future. MSRV stays 1.87.
+only `spawn_blocking` boxes its future, so that the trait can carry a default body for it: a
+generic associated type could name the future of a caller-chosen output, as `Task<T>` does, but
+then every runtime would have to supply that type, and the default that runs the work on a std
+thread is what makes a runtime without a pool usable at all. MSRV stays 1.87.
 
 ### `IoSource`
 
@@ -689,8 +694,9 @@ and its `cargo tree` assertion, and the existing cross-platform `cargo check` ta
 - **Windows unix-socket connect.** `uds_windows` has no non-blocking connect; `socket2` handles
   `AF_UNIX` on Windows, so the same connect helper applies, with the Winsock `select` above
   standing in for the `getpeername` check unix makes.
-- **`spawn_blocking` boxes its future.** Deliberate: its output is the caller's own type, which no
-  associated type on the trait can name. See the API section.
+- **`spawn_blocking` boxes its future.** Deliberate: a generic associated type could name it, but
+  the method would then have no default body, and the default is what lets a runtime without a
+  thread pool leave blocking work to the trait. See the API section.
 
 ## Follow-ups (out of scope)
 
