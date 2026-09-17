@@ -35,6 +35,13 @@ jobs:
           cargo --locked check -p zbus --no-default-features --target x86_64-unknown-freebsd
           cargo --locked check -p zbus --no-default-features --target x86_64-unknown-netbsd
           cargo --locked check -p zbus --no-default-features --target aarch64-linux-android
+          # The external-runtime-only build: no async-io, no tokio.
+          EXT=async-lock,blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p
+          cargo --locked check -p zbus --no-default-features --features $EXT
+          cargo --locked check -p zbus --no-default-features --features $EXT \
+            --target x86_64-pc-windows-gnu
+          cargo --locked check -p zbus --no-default-features --features $EXT \
+            --target x86_64-apple-darwin
         # This would be nice but some optional deps (e.g `time`) move very fast wrt to MSRV.
         # cargo --locked check --all-features
 
@@ -103,6 +110,15 @@ jobs:
             --features tokio,p2p,proxy
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features tokio,p2p,service
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features async-io,proxy,service,unixexec
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features async-io,proxy,service,ibus
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features async-lock,proxy,service,ibus
+          # The external-runtime-only build: no async-io, no tokio.
+          EXT=async-lock,blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p
+          cargo --locked clippy -p zbus --no-default-features --all-targets --features $EXT
           # The service-only and blocking-API fixtures have to be built on their own: in a
           # workspace-wide build, the features of their `zbus` dependency are unified with those of
           # the other members.
@@ -124,6 +140,7 @@ jobs:
           - async-io
           - tokio
           - tokio-async-io
+          - external
           - wire
     env:
       RUSTFLAGS: -D warnings
@@ -205,6 +222,31 @@ jobs:
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
               -- --skip fdpass_systemd
+      - name: Test the external-runtime-only build
+        if: matrix.suite == 'external'
+        run: |
+          FEATURES=async-lock,blocking-api,proxy,service,object-manager,unixexec,ibus,tracing,p2p
+          # `--tests` over `--lib`: the integration test targets have to build in this feature
+          # set too, not only the library's own unit tests. `--doc` is left out: the rendered
+          # examples connect to a bus, which a build with neither backend has no runtime for.
+          dbus-run-session --config-file /tmp/dbus-session.conf -- \
+            cargo --locked test --release --verbose -p zbus --no-default-features \
+              --features $FEATURES --tests
+          # Nothing behind the async-io feature may reach an external-runtime user. `async-lock`
+          # is the exception: it is a lock crate with no threads and no reactor of its own, and
+          # this build asks for it by feature to get zbus's locks. The tree is written out before
+          # it is searched, so that a `cargo tree` failure fails the job instead of handing grep an
+          # empty stream. A `cargo tree` line is a prefix of box-drawing characters, the crate
+          # name and its version, so matching from the start of the line up to the version is what
+          # keeps a crate whose name merely contains one of these from counting.
+          FORBIDDEN="async-io|async-executor|async-task|async-process|blocking"
+          FORBIDDEN="$FORBIDDEN|polling|async-channel|async-signal|piper"
+          cargo --locked tree -e normal -p zbus --no-default-features --features $FEATURES \
+            > /tmp/external-tree.txt
+          if grep -E "^[^a-zA-Z0-9]*($FORBIDDEN) v" /tmp/external-tree.txt; then
+            echo "a crate owned by the async-io feature is in the external-only graph" >&2
+            exit 1
+          fi
       - name: Test the wire-format-only build
         if: matrix.suite == 'wire'
         run: |
