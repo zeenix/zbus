@@ -60,11 +60,17 @@ pub(crate) fn use_tokio() -> bool {
     }
 }
 
+pub mod traits;
+
+mod io_source;
+pub use io_source::{Interest, IoSource};
+
 mod async_drop;
 pub use async_drop::AsyncDrop;
 mod executor;
 pub use executor::{Executor, Task};
 pub(crate) mod async_lock;
+mod blocking_thread;
 pub(crate) mod timeout;
 
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands.
