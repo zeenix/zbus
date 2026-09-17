@@ -82,7 +82,10 @@ impl Transport {
             Transport::Vsock(vsock) => vsock.connect(&address, runtime).await.map(Stream::Vsock),
 
             #[cfg(all(unix, feature = "unixexec"))]
-            Transport::Unixexec(unixexec) => unixexec.connect(&address).await.map(Stream::Unixexec),
+            Transport::Unixexec(unixexec) => unixexec
+                .connect(&address, runtime)
+                .await
+                .map(Stream::Unixexec),
 
             #[cfg(windows)]
             Transport::Autolaunch(Autolaunch { scope }) => match scope {
@@ -102,12 +105,12 @@ impl Transport {
 
             #[cfg(target_os = "macos")]
             Transport::Launchd(launchd) => {
-                let transport = launchd.bus_address().await?;
+                let transport = launchd.bus_address(runtime).await?;
                 transport.connect(address, runtime).await
             }
 
             #[cfg(all(unix, feature = "ibus"))]
-            Transport::Ibus(ibus) => ibus.bus_address().await?.connect(runtime).await,
+            Transport::Ibus(ibus) => ibus.bus_address(runtime).await?.connect(runtime).await,
         }
     }
 

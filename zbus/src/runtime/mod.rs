@@ -36,13 +36,8 @@ use tokio_rt::Tokio;
 #[cfg(any(feature = "async-io", test))]
 mod unblock;
 
-// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands, and
-// only a backend can run one: the transports are unsupported without one.
-#[cfg(all(
-    unix,
-    any(feature = "async-io", feature = "tokio"),
-    any(feature = "unixexec", feature = "ibus", target_os = "macos")
-))]
+// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run a program.
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
 
 use std::{future::Future, pin::Pin, sync::Arc};

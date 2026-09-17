@@ -207,7 +207,7 @@ fn blocking_work_runs_even_when_its_future_is_dropped() {
 ///
 /// Linux truncates a thread's name to fifteen bytes, leaving only the start of it to match on.
 #[cfg(target_os = "linux")]
-fn blocking_threads() -> usize {
+pub(super) fn blocking_threads() -> usize {
     std::fs::read_dir("/proc/self/task")
         .expect("a process on Linux can list its own threads")
         .filter_map(Result::ok)

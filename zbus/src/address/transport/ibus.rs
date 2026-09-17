@@ -1,4 +1,9 @@
-use crate::{Address, Result};
+use std::process::Command;
+
+use crate::{
+    Address, Result,
+    runtime::{Runtime, process},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The transport properties of an IBus D-Bus address.
@@ -38,7 +43,8 @@ impl Ibus {
     /// Determine the actual transport details behind an IBus address.
     ///
     /// This method executes the `ibus address` command to retrieve the D-Bus address from the
-    /// running IBus daemon, then parses and returns the underlying transport.
+    /// running IBus daemon, then parses and returns the underlying transport. The command runs
+    /// on `runtime`, which is also what waits for it to exit.
     ///
     /// # Errors
     ///
@@ -60,35 +66,19 @@ impl Ibus {
     /// # Ok::<(), zbus::Error>(())
     /// # }).unwrap();
     /// ```
-    ///
-    /// Only a runtime that can run a command can ask, and a build with neither backend compiled
-    /// in has none.
-    pub(super) async fn bus_address(&self) -> Result<Address> {
-        #[cfg(not(any(feature = "async-io", feature = "tokio")))]
-        {
-            Err(crate::Error::Unsupported)
-        }
-        #[cfg(any(feature = "async-io", feature = "tokio"))]
-        {
-            let output = crate::runtime::process::run("ibus", ["address"])
-                .await
-                .map_err(|e| {
-                    crate::Error::Address(format!("Failed to execute ibus command: {e}"))
-                })?;
+    pub(super) async fn bus_address(&self, runtime: &Runtime) -> Result<Address> {
+        let mut command = Command::new("ibus");
+        command.arg("address");
 
-            if !output.status.success() {
-                return Err(crate::Error::Address(format!(
-                    "ibus terminated with code: {}",
-                    output.status
-                )));
-            }
+        let printed = process::stdout(runtime, command)
+            .await
+            .map_err(|e| crate::Error::Address(format!("The ibus command failed: {e}")))?;
 
-            let addr = String::from_utf8(output.stdout).map_err(|e| {
-                crate::Error::Address(format!("Unable to parse ibus output as UTF-8: {e}"))
-            })?;
+        let addr = String::from_utf8(printed).map_err(|e| {
+            crate::Error::Address(format!("Unable to parse ibus output as UTF-8: {e}"))
+        })?;
 
-            addr.trim().parse()
-        }
+        addr.trim().parse()
     }
 
     /// Parse IBus transport from D-Bus address options.

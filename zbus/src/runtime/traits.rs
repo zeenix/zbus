@@ -83,18 +83,31 @@ pub trait Runtime: Send + Sync + 'static {
     /// * reading the file a `nonce-tcp:` address names,
     /// * the peer-credential lookups that go to the name service or to the operating system's table
     ///   of connections,
-    /// * reading the `autolaunch:` address on Windows, which takes a named mutex.
+    /// * reading the `autolaunch:` address on Windows, which takes a named mutex,
+    /// * waiting for the helper process of a `unixexec:`, `ibus:` or `launchd:` address to exit.
     ///
     /// The default runs every call on a thread of its own, which exits with the work and whose
     /// failure to start panics, so a runtime that keeps a pool of threads for blocking work
-    /// should hand the work to that pool instead.
+    /// should hand the work to that pool instead. The wait for a helper process starts once the
+    /// connection has let go of the pipe it reads that process's output from, and occupies a
+    /// worker until the program is gone: no time at all for one that has already exited, and
+    /// until its input ends for a `unixexec:` program that is still running — one that ignores
+    /// the end of its input keeps that worker.
     ///
     /// Work that has been handed over has to run to completion whether or not the future this
     /// returns is polled, and whether or not that future is dropped. A thread of its own runs
     /// on regardless and so does Tokio's pool; a runtime that cancels a blocking task when its
-    /// handle drops has to detach it here instead. Work that owns something, a process to reap
-    /// or a file to close, is otherwise lost with the future of a connection attempt that was
-    /// cancelled or a connection let go of while it is under way.
+    /// handle drops has to detach it here instead. The wait for a helper process is why the
+    /// difference matters: that work owns the process, so a wait dropped along with its future
+    /// is a process nothing will ever reap, which is what a cancelled connection attempt, or a
+    /// connection let go of while one is under way, would leave behind.
+    ///
+    /// This and [`Runtime::spawn`] are called from whichever thread let go of the last thing
+    /// that needed them, and that includes the drop of a task the runtime itself was handed: the
+    /// pipe a connection reads a helper process's output from goes with the task that held it,
+    /// and the wait for that process starts there. So neither may require a task context of its
+    /// own, and a runtime that takes a lock to schedule has to tolerate being asked again while
+    /// it drops a task.
     fn spawn_blocking<T>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,
