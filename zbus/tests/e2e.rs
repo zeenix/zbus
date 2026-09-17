@@ -139,9 +139,7 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     debug!("Service connection created: {:?}", service_conn);
 
     let listen = event.listen();
-    let child = client_conn
-        .executor()
-        .spawn(my_iface_test(client_conn.clone(), event), "client_task");
+    let child = client_conn.spawn("client_task", my_iface_test(client_conn.clone(), event));
     debug!("Child task spawned.");
     // Wait for the listener to be ready
     listen.await;
@@ -217,7 +215,7 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     drop(client_conn);
     debug!("Connection closed.");
 
-    let val = child.await.unwrap();
+    let val = child.await.expect("the runtime kept the client task");
     debug!("Client task done.");
     assert_eq!(val.unwrap(), 2);
 

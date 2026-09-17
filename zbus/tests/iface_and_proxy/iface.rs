@@ -7,6 +7,7 @@ use zbus::{
     interface,
     message::{self, Header},
     object_server::{ObjectServer, ResponseDispatchNotifier, SignalEmitter},
+    runtime::traits::TaskHandle,
 };
 
 use super::types::{ArgStructTest, IP4Adress, MyIfaceError, NextAction, RefType};
@@ -129,16 +130,12 @@ impl MyIface {
         debug!("`TestResponseNotify` called.");
         let (response, listener) = ResponseDispatchNotifier::new(String::from("Meaning of life"));
         let emitter = emitter.to_owned();
-        conn.executor()
-            .spawn(
-                async move {
-                    listener.await;
+        conn.spawn("TestResponseNotify", async move {
+            listener.await;
 
-                    Self::test_response_notified(emitter).await.unwrap();
-                },
-                "TestResponseNotify",
-            )
-            .detach();
+            Self::test_response_notified(emitter).await.unwrap();
+        })
+        .detach();
 
         Ok(response)
     }

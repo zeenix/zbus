@@ -191,12 +191,12 @@ jobs:
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --tests -p zbus --no-default-features \
               --features tokio-vsock,proxy,service -- --skip fdpass_systemd
-          # The executor doctest drives the connection from tokio's scheduler, so it has to build
-          # without the default async-io runtime. `-p zbus` is load-bearing: a workspace-wide
-          # `--no-default-features` is undone by zbus_xmlgen's default-featured zbus dependency.
+          # The doc examples have to build without the default async-io runtime, driven by tokio
+          # instead. `-p zbus` is load-bearing: a workspace-wide `--no-default-features` is undone
+          # by zbus_xmlgen's default-featured zbus dependency.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc -p zbus --no-default-features \
-              --features tokio,service connection::Connection::executor
+              --features tokio,service
       - name: Test tokio and async-io enabled together
         if: matrix.suite == 'tokio-async-io'
         run: |

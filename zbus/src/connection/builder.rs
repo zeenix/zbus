@@ -20,11 +20,12 @@ use uds_windows::UnixStream as AsyncIoUnixStream;
 #[cfg(feature = "bus-impl")]
 use crate::MessageStream;
 use crate::{
-    Connection, Error, Executor, Guid, OwnedGuid, Result,
+    Connection, Error, Guid, OwnedGuid, Result,
     address::{self, Address},
     fdo::RequestNameFlags,
     message::Message,
     names::WellKnownName,
+    runtime::Runtime,
 };
 #[cfg(feature = "service")]
 use crate::{
@@ -96,7 +97,6 @@ pub struct Builder<'a> {
     guid: Option<Guid<'a>>,
     #[cfg(feature = "p2p")]
     p2p: bool,
-    internal_executor: bool,
     #[cfg(feature = "service")]
     interfaces: Interfaces<'a>,
     names: HashSet<WellKnownName<'a>>,
@@ -406,17 +406,6 @@ impl<'a> Builder<'a> {
         self
     }
 
-    /// Enable or disable the internal executor thread.
-    ///
-    /// The thread is enabled by default.
-    ///
-    /// See [Connection::executor] for more details.
-    pub fn internal_executor(mut self, enabled: bool) -> Self {
-        self.internal_executor = enabled;
-
-        self
-    }
-
     /// Register a D-Bus [`Interface`] to be served at a given path.
     ///
     /// This is similar to [`zbus::ObjectServer::at`], except that it allows you to have your
@@ -626,22 +615,14 @@ impl<'a> Builder<'a> {
             return Err(error);
         }
 
-        let executor = Executor::new();
-        #[cfg(feature = "async-io")]
-        let internal_executor = self.internal_executor;
+        let runtime = Runtime::default_for_build()?;
         // Box the future as it's large and can cause stack overflow.
-        let conn =
-            Box::pin(executor.run(self.build_(executor.clone(), activate_msg_stream))).await?;
-
-        #[cfg(feature = "async-io")]
-        start_internal_executor(&executor, internal_executor)?;
-
-        Ok(conn)
+        Box::pin(self.build_(runtime, activate_msg_stream)).await
     }
 
     async fn build_(
         mut self,
-        executor: Executor<'static>,
+        runtime: Runtime,
         activate_msg_stream: bool,
     ) -> Result<(Connection, Option<ActiveReceiver<Result<Message>>>)> {
         #[cfg(feature = "p2p")]
@@ -657,7 +638,7 @@ impl<'a> Builder<'a> {
         #[cfg(unix)]
         let already_received_fds = mem::take(&mut auth.already_received_fds);
 
-        let mut conn = Connection::new(auth, is_bus_conn, executor, self.method_timeout).await?;
+        let mut conn = Connection::new(auth, is_bus_conn, runtime, self.method_timeout).await?;
         conn.set_max_queued(self.max_queued.unwrap_or(DEFAULT_MAX_QUEUED));
 
         #[cfg(feature = "service")]
@@ -718,7 +699,6 @@ impl<'a> Builder<'a> {
             p2p: false,
             max_queued: None,
             guid: None,
-            internal_executor: true,
             #[cfg(feature = "service")]
             interfaces: HashMap::new(),
             names: HashSet::new(),
@@ -852,32 +832,6 @@ impl<'a> Builder<'a> {
 
         Ok((split, guid, authenticated))
     }
-}
-
-/// Start the internal executor thread.
-///
-/// Returns a dummy task that keep the executor ticking thread from exiting due to absence of any
-/// tasks until socket reader task kicks in.
-#[cfg(feature = "async-io")]
-fn start_internal_executor(executor: &Executor<'static>, internal_executor: bool) -> Result<()> {
-    // tokio drives its own tasks; only the `async-io` backend needs this driver thread.
-    if internal_executor && executor.needs_internal_driver() {
-        let executor = executor.clone();
-        std::thread::Builder::new()
-            .name("zbus::Connection executor".into())
-            .spawn(move || {
-                // `utils::block_on` selects tokio when both backends are enabled, which would make
-                // tasks on this async-io executor unexpectedly observe a tokio runtime.
-                async_io::block_on(async move {
-                    // Run as long as there is a task to run.
-                    while !executor.is_empty() {
-                        executor.tick().await;
-                    }
-                })
-            })?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

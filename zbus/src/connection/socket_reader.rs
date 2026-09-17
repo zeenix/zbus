@@ -9,11 +9,11 @@ use std::{
 use event_listener::Event;
 
 use crate::{
-    Executor, Message, OwnedMatchRule, Task,
+    Message, OwnedMatchRule,
     connection::{MsgBroadcaster, PendingMethodCalls},
     log::{debug, trace},
     message::Type,
-    runtime::locks::Mutex,
+    runtime::{Runtime, Task, locks::Mutex},
 };
 
 use super::socket::ReadHalf;
@@ -51,8 +51,8 @@ impl SocketReader {
         }
     }
 
-    pub fn spawn(self, executor: &Executor<'_>) -> Task<()> {
-        executor.spawn(self.receive_msg(), "socket reader")
+    pub fn spawn(self, runtime: &Runtime) -> Task<()> {
+        runtime.spawn("socket reader", self.receive_msg())
     }
 
     // Keep receiving messages and put them on the queue.
