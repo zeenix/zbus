@@ -13,6 +13,7 @@ impl Runtime {
             Self::AsyncIo(runtime) => traits::Runtime::sleep(runtime, duration).await,
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::sleep(runtime, duration).await,
+            Self::External(runtime) => runtime.sleep(duration).await,
         }
     }
 

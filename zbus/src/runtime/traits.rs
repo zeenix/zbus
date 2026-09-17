@@ -1,14 +1,16 @@
 //! What a runtime supplies to a connection.
 //!
 //! zbus ships no runtime of its own. A connection takes its timers and runs its tasks on
-//! `async-io` (the default), on Tokio, or on whatever implements [`Runtime`]; the socket it is
-//! given supplies its own readiness. Implementing the trait takes a timer and a task handle,
-//! both of which every async runtime already has, together with a readiness registration and a
-//! hook for work that only blocks. Both built-in backends are implementations of these traits,
-//! picked by the `async-io` and `tokio` features.
+//! `async-io` (the default), on Tokio, or on whatever implements [`Runtime`] and is handed to
+//! [`Builder::runtime`]; the socket it is given supplies its own readiness. Implementing the
+//! trait takes a timer and a task handle, both of which every async runtime already has,
+//! together with a readiness registration and a hook for work that only blocks. Both built-in
+//! backends are implementations of these traits, picked by the `async-io` and `tokio` features.
 //!
 //! The async locks a connection holds are not part of the trait: zbus takes those from
 //! `async-lock` or from Tokio, whichever cargo feature is on.
+//!
+//! [`Builder::runtime`]: crate::connection::Builder::runtime
 
 use std::{
     future::Future,

@@ -10,7 +10,7 @@ use uds_windows::UnixStream as AsyncIoUnixStream;
 use crate::Guid;
 use crate::{
     Error, Result, address::Address, blocking::Connection, conn::AuthMechanism,
-    connection::socket::BoxedSplit, names::WellKnownName, utils::block_on,
+    connection::socket::BoxedSplit, names::WellKnownName, runtime::traits, utils::block_on,
 };
 #[cfg(feature = "service")]
 use crate::{ObjectPath, object_server::Interface};
@@ -308,6 +308,13 @@ impl<'a> Builder<'a> {
     /// receive an answer from a service in time.
     pub fn method_timeout(self, timeout: std::time::Duration) -> Self {
         Self(self.0.method_timeout(timeout))
+    }
+
+    /// Run the connection on `runtime`.
+    ///
+    /// See [`crate::connection::Builder::runtime`] for what the connection takes from it.
+    pub fn runtime(self, runtime: impl traits::Runtime) -> Self {
+        Self(self.0.runtime(runtime))
     }
 
     /// Build the connection, consuming the builder.

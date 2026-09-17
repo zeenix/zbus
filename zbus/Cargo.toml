@@ -191,6 +191,10 @@ chrono = { workspace = true, features = [
     "alloc",
 ], default-features = false }
 static_assertions.workspace = true
+async-io.workspace = true
+async-executor.workspace = true
+async-task.workspace = true
+blocking.workspace = true
 
 [package.metadata.docs.rs]
 # we can't use:
