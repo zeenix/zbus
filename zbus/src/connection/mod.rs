@@ -85,6 +85,24 @@ pub(crate) struct ConnectionInner {
     credentials: OnceLock<Arc<ConnectionCredentials>>,
 }
 
+impl ConnectionInner {
+    /// Whether the connection is closed, in the sense [`Connection::is_closed`] reports.
+    ///
+    /// The `Acquire` load pairs with the `Release` store whoever closed the connection made, so
+    /// everything they did on their way out is visible to whoever sees `true` here.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.socket_status.closed.load(Ordering::Acquire)
+    }
+
+    /// A listener for the moment the connection closes.
+    ///
+    /// Arming one before reading the flag above is what makes the pair race-free: a connection
+    /// that closes between the two still wakes the listener.
+    pub(crate) fn closed_listener(&self) -> EventListener {
+        self.socket_status.closed_event.listen()
+    }
+}
+
 impl Drop for ConnectionInner {
     fn drop(&mut self) {
         // Notify anyone waiting that the connection is going away. Since we're being dropped, it's
@@ -1247,7 +1265,7 @@ impl Connection {
     /// A connection is considered closed either when the remote peer disconnects, an I/O error
     /// occurs on the socket, or [`Connection::close`] is called.
     pub fn is_closed(&self) -> bool {
-        self.inner.socket_status.closed.load(Ordering::Relaxed)
+        self.inner.is_closed()
     }
 
     /// Waits until the connection is closed.

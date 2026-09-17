@@ -1,10 +1,12 @@
 use std::{
+    future::Future,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
 
 use async_broadcast::Receiver as ActiveReceiver;
+use event_listener::EventListener;
 use futures_core::stream::{self, FusedStream};
 use ordered_stream::{OrderedStream, PollResult};
 
@@ -25,10 +27,33 @@ use crate::{
 /// conversion is not an expensive operation so you don't need to worry about performance, unless
 /// you do it very frequently. If you need to convert back and forth frequently, you may want to
 /// consider keeping both a connection and stream around.
-#[derive(Clone, Debug)]
+///
+/// The stream ends once the connection is closed and everything already queued for it has been
+/// yielded. That holds however the connection closed: a [`Connection::close`] of your own, the
+/// remote peer going away, an I/O error on the socket, or the runtime taking away the task that
+/// reads it.
+#[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub struct MessageStream {
     inner: Inner,
+    // Armed on a poll that found the queue empty and dropped once it fires, so that the next
+    // such poll arms a fresh one.
+    closed_listener: Option<EventListener>,
+    // Whether this stream has already yielded its `None`. The channel below cannot be asked:
+    // a cancelled reader never gets to close it, so it stays open past the stream's end.
+    terminated: bool,
+}
+
+impl Clone for MessageStream {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            // A listener and an end belong to the stream that reached them; a clone arms its own
+            // listener when it first needs one and runs to its own end.
+            closed_listener: None,
+            terminated: false,
+        }
+    }
 }
 
 impl MessageStream {
@@ -178,6 +203,8 @@ impl MessageStream {
                 msg_receiver,
                 match_rule: rule,
             },
+            closed_listener: None,
+            terminated: false,
         }
     }
 }
@@ -188,7 +215,46 @@ impl stream::Stream for MessageStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        Pin::new(&mut this.inner.msg_receiver).poll_next(cx)
+        match Pin::new(&mut this.inner.msg_receiver).poll_next(cx) {
+            Poll::Ready(Some(item)) => return Poll::Ready(Some(item)),
+            Poll::Ready(None) => {
+                this.terminated = true;
+
+                return Poll::Ready(None);
+            }
+            Poll::Pending => {}
+        }
+
+        // Nothing is queued, so whether anything can still arrive is a question for the
+        // connection. The socket reader closes this channel on its way out, but a runtime is
+        // free to drop or abort the task it runs in, and then nobody ever does; the connection's
+        // own closed flag is what says so in that case. Arming the listener before reading the
+        // flag is what makes the pair race-free.
+        if this.closed_listener.is_none() {
+            this.closed_listener = Some(this.inner.conn_inner.closed_listener());
+        }
+        if !this.inner.conn_inner.is_closed() {
+            let listener = this
+                .closed_listener
+                .as_mut()
+                .expect("a listener was armed just above");
+            if Pin::new(listener).poll(cx).is_pending() {
+                return Poll::Pending;
+            }
+            // The listener has fired and is spent; the next poll that needs one arms it again.
+            this.closed_listener = None;
+        }
+
+        match Pin::new(&mut this.inner.msg_receiver).poll_next(cx) {
+            // A message can have landed while the connection was closing, so the queue has the
+            // last word on when this stream ends.
+            Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
+            Poll::Ready(None) | Poll::Pending => {
+                this.terminated = true;
+
+                Poll::Ready(None)
+            }
+        }
     }
 }
 
@@ -233,7 +299,7 @@ impl OrderedStream for MessageStream {
 
 impl FusedStream for MessageStream {
     fn is_terminated(&self) -> bool {
-        self.inner.msg_receiver.is_terminated()
+        self.terminated || self.inner.msg_receiver.is_terminated()
     }
 }
 
@@ -248,6 +314,8 @@ impl From<Connection> for MessageStream {
                 msg_receiver,
                 match_rule: None,
             },
+            closed_listener: None,
+            terminated: false,
         }
     }
 }
