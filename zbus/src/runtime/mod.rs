@@ -45,7 +45,7 @@ mod unblock;
 ))]
 pub(crate) mod process;
 
-use std::{any::Any, future::Future, sync::Arc};
+use std::{future::Future, sync::Arc};
 
 use erased::ErasedRuntime;
 
@@ -113,8 +113,9 @@ impl Runtime {
             Self::Tokio(runtime) => {
                 traits::Runtime::register_io_source(runtime, source).map(io::Registration::Tokio)
             }
-            Self::External(runtime) => ErasedRuntime::register_io_source(&**runtime, source)
-                .map(io::Registration::External),
+            Self::External(runtime) => {
+                traits::Runtime::register_io_source(runtime, source).map(io::Registration::External)
+            }
         }
     }
 
@@ -133,7 +134,7 @@ impl Runtime {
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, name, future)),
             Self::External(runtime) => {
-                Task::External(erased::ExternalTask::spawn(&**runtime, name, future))
+                Task::External(traits::Runtime::spawn(runtime, name, future))
             }
         }
     }
@@ -148,17 +149,7 @@ impl Runtime {
             Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
-            Self::External(runtime) => {
-                // The erased runtime only takes work that produces an opaque value, so the
-                // result comes back to be downcast to what `work` returned.
-                let work = Box::new(move || Box::new(work()) as Box<dyn Any + Send>);
-
-                *runtime
-                    .spawn_blocking(work)
-                    .await
-                    .downcast()
-                    .expect("blocking work hands back the value it produced")
-            }
+            Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
         }
     }
 }

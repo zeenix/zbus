@@ -2,11 +2,7 @@ use std::{future::Future, io::ErrorKind, time::Duration};
 
 use futures_lite::FutureExt;
 
-use super::Runtime;
-// Only a built-in backend is reached through the trait itself; an external one goes through the
-// erased mirror of it.
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use super::traits;
+use super::{Runtime, traits};
 use crate::{Error, Result};
 
 impl Runtime {
@@ -17,7 +13,7 @@ impl Runtime {
             Self::AsyncIo(runtime) => traits::Runtime::sleep(runtime, duration).await,
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::sleep(runtime, duration).await,
-            Self::External(runtime) => runtime.sleep(duration).await,
+            Self::External(runtime) => traits::Runtime::sleep(runtime, duration).await,
         }
     }
 

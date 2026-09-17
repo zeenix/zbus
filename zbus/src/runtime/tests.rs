@@ -318,3 +318,15 @@ fn a_detached_external_task_runs_to_completion() {
 
     receiver.recv().expect("the detached task sent nothing");
 }
+
+/// A task spawned through the erased mirror hands its output back to the typed handle.
+#[test]
+#[timeout(15000)]
+fn an_erased_task_hands_its_output_back() {
+    use super::{erased::ErasedRuntime, traits};
+
+    let runtime: Arc<dyn ErasedRuntime> = Arc::new(TestRuntime::new());
+    let task = traits::Runtime::spawn(&runtime, "an erased task", async { 42 });
+
+    assert_eq!(futures_lite::future::block_on(task).unwrap(), 42);
+}
