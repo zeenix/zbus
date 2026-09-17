@@ -1767,39 +1767,19 @@ mod p2p_tests {
     async fn tcp_p2p_pipe() -> Result<(Connection, Connection)> {
         let guid = Guid::generate();
 
-        #[cfg(not(feature = "tokio"))]
-        let (server_conn_builder, client_conn_builder) = {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            let addr = listener.local_addr().unwrap();
-            let p1 = std::net::TcpStream::connect(addr).unwrap();
-            let p0 = listener.incoming().next().unwrap().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let p1 = std::net::TcpStream::connect(addr).unwrap();
+        let p0 = listener.incoming().next().unwrap().unwrap();
 
-            (
-                Builder::async_io_tcp_stream(p0)
-                    .server(guid)
-                    .p2p()
-                    .auth_mechanism(AuthMechanism::Anonymous),
-                Builder::async_io_tcp_stream(p1).p2p(),
-            )
-        };
-
-        #[cfg(feature = "tokio")]
-        let (server_conn_builder, client_conn_builder) = {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let p1 = tokio::net::TcpStream::connect(addr).await.unwrap();
-            let p0 = listener.accept().await.unwrap().0;
-
-            (
-                Builder::tokio_tcp_stream(p0)
-                    .server(guid)
-                    .p2p()
-                    .auth_mechanism(AuthMechanism::Anonymous),
-                Builder::tokio_tcp_stream(p1).p2p(),
-            )
-        };
-
-        futures_util::try_join!(server_conn_builder.build(), client_conn_builder.build())
+        futures_util::try_join!(
+            Builder::tcp_stream(p0)
+                .server(guid)
+                .p2p()
+                .auth_mechanism(AuthMechanism::Anonymous)
+                .build(),
+            Builder::tcp_stream(p1).p2p().build(),
+        )
     }
 
     #[cfg(unix)]
@@ -1819,29 +1799,16 @@ mod p2p_tests {
 
     #[cfg(unix)]
     async fn unix_p2p_pipe() -> Result<(Connection, Connection)> {
-        #[cfg(not(feature = "tokio"))]
         use std::os::unix::net::UnixStream;
-        #[cfg(feature = "tokio")]
-        use tokio::net::UnixStream;
-        #[cfg(all(windows, not(feature = "tokio")))]
-        use uds_windows::UnixStream;
 
         let guid = Guid::generate();
 
         let (p0, p1) = UnixStream::pair().unwrap();
 
-        #[cfg(not(feature = "tokio"))]
-        let (b1, b0) = (
-            Builder::async_io_unix_stream(p1),
-            Builder::async_io_unix_stream(p0),
-        );
-        #[cfg(feature = "tokio")]
-        let (b1, b0) = (
-            Builder::tokio_unix_stream(p1),
-            Builder::tokio_unix_stream(p0),
-        );
-
-        futures_util::try_join!(b1.p2p().build(), b0.server(guid).p2p().build(),)
+        futures_util::try_join!(
+            Builder::unix_stream(p1).p2p().build(),
+            Builder::unix_stream(p0).server(guid).p2p().build(),
+        )
     }
 
     // With both backends compiled in, exercise the async-io one end to end. `utils::block_on`
@@ -1889,44 +1856,31 @@ mod p2p_tests {
         let (p0, p1) = UnixStream::pair().unwrap();
 
         futures_util::try_join!(
-            Builder::async_io_unix_stream(p1).p2p().build(),
-            Builder::async_io_unix_stream(p0).server(guid).p2p().build(),
+            Builder::unix_stream(p1).p2p().build(),
+            Builder::unix_stream(p0).server(guid).p2p().build(),
         )
     }
 
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     #[test]
     #[timeout(15000)]
     fn vsock_connect() {
         let _ = crate::utils::block_on(test_vsock_connect()).unwrap();
     }
 
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     async fn test_vsock_connect() -> Result<(Connection, Connection)> {
-        #[cfg(feature = "tokio-vsock")]
-        use futures_util::StreamExt;
-
         let guid = Guid::generate();
 
-        #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
         let listener = vsock::VsockListener::bind_with_cid_port(vsock::VMADDR_CID_LOCAL, u32::MAX)?;
-        #[cfg(feature = "tokio-vsock")]
-        let listener = tokio_vsock::VsockListener::bind(tokio_vsock::VsockAddr::new(1, u32::MAX))?;
 
         let addr = listener.local_addr()?;
         let addr = format!("vsock:cid={},port={},guid={guid}", addr.cid(), addr.port());
 
         let server = async {
-            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
             let server =
                 crate::runtime::spawn_blocking(move || listener.incoming().next(), "").await?;
-            #[cfg(feature = "tokio-vsock")]
-            let server = listener.incoming().next().await;
-            #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
-            let builder = Builder::async_io_vsock_stream(server.unwrap()?);
-            #[cfg(feature = "tokio-vsock")]
-            let builder = Builder::tokio_vsock_stream(server.unwrap()?);
-            builder
+            Builder::vsock_stream(server.unwrap()?)
                 .server(guid)
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
@@ -1941,14 +1895,14 @@ mod p2p_tests {
         futures_util::try_join!(server, client)
     }
 
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     #[test]
     #[timeout(15000)]
     fn vsock_p2p() {
         crate::utils::block_on(test_vsock_p2p()).unwrap();
     }
 
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     async fn test_vsock_p2p() -> Result<()> {
         let (server1, client1) = vsock_p2p_pipe().await?;
         let (server2, client2) = vsock_p2p_pipe().await?;
@@ -1956,7 +1910,7 @@ mod p2p_tests {
         test_p2p(server1, client1, server2, client2).await
     }
 
-    #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
+    #[cfg(all(feature = "vsock", feature = "async-io"))]
     async fn vsock_p2p_pipe() -> Result<(Connection, Connection)> {
         let guid = Guid::generate();
 
@@ -1967,34 +1921,12 @@ mod p2p_tests {
         let server = listener.incoming().next().unwrap().unwrap();
 
         futures_util::try_join!(
-            Builder::async_io_vsock_stream(server)
+            Builder::vsock_stream(server)
                 .server(guid)
                 .p2p()
                 .auth_mechanism(AuthMechanism::Anonymous)
                 .build(),
-            Builder::async_io_vsock_stream(client).p2p().build(),
-        )
-    }
-
-    #[cfg(feature = "tokio-vsock")]
-    async fn vsock_p2p_pipe() -> Result<(Connection, Connection)> {
-        use futures_util::StreamExt;
-        use tokio_vsock::VsockAddr;
-
-        let guid = Guid::generate();
-
-        let listener = tokio_vsock::VsockListener::bind(VsockAddr::new(1, u32::MAX)).unwrap();
-        let addr = listener.local_addr().unwrap();
-        let client = tokio_vsock::VsockStream::connect(addr).await.unwrap();
-        let server = listener.incoming().next().await.unwrap().unwrap();
-
-        futures_util::try_join!(
-            Builder::tokio_vsock_stream(server)
-                .server(guid)
-                .p2p()
-                .auth_mechanism(AuthMechanism::Anonymous)
-                .build(),
-            Builder::tokio_vsock_stream(client).p2p().build(),
+            Builder::vsock_stream(client).p2p().build(),
         )
     }
 

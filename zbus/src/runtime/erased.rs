@@ -1,12 +1,21 @@
 //! Object-safe mirrors of the runtime traits.
 //!
-//! `Builder::runtime` takes any implementation and the connection must not be generic over it,
-//! so the implementation is boxed behind these traits once. Operations that are generic over a
-//! value type erase the value too: what a task produces becomes a `Box<dyn Any + Send>` that
-//! the typed handle downcasts, which is a `TypeId` comparison per access.
+//! [`Builder::runtime`] takes any implementation of the runtime traits and a connection must not
+//! be generic over it, so the implementation is boxed once behind the mirrors here:
+//! [`ErasedRuntime`] and one trait per thing a runtime hands out. Everything generic is erased on
+//! the way through: what a task produces becomes a `Box<dyn Any + Send>` and a future becomes a
+//! trait object of its own. [`ExternalTask`] puts the type of the value back on the way out.
 //!
-//! The mirror covers what a connection asks its runtime for: a sleep and a spawn. Readiness
-//! comes from the socket itself, which drives its own.
+//! What the mirrors cost, all of it on this path alone. A registration costs one allocation and
+//! so does a sleep. A spawn costs two, the future and the handle, and a third as the task ends
+//! for the value it produced, which a task that produces nothing does not pay. A call to the
+//! blocking hook costs two, the work and the value it hands back, on top of the boxed future the
+//! hook returns whichever runtime it is called on.
+//!
+//! Readiness is mirrored without erasing anything: the operation a registration runs hands its
+//! result back through the caller's own captures, so an I/O call costs no allocation here.
+//!
+//! [`Builder::runtime`]: crate::connection::Builder::runtime
 
 use std::{
     any::Any,
@@ -19,18 +28,18 @@ use std::{
     time::Duration,
 };
 
-use super::traits;
+use super::{Interest, IoSource, traits};
 
 pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub(crate) trait ErasedRuntime: Send + Sync {
+    fn register_io_source(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>>;
     fn sleep(&self, duration: Duration) -> BoxFuture<'static, ()>;
     fn spawn(
         &self,
         name: &str,
         future: BoxFuture<'static, Box<dyn Any + Send>>,
     ) -> Box<dyn ErasedTask>;
-    #[cfg(test)]
     fn spawn_blocking(
         &self,
         work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
@@ -47,6 +56,11 @@ impl<R> ErasedRuntime for R
 where
     R: traits::Runtime,
 {
+    fn register_io_source(&self, source: IoSource) -> io::Result<Box<dyn ErasedRegistration>> {
+        traits::Runtime::register_io_source(self, source)
+            .map(|registration| Box::new(registration) as Box<dyn ErasedRegistration>)
+    }
+
     fn sleep(&self, duration: Duration) -> BoxFuture<'static, ()> {
         Box::pin(traits::Runtime::sleep(self, duration))
     }
@@ -59,12 +73,82 @@ where
         Box::new(traits::Runtime::spawn(self, name, future))
     }
 
-    #[cfg(test)]
     fn spawn_blocking(
         &self,
         work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
     ) -> BoxFuture<'static, Box<dyn Any + Send>> {
         traits::Runtime::spawn_blocking(self, work)
+    }
+}
+
+/// The object-safe mirror of [`traits::PollIo`].
+///
+/// The operation returns nothing, so that nothing has to be boxed for it: the typed caller wraps
+/// its own operation in a closure that keeps the value it produced.
+pub(crate) trait ErasedRegistration: Send + Sync {
+    fn poll_io(
+        &self,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        operation: &mut dyn FnMut() -> io::Result<()>,
+    ) -> Poll<io::Result<()>>;
+}
+
+impl fmt::Debug for dyn ErasedRegistration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<external registration>")
+    }
+}
+
+impl<R> ErasedRegistration for R
+where
+    R: traits::PollIo,
+{
+    fn poll_io(
+        &self,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        operation: &mut dyn FnMut() -> io::Result<()>,
+    ) -> Poll<io::Result<()>> {
+        traits::PollIo::poll_io(self, cx, interest, operation)
+    }
+}
+
+impl traits::PollIo for Box<dyn ErasedRegistration> {
+    fn poll_io<T>(
+        &self,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        mut operation: impl FnMut() -> io::Result<T>,
+    ) -> Poll<io::Result<T>> {
+        // The mirror hands nothing back, so what the operation produced travels in a local the
+        // wrapping closure fills in.
+        let mut value = None;
+        let ready = ErasedRegistration::poll_io(&**self, cx, interest, &mut || {
+            value = Some(operation()?);
+
+            Ok(())
+        });
+
+        match ready {
+            Poll::Ready(result) => Poll::Ready(result.map(|()| {
+                value
+                    .take()
+                    .expect("a successful operation produced a value")
+            })),
+            Poll::Pending => {
+                // A value taken off the socket and then dropped here is bytes gone from the
+                // stream, which surfaces much later as a message that will not parse, so this
+                // one holds wherever it runs.
+                assert!(
+                    value.is_none(),
+                    "a registration must not report `Pending` for an operation that produced a \
+                     value",
+                );
+
+                Poll::Pending
+            }
+        }
     }
 }
 

@@ -17,11 +17,10 @@ fn issue_813() {
     // `Unexpected FDs during handshake` error.
     use futures_util::try_join;
     use rustix::process::geteuid;
-    #[cfg(not(feature = "tokio"))]
-    use std::os::unix::net::UnixStream;
-    use std::{os::fd::AsFd, vec};
-    #[cfg(feature = "tokio")]
-    use tokio::net::UnixStream;
+    use std::{
+        os::{fd::AsFd, unix::net::UnixStream},
+        vec,
+    };
     use zbus::{Fd, conn::socket::WriteHalf, connection::Builder};
 
     #[derive(Debug)]
@@ -58,11 +57,7 @@ fn issue_813() {
         let server_event = event_listener::Event::new();
         let server_listener = server_event.listen();
         let server = async move {
-            #[cfg(not(feature = "tokio"))]
-            let builder = Builder::async_io_unix_stream(p0);
-            #[cfg(feature = "tokio")]
-            let builder = Builder::tokio_unix_stream(p0);
-            let _conn = builder
+            let _conn = Builder::unix_stream(p0)
                 .server(guid)
                 .p2p()
                 .serve_at(
@@ -97,8 +92,9 @@ fn issue_813() {
                 fds.push(fd.as_fd());
             }
 
+            p1.set_nonblocking(true)?;
             #[cfg(feature = "tokio")]
-            let mut split = zbus::conn::Socket::split(p1);
+            let mut split = zbus::conn::Socket::split(tokio::net::UnixStream::from_std(p1)?);
             #[cfg(not(feature = "tokio"))]
             let mut split = zbus::conn::Socket::split(async_io::Async::new(p1)?);
             split.write_mut().sendmsg(&bytes, &fds).await?;

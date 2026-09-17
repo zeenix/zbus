@@ -60,11 +60,8 @@ compile_error!(
      enabled: zbus takes its async locks from one of the two."
 );
 
-#[cfg(all(
-    any(feature = "vsock", feature = "tokio-vsock"),
-    not(target_os = "linux")
-))]
-compile_error!("The \"vsock\" and \"tokio-vsock\" features are only supported on Linux.");
+#[cfg(all(feature = "vsock", not(target_os = "linux")))]
+compile_error!("The \"vsock\" feature is only supported on Linux.");
 
 mod error;
 pub use error::*;

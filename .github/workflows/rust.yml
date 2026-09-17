@@ -207,7 +207,7 @@ jobs:
         run: |
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --tests -p zbus --no-default-features \
-              --features tokio-vsock,proxy,service -- --skip fdpass_systemd
+              --features tokio,proxy,service -- --skip fdpass_systemd
           # The doc examples have to build without the default async-io runtime, driven by tokio
           # instead. `-p zbus` is load-bearing: a workspace-wide `--no-default-features` is undone
           # by zbus_xmlgen's default-featured zbus dependency.
@@ -217,8 +217,7 @@ jobs:
       - name: Test tokio and async-io enabled together
         if: matrix.suite == 'tokio-async-io'
         run: |
-          # The features are additive, so the backend is then chosen at run time. `vsock` is
-          # included as it pulls in `async-io` alongside `tokio`.
+          # The features are additive, so the backend is then chosen at run time.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
               -- --skip fdpass_systemd

@@ -317,13 +317,11 @@ impl From<crate::Connection> for Connection {
 mod tests {
     use event_listener::Listener;
     use ntest::timeout;
-    #[cfg(all(unix, not(feature = "tokio")))]
+    #[cfg(unix)]
     use std::os::unix::net::UnixStream;
     use std::thread;
     use test_log::test;
-    #[cfg(all(unix, feature = "tokio"))]
-    use tokio::net::UnixStream;
-    #[cfg(all(windows, not(feature = "tokio")))]
+    #[cfg(windows)]
     use uds_windows::UnixStream;
 
     use crate::{
@@ -341,11 +339,7 @@ mod tests {
 
         let (tx, rx) = std::sync::mpsc::channel();
         let server_thread = thread::spawn(move || {
-            #[cfg(not(feature = "tokio"))]
-            let builder = Builder::async_io_unix_stream(p0);
-            #[cfg(feature = "tokio")]
-            let builder = Builder::tokio_unix_stream(p0);
-            let c = builder.server(guid).p2p().build().unwrap();
+            let c = Builder::unix_stream(p0).server(guid).p2p().build().unwrap();
             rx.recv().unwrap();
             let reply = c
                 .call_method(None::<()>, "/", Some("org.zbus.p2p"), "Test", &())
@@ -355,11 +349,7 @@ mod tests {
             val
         });
 
-        #[cfg(not(feature = "tokio"))]
-        let builder = Builder::async_io_unix_stream(p1);
-        #[cfg(feature = "tokio")]
-        let builder = Builder::tokio_unix_stream(p1);
-        let c = builder.p2p().build().unwrap();
+        let c = Builder::unix_stream(p1).p2p().build().unwrap();
 
         let listener = c.monitor_activity();
 

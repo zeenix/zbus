@@ -9,14 +9,14 @@ async fn issue_279() {
     // the async-channel abstraction was achieving this through calling `close` on receiver,
     // which is behind an async mutex and we end up with a deadlock.
     use futures_util::{stream::TryStreamExt, try_join};
-    use tokio::net::UnixStream;
+    use std::os::unix::net::UnixStream;
     use zbus::{MessageStream, connection::Builder};
 
     let guid = zbus::Guid::generate();
     let (p0, p1) = UnixStream::pair().unwrap();
 
-    let server = Builder::tokio_unix_stream(p0).server(guid).p2p().build();
-    let client = Builder::tokio_unix_stream(p1).p2p().build();
+    let server = Builder::unix_stream(p0).server(guid).p2p().build();
+    let client = Builder::unix_stream(p1).p2p().build();
     let (client, server) = try_join!(client, server).unwrap();
     let mut stream = MessageStream::from(client);
     let next_msg_fut = stream.try_next();

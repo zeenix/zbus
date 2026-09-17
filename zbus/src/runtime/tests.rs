@@ -96,12 +96,12 @@ fn an_explicit_runtime_beats_tokio_detection() {
     let tokio = tokio::runtime::Runtime::new().unwrap();
     let (server, _peer) = tokio.block_on(async {
         futures_util::try_join!(
-            Builder::async_io_unix_stream(p0)
+            Builder::unix_stream(p0)
                 .server(guid)
                 .p2p()
                 .runtime(TestRuntime::new())
                 .build(),
-            Builder::async_io_unix_stream(p1).p2p().build(),
+            Builder::unix_stream(p1).p2p().build(),
         )
         .unwrap()
     });

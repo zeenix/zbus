@@ -6,13 +6,11 @@
 //! thread per instance, which lives as long as the process, and its registrations and timers are
 //! async-io's: enough for a test, not a model for a real host.
 
-#[cfg(feature = "p2p")]
-use std::sync::{Mutex, PoisonError};
 use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex, PoisonError},
     task::{Context, Poll},
     time::Duration,
 };
@@ -25,6 +23,9 @@ use super::{Interest, IoSource, traits};
 #[derive(Clone, Debug)]
 pub(crate) struct TestRuntime {
     executor: Arc<Executor<'static>>,
+    // Shared with every clone, so a test that hands one to a connection still sees what the
+    // connection asked of it.
+    blocking_calls: Arc<Mutex<usize>>,
 }
 
 impl TestRuntime {
@@ -38,7 +39,18 @@ impl TestRuntime {
             .spawn(move || futures_lite::future::block_on(runner.run(std::future::pending::<()>())))
             .expect("failed to spawn the test runtime thread");
 
-        Self { executor }
+        Self {
+            executor,
+            blocking_calls: Arc::default(),
+        }
+    }
+
+    /// How many pieces of blocking work have been handed to this runtime.
+    pub(crate) fn blocking_calls(&self) -> usize {
+        *self
+            .blocking_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Whether every task spawned on this runtime is finished or cancelled.
@@ -77,6 +89,11 @@ impl traits::Runtime for TestRuntime {
     where
         T: Send + 'static,
     {
+        *self
+            .blocking_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) += 1;
+
         Box::pin(blocking::unblock(work))
     }
 }
