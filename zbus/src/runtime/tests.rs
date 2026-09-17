@@ -6,7 +6,7 @@ use ntest::timeout;
 
 use super::{
     Runtime,
-    test_runtime::{DefaultBlocking, TestRuntime},
+    test_runtime::{DefaultBlocking, TestRuntime, under_every_runtime},
 };
 
 #[cfg(all(feature = "p2p", feature = "service"))]
@@ -177,6 +177,30 @@ fn the_default_blocking_hook_runs_the_work_on_a_short_lived_thread() {
     while blocking_threads() > before {
         std::thread::yield_now();
     }
+}
+
+/// Blocking work runs even when the future for it is let go of before it is ever polled.
+///
+/// A runtime is free to queue the work rather than start it at once, and letting go of the
+/// future must not take it back out of that queue: work that owns something, such as a process
+/// to reap, would leave it behind for good.
+#[test]
+#[timeout(15000)]
+fn blocking_work_runs_even_when_its_future_is_dropped() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    under_every_runtime(|runtime| async move {
+        let ran = Arc::new(AtomicBool::new(false));
+        let setting = ran.clone();
+
+        drop(runtime.spawn_blocking(move || setting.store(true, Ordering::SeqCst)));
+
+        // The work runs wherever the runtime puts it, so the flag is what says it has, and
+        // nothing here is left to await.
+        while !ran.load(Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+    });
 }
 
 /// The threads of this process that are running work of the default blocking hook.

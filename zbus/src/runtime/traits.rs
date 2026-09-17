@@ -88,6 +88,13 @@ pub trait Runtime: Send + Sync + 'static {
     /// The default runs every call on a thread of its own, which exits with the work and whose
     /// failure to start panics, so a runtime that keeps a pool of threads for blocking work
     /// should hand the work to that pool instead.
+    ///
+    /// Work that has been handed over has to run to completion whether or not the future this
+    /// returns is polled, and whether or not that future is dropped. A thread of its own runs
+    /// on regardless and so does Tokio's pool; a runtime that cancels a blocking task when its
+    /// handle drops has to detach it here instead. Work that owns something, a process to reap
+    /// or a file to close, is otherwise lost with the future of a connection attempt that was
+    /// cancelled or a connection let go of while it is under way.
     fn spawn_blocking<T>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,

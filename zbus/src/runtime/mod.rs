@@ -45,7 +45,7 @@ mod unblock;
 ))]
 pub(crate) mod process;
 
-use std::{future::Future, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use erased::ErasedRuntime;
 
@@ -140,16 +140,23 @@ impl Runtime {
     }
 
     /// Runs `work` off the event loop, on whatever this runtime keeps for blocking work.
-    pub(crate) async fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> T
+    ///
+    /// The work is handed to the runtime here and not on the first poll, and the future this
+    /// hands back is the runtime's own and borrows nothing from here: whoever wants the outcome
+    /// awaits it, and whoever does not may drop it, with the work under way either way.
+    pub(crate) fn spawn_blocking<T>(
+        &self,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Pin<Box<dyn Future<Output = T> + Send + 'static>>
     where
         T: Send + 'static,
     {
         match self {
             #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
+            Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             #[cfg(feature = "tokio")]
-            Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
-            Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work).await,
+            Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work),
+            Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work),
         }
     }
 }
