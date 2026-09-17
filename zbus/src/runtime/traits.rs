@@ -5,7 +5,8 @@
 //! implements [`Runtime`] and is handed to [`Builder::runtime`]. Implementing the trait takes a
 //! readiness registration, a timer and a task handle, all of which every async runtime already
 //! has, together with a hook for blocking work. Both built-in backends are implementations of
-//! these traits, picked by the `async-io` and `tokio` features.
+//! these traits, picked by the `async-io` and `tokio` features, and the polling-based runtime in
+//! zbus's integration tests is a worked example of the whole contract on a single thread.
 //!
 //! The async locks a connection holds are not part of the trait: zbus takes those from
 //! `async-lock` or from Tokio, whichever of the `async-lock` and `tokio` cargo features is on, so

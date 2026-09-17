@@ -2100,6 +2100,7 @@ dependencies = [
  "libc",
  "ntest",
  "ordered-stream",
+ "polling",
  "rustix",
  "serde",
  "serde_bytes",

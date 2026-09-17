@@ -65,6 +65,7 @@ xdg-home = "1.1.0"
 tracing = "0.1.40"
 blocking = "1.6.0"
 async-task = "4.7.1"
+polling = "3.11.0"
 tokio = "1.37.0"
 vsock = "0.5.0"
 # `all` is what gates socket2's VSOCK address family behind its own feature flag.
