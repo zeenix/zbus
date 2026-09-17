@@ -1,16 +1,14 @@
-// Feature-independent stream types for the `async_io_*_stream` builders.
-#[cfg(feature = "async-io")]
-use std::net::TcpStream as AsyncIoTcpStream;
-#[cfg(all(unix, feature = "async-io"))]
-use std::os::unix::net::UnixStream as AsyncIoUnixStream;
-#[cfg(all(windows, feature = "async-io"))]
-use uds_windows::UnixStream as AsyncIoUnixStream;
+// The stream constructors take an owned socket of the platform's own type.
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+#[cfg(windows)]
+use uds_windows::UnixStream;
 
 #[cfg(feature = "p2p")]
 use crate::Guid;
 use crate::{
     Error, Result, address::Address, blocking::Connection, conn::AuthMechanism,
-    connection::socket::BoxedSplit, names::WellKnownName, utils::block_on,
+    connection::socket::BoxedSplit, names::WellKnownName, runtime::traits, utils::block_on,
 };
 #[cfg(feature = "service")]
 use crate::{ObjectPath, object_server::Interface};
@@ -85,56 +83,27 @@ impl<'a> Builder<'a> {
         Self(crate::connection::Builder::address(address))
     }
 
-    /// Create a builder for a connection that will use the given unix stream with `async-io`.
+    /// Create a builder for a connection over `stream`.
     ///
     /// The stream is a [`std::os::unix::net::UnixStream`] (or [`uds_windows::UnixStream`] on
-    /// Windows). Enabling the `tokio` feature does not change the stream type accepted by this
-    /// method. To use a [Tokio Unix stream][tokio-unix] instead, see `tokio_unix_stream`.
+    /// Windows), and the connection takes ownership of it: it is switched to non-blocking mode
+    /// and driven by the runtime the connection is built on. A stream of another kind is handed
+    /// over as the socket it wraps, which is `into_std()` for a Tokio stream.
     ///
     /// [`uds_windows::UnixStream`]: https://docs.rs/uds_windows/latest/uds_windows/struct.UnixStream.html
-    /// [tokio-unix]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html
-    #[cfg(all(any(unix, windows), feature = "async-io"))]
-    pub fn async_io_unix_stream(stream: AsyncIoUnixStream) -> Self {
-        Self(crate::connection::Builder::async_io_unix_stream(stream))
+    #[cfg(any(unix, windows))]
+    pub fn unix_stream(stream: UnixStream) -> Self {
+        Self(crate::connection::Builder::unix_stream(stream))
     }
 
-    /// Create a builder for a connection that will use the given unix stream with Tokio.
+    /// Create a builder for a connection over `stream`.
     ///
-    /// The stream is a [`tokio::net::UnixStream`]. To use a
-    /// [`std::os::unix::net::UnixStream`] instead, see `async_io_unix_stream`.
-    ///
-    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
-    ///
-    /// This method is not available on Windows because Tokio does not currently [support Unix
-    /// domain sockets there][tuds].
-    ///
-    /// [tuds]: https://github.com/tokio-rs/tokio/issues/2201
-    #[cfg(all(unix, feature = "tokio"))]
-    pub fn tokio_unix_stream(stream: tokio::net::UnixStream) -> Self {
-        Self(crate::connection::Builder::tokio_unix_stream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given TCP stream with `async-io`.
-    ///
-    /// The stream is a [`std::net::TcpStream`]. Enabling the `tokio` feature does not change the
-    /// stream type accepted by this method. To use a [Tokio TCP stream][tokio-tcp] instead, see
-    /// `tokio_tcp_stream`.
-    ///
-    /// [tokio-tcp]: https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html
-    #[cfg(feature = "async-io")]
-    pub fn async_io_tcp_stream(stream: AsyncIoTcpStream) -> Self {
-        Self(crate::connection::Builder::async_io_tcp_stream(stream))
-    }
-
-    /// Create a builder for a connection that will use the given TCP stream with Tokio.
-    ///
-    /// The stream is a [`tokio::net::TcpStream`]. To use a [`std::net::TcpStream`] instead, see
-    /// `async_io_tcp_stream`.
-    ///
-    /// The Tokio runtime that owns the stream must remain alive for the connection's lifetime.
-    #[cfg(feature = "tokio")]
-    pub fn tokio_tcp_stream(stream: tokio::net::TcpStream) -> Self {
-        Self(crate::connection::Builder::tokio_tcp_stream(stream))
+    /// The stream is a [`std::net::TcpStream`], and the connection takes ownership of it: it is
+    /// switched to non-blocking mode and driven by the runtime the connection is built on. A
+    /// stream of another kind is handed over as the socket it wraps, which is `into_std()` for a
+    /// Tokio stream.
+    pub fn tcp_stream(stream: std::net::TcpStream) -> Self {
+        Self(crate::connection::Builder::tcp_stream(stream))
     }
 
     /// Create a builder for a connection that will use the given pre-authenticated socket.
@@ -308,6 +277,13 @@ impl<'a> Builder<'a> {
     /// receive an answer from a service in time.
     pub fn method_timeout(self, timeout: std::time::Duration) -> Self {
         Self(self.0.method_timeout(timeout))
+    }
+
+    /// Run the connection on `runtime`.
+    ///
+    /// See [`crate::connection::Builder::runtime`] for what the connection takes from it.
+    pub fn runtime(self, runtime: impl traits::Runtime) -> Self {
+        Self(self.0.runtime(runtime))
     }
 
     /// Build the connection, consuming the builder.

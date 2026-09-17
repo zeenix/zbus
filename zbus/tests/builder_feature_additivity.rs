@@ -1,57 +1,36 @@
 #![cfg(feature = "comms")]
 
-//! Compile-time checks that enabling another runtime feature does not replace a stream builder.
+//! Compile-time checks that enabling a runtime feature does not change what a stream builder
+//! takes: every one of them takes the socket the platform owns, whichever runtime drives it.
 
 use zbus::connection::Builder;
 
-#[cfg(all(unix, feature = "async-io"))]
-type AsyncIoUnixStream = std::os::unix::net::UnixStream;
-#[cfg(all(windows, feature = "async-io"))]
-type AsyncIoUnixStream = uds_windows::UnixStream;
+#[cfg(unix)]
+type PlatformUnixStream = std::os::unix::net::UnixStream;
+#[cfg(windows)]
+type PlatformUnixStream = uds_windows::UnixStream;
 
 #[test]
-fn unix_stream_builder_signatures_are_additive() {
-    #[cfg(all(any(unix, windows), feature = "async-io"))]
+fn a_unix_stream_builder_takes_the_platform_stream() {
+    #[cfg(any(unix, windows))]
     {
-        let _: fn(AsyncIoUnixStream) -> Builder<'static> = Builder::async_io_unix_stream;
+        let _: fn(PlatformUnixStream) -> Builder<'static> = Builder::unix_stream;
         #[cfg(feature = "blocking-api")]
-        let _: fn(AsyncIoUnixStream) -> zbus::blocking::connection::Builder<'static> =
-            zbus::blocking::connection::Builder::async_io_unix_stream;
-    }
-
-    #[cfg(all(unix, feature = "tokio"))]
-    {
-        let _: fn(tokio::net::UnixStream) -> Builder<'static> = Builder::tokio_unix_stream;
-        #[cfg(feature = "blocking-api")]
-        let _: fn(tokio::net::UnixStream) -> zbus::blocking::connection::Builder<'static> =
-            zbus::blocking::connection::Builder::tokio_unix_stream;
+        let _: fn(PlatformUnixStream) -> zbus::blocking::connection::Builder<'static> =
+            zbus::blocking::connection::Builder::unix_stream;
     }
 }
 
 #[test]
-fn tcp_stream_builder_signatures_are_additive() {
-    #[cfg(feature = "async-io")]
-    {
-        let _: fn(std::net::TcpStream) -> Builder<'static> = Builder::async_io_tcp_stream;
-        #[cfg(feature = "blocking-api")]
-        let _: fn(std::net::TcpStream) -> zbus::blocking::connection::Builder<'static> =
-            zbus::blocking::connection::Builder::async_io_tcp_stream;
-    }
-
-    #[cfg(feature = "tokio")]
-    {
-        let _: fn(tokio::net::TcpStream) -> Builder<'static> = Builder::tokio_tcp_stream;
-        #[cfg(feature = "blocking-api")]
-        let _: fn(tokio::net::TcpStream) -> zbus::blocking::connection::Builder<'static> =
-            zbus::blocking::connection::Builder::tokio_tcp_stream;
-    }
+fn a_tcp_stream_builder_takes_the_std_stream() {
+    let _: fn(std::net::TcpStream) -> Builder<'static> = Builder::tcp_stream;
+    #[cfg(feature = "blocking-api")]
+    let _: fn(std::net::TcpStream) -> zbus::blocking::connection::Builder<'static> =
+        zbus::blocking::connection::Builder::tcp_stream;
 }
 
 #[test]
-fn vsock_stream_builder_signatures_are_additive() {
+fn a_vsock_stream_builder_takes_the_vsock_stream() {
     #[cfg(feature = "vsock")]
-    let _: fn(vsock::VsockStream) -> Builder<'static> = Builder::async_io_vsock_stream;
-
-    #[cfg(feature = "tokio-vsock")]
-    let _: fn(tokio_vsock::VsockStream) -> Builder<'static> = Builder::tokio_vsock_stream;
+    let _: fn(vsock::VsockStream) -> Builder<'static> = Builder::vsock_stream;
 }

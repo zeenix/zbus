@@ -1,12 +1,13 @@
 //! The client-side proxy API.
 
 use crate::{
-    AsyncDrop, Connection, Error, Executor, MatchRule, MessageStream, ObjectPath, OwnedMatchRule,
-    OwnedValue, Result, Str, Task, Value, as_value,
+    AsyncDrop, Connection, Error, MatchRule, MessageStream, ObjectPath, OwnedMatchRule, OwnedValue,
+    Result, Str, Value, as_value,
     fdo::{self, IntrospectableProxy, NameOwnerChanged, PropertiesChangedStream, PropertiesProxy},
     log::{Instrument, debug, info_span, trace, warn},
     message::{Flags, Message, Sequence, Type},
     names::{BusName, InterfaceName, MemberName, UniqueName},
+    runtime::{Runtime, Task},
 };
 use enumflags2::{BitFlags, bitflags};
 use event_listener::{Event, EventListener};
@@ -263,7 +264,7 @@ impl PropertiesCache {
     fn new(
         proxy: PropertiesProxy<'static>,
         interface: InterfaceName<'static>,
-        executor: &Executor<'_>,
+        runtime: &Runtime,
         uncached_properties: HashSet<crate::Str<'static>>,
     ) -> (Arc<Self>, Task<()>) {
         let cache = Arc::new(PropertiesCache {
@@ -315,7 +316,7 @@ impl PropertiesCache {
             }
         }
         .instrument(info_span!("{}", task_name));
-        let task = executor.spawn(proxy_caching, &task_name);
+        let task = runtime.spawn(&task_name, proxy_caching);
 
         (cache, task)
     }
@@ -688,9 +689,9 @@ impl<'a> Proxy<'a> {
                 .iter()
                 .map(|s| s.to_owned())
                 .collect();
-            let executor = self.connection().executor();
+            let runtime = self.connection().runtime();
 
-            PropertiesCache::new(proxy, interface, executor, uncached_properties)
+            PropertiesCache::new(proxy, interface, runtime, uncached_properties)
         });
 
         Some(cache)
@@ -1374,7 +1375,12 @@ enum Either<L, R> {
     Right(R),
 }
 
-#[cfg(all(test, feature = "service"))]
+// Every test here talks to the session bus, which needs a backend to connect to.
+#[cfg(all(
+    test,
+    feature = "service",
+    any(feature = "async-io", feature = "tokio")
+))]
 mod tests {
     use super::*;
     use crate::{connection, interface, object_server::SignalEmitter, proxy, utils::block_on};
@@ -1534,7 +1540,7 @@ mod tests {
                     sleep(Duration::from_millis(5)).await;
                 }
             };
-            server_conn.executor().spawn(server_fut, "server_task")
+            server_conn.runtime().spawn("server_task", server_fut)
         };
 
         let signal_fut = async {

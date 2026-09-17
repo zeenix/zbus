@@ -11,7 +11,7 @@ use crate::{
     log::{Instrument, debug, trace, trace_span},
     message::{Header, Message},
     names::InterfaceName,
-    runtime::async_lock::RwLock,
+    runtime::locks::RwLock,
 };
 #[cfg(feature = "object-manager")]
 use crate::{Value, fdo::ObjectManager};
@@ -496,12 +496,13 @@ impl ObjectServer {
         };
 
         if with_spawn {
-            let executor = connection.executor().clone();
             let task_name = format!("`{msg}` method dispatcher");
+            let runtime = connection.runtime().clone();
             let connection = connection.clone();
             let msg = msg.clone();
-            executor
+            runtime
                 .spawn(
+                    &task_name,
                     async move {
                         let server = connection.object_server();
                         let hdr = msg.header();
@@ -520,7 +521,6 @@ impl ObjectServer {
                         }
                     }
                     .instrument(trace_span!("{}", task_name)),
-                    &task_name,
                 )
                 .detach();
             Ok(())

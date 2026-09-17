@@ -33,8 +33,6 @@ use windows_sys::Win32::{
 };
 
 use crate::Address;
-#[cfg(feature = "async-io")]
-use uds_windows::UnixStream;
 
 struct Mutex(OwnedHandle);
 
@@ -224,15 +222,6 @@ pub fn socket_addr_get_pid(addr: &SocketAddr) -> Result<u32, Error> {
     Err(Error::other("PID of TCP address not found"))
 }
 
-/// Get the process ID of the connected peer.
-#[cfg(any(test, feature = "async-io"))]
-pub fn tcp_stream_get_peer_pid(stream: &std::net::TcpStream) -> Result<u32, Error> {
-    let peer_addr = stream.peer_addr()?;
-
-    socket_addr_get_pid(&peer_addr)
-}
-
-#[cfg(feature = "async-io")]
 fn last_err() -> std::io::Error {
     use windows_sys::Win32::Networking::WinSock::WSAGetLastError;
 
@@ -241,9 +230,9 @@ fn last_err() -> std::io::Error {
 }
 
 /// Get the process ID of the connected peer.
-#[cfg(feature = "async-io")]
-pub fn unix_stream_get_peer_pid(stream: &UnixStream) -> Result<u32, Error> {
-    use std::os::windows::io::AsRawSocket;
+pub fn unix_stream_get_peer_pid(
+    stream: &impl std::os::windows::io::AsRawSocket,
+) -> Result<u32, Error> {
     use windows_sys::Win32::Networking::WinSock::{IOC_OUT, IOC_VENDOR, SOCKET_ERROR, WSAIoctl};
 
     macro_rules! _WSAIOR {
@@ -349,7 +338,7 @@ mod tests {
         let client = std::net::TcpStream::connect(addr).unwrap();
         let _server = listener.incoming().next().unwrap().unwrap();
 
-        let pid = tcp_stream_get_peer_pid(&client).unwrap();
+        let pid = socket_addr_get_pid(&client.peer_addr().unwrap()).unwrap();
         let process_token = ProcessToken::open(if pid != 0 { Some(pid) } else { None }).unwrap();
         let sid = process_token.sid().unwrap();
         assert!(!sid.is_empty());

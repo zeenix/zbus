@@ -1,4 +1,5 @@
-#![cfg(feature = "comms")]
+// Everything here talks to a bus, which needs one of the backends to connect to.
+#![cfg(all(feature = "comms", any(feature = "async-io", feature = "tokio")))]
 
 use std::collections::HashMap;
 
@@ -374,7 +375,7 @@ async fn ibus_connection() {
 
     match result {
         Ok(_) => return,
-        Err(zbus::Error::Address(msg)) if msg.contains("Failed to execute ibus") => {
+        Err(zbus::Error::Address(msg)) if msg.contains("The ibus command failed") => {
             // IBus not available, use mock.
         }
         Err(e) => panic!("Unexpected error: {}", e),

@@ -1,13 +1,15 @@
-#![cfg(all(feature = "proxy", feature = "service"))]
+#![cfg(all(
+    feature = "proxy",
+    feature = "service",
+    any(feature = "async-io", feature = "tokio")
+))]
 #![allow(clippy::disallowed_names)]
 
 mod iface_and_proxy;
 
-#[cfg(all(unix, not(feature = "tokio"), feature = "p2p"))]
+#[cfg(all(unix, feature = "p2p"))]
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
-#[cfg(all(unix, feature = "tokio", feature = "p2p"))]
-use tokio::net::UnixStream;
 
 use ntest::timeout;
 use test_log::test;
@@ -59,53 +61,23 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
         {
             let (p0, p1) = UnixStream::pair().unwrap();
 
-            #[cfg(not(feature = "tokio"))]
-            let builders = (
-                connection::Builder::async_io_unix_stream(p0)
-                    .server(guid)
-                    .p2p(),
-                connection::Builder::async_io_unix_stream(p1).p2p(),
-            );
-            #[cfg(feature = "tokio")]
-            let builders = (
-                connection::Builder::tokio_unix_stream(p0)
-                    .server(guid)
-                    .p2p(),
-                connection::Builder::tokio_unix_stream(p1).p2p(),
-            );
-
-            builders
+            (
+                connection::Builder::unix_stream(p0).server(guid).p2p(),
+                connection::Builder::unix_stream(p1).p2p(),
+            )
         }
 
         #[cfg(windows)]
         {
-            #[cfg(not(feature = "tokio"))]
-            {
-                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-                let addr = listener.local_addr().unwrap();
-                let p1 = std::net::TcpStream::connect(addr).unwrap();
-                let p0 = listener.incoming().next().unwrap().unwrap();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let p1 = std::net::TcpStream::connect(addr).unwrap();
+            let p0 = listener.incoming().next().unwrap().unwrap();
 
-                (
-                    connection::Builder::async_io_tcp_stream(p0)
-                        .server(guid)
-                        .p2p(),
-                    connection::Builder::async_io_tcp_stream(p1).p2p(),
-                )
-            }
-
-            #[cfg(feature = "tokio")]
-            {
-                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let addr = listener.local_addr().unwrap();
-                let p1 = tokio::net::TcpStream::connect(addr).await.unwrap();
-                let p0 = listener.accept().await.unwrap().0;
-
-                (
-                    connection::Builder::tokio_tcp_stream(p0).server(guid).p2p(),
-                    connection::Builder::tokio_tcp_stream(p1).p2p(),
-                )
-            }
+            (
+                connection::Builder::tcp_stream(p0).server(guid).p2p(),
+                connection::Builder::tcp_stream(p1).p2p(),
+            )
         }
     } else {
         session_conns_build()
@@ -139,9 +111,7 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     debug!("Service connection created: {:?}", service_conn);
 
     let listen = event.listen();
-    let child = client_conn
-        .executor()
-        .spawn(my_iface_test(client_conn.clone(), event), "client_task");
+    let child = client_conn.spawn("client_task", my_iface_test(client_conn.clone(), event));
     debug!("Child task spawned.");
     // Wait for the listener to be ready
     listen.await;
@@ -217,7 +187,7 @@ async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
     drop(client_conn);
     debug!("Connection closed.");
 
-    let val = child.await.unwrap();
+    let val = child.await.expect("the runtime kept the client task");
     debug!("Client task done.");
     assert_eq!(val.unwrap(), 2);
 

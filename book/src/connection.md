@@ -42,7 +42,7 @@ For example to create a bus-less peer-to-peer connection on Unix, you can do:
 ```rust,noplayground
 # #[tokio::main]
 # async fn main() -> zbus::Result<()> {
-# #[cfg(all(unix, feature = "async-io"))]
+# #[cfg(unix)]
 # {
 use std::os::unix::net::UnixStream;
 use zbus::{connection::Builder, Guid};
@@ -52,9 +52,9 @@ let (p0, p1) = UnixStream::pair().unwrap();
 # #[allow(unused)]
 let (client_conn, server_conn) = futures_util::try_join!(
     // Client
-    Builder::async_io_unix_stream(p0).p2p().build(),
+    Builder::unix_stream(p0).p2p().build(),
     // Server
-    Builder::async_io_unix_stream(p1).server(guid).p2p().build(),
+    Builder::unix_stream(p1).server(guid).p2p().build(),
 )?;
 # }
 #
@@ -62,14 +62,81 @@ let (client_conn, server_conn) = futures_util::try_join!(
 # }
 ```
 
-`async_io_unix_stream` takes a [`std::os::unix::net::UnixStream`]. With `tokio` enabled you can
-instead pass a [`tokio::net::UnixStream`] to `tokio_unix_stream`.
+`unix_stream` takes a [`std::os::unix::net::UnixStream`], whichever runtime the connection ends
+up on. A stream of another kind is handed over as the socket it wraps: `into_std()` for a
+[`tokio::net::UnixStream`].
 
 [`std::os::unix::net::UnixStream`]: https://doc.rust-lang.org/std/os/unix/net/struct.UnixStream.html
 [`tokio::net::UnixStream`]: https://docs.rs/tokio/latest/tokio/net/struct.UnixStream.html
 
 **Note:** the `p2p` and `server` methods of `connection::Builder` are only available when `p2p`
 cargo feature of `zbus` is enabled.
+
+## Runtimes
+
+zbus ships no async executor and no reactor of its own. A connection takes its readiness
+notifications, timers, spawned tasks and blocking work from one runtime, chosen once when it is
+built. Its async locks are a separate choice, made by cargo feature: `async-lock` (which the
+default `async-io` feature enables) or `tokio`.
+
+### Built-in backends
+
+With the `async-io` cargo feature (a default feature), a connection runs on the `async-io`
+backend, unless the `tokio` feature is also enabled and a Tokio runtime is current on the thread
+that builds it, in which case it runs on Tokio instead. With only `tokio` enabled, a connection
+always runs on the Tokio runtime that is current when it is built; building one from a thread
+with no such runtime fails with `Error::Unsupported`.
+
+A build with neither feature depends on no `tokio` crate, and on nothing the `async-io` feature
+owns bar one: zbus's own locks come from `async-lock` or from `tokio`, so such a build has to name
+one of the two, and `async-lock` is that exception — a crate of locks alone, with no thread and no
+reactor of its own. Every connection in the build needs an explicit runtime, given through
+[`Builder::runtime`].
+
+### Supplying your own runtime
+
+[`Builder::runtime`] takes any implementation of [`traits::Runtime`], for an application whose
+event loop is neither backend above:
+
+```rust,no_run
+use zbus::{Connection, Result, connection::Builder, runtime::traits::Runtime};
+
+async fn connect(runtime: impl Runtime) -> Result<Connection> {
+    Builder::session().runtime(runtime).build().await
+}
+```
+
+An implementation supplies readiness for a registered socket or pipe (through
+[`PollIo::poll_io`]), a timer, and spawning a future to run in the background. Every zbus
+operation goes through these, except a handful of calls that have no async form: the host-name
+lookup for a `tcp:` address, reading the file a `nonce-tcp:` address names, the
+supplementary-group lookup behind a peer-credential check, and waiting for the helper process of
+a `unixexec:`, `ibus:` or `launchd:` address to exit. These go through [`spawn_blocking`], whose
+default runs each one on a thread of its own that exits once the call returns; a runtime that
+keeps a pool of threads for blocking work should override it to use that pool instead. The wait
+for a helper process starts once the connection has let go of the pipe it reads that process's
+output from, and occupies a worker until the program is gone: no time at all for one that has
+already exited, and until its input ends for a `unixexec:` program that is still running — one
+that ignores the end of its input keeps that worker.
+
+zbus's integration tests include a reference runtime: a single-threaded one built on the
+`polling` crate, whose run loop drives a connection's readiness, timers and tasks without
+starting a thread of its own. The build it runs in enables `async-lock` for zbus's locks.
+
+The blocking API needs one thing of such a runtime: its loop has to run on a thread other than
+the one calling into `zbus::blocking`. A blocking call made from the thread the loop itself runs
+on deadlocks, because the connection it waits on only makes progress while that loop runs — which
+it cannot do until the call it is blocked in returns.
+
+### Bringing your own socket
+
+Besides an address, a connection can be built directly over a socket you already have.
+[`Builder::unix_stream`], [`Builder::tcp_stream`] and [`Builder::vsock_stream`] each take an
+owned, platform-native stream and register it on the connection's runtime; a stream of another
+kind is handed over as the socket it wraps, such as `into_std()` for a Tokio stream or
+`into_inner()` for an `async-io` one. [`Builder::socket`] and [`Builder::authenticated_socket`]
+take any other implementation of `Socket`, for a transport that is not a file descriptor at all,
+such as an in-process channel.
 
 [NetworkManager]: https://developer.gnome.org/NetworkManager/stable/spec.html
 [BlueZ]: https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc
@@ -78,5 +145,14 @@ cargo feature of `zbus` is enabled.
 [`MessageStream`]: https://docs.rs/zbus/latest/zbus/struct.MessageStream.html
 [`connection::Builder::address`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.address
 [dspec]: https://dbus.freedesktop.org/doc/dbus-specification.html#addresses
+[`Builder::runtime`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.runtime
+[`traits::Runtime`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html
+[`PollIo::poll_io`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.PollIo.html#tymethod.poll_io
+[`spawn_blocking`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#method.spawn_blocking
+[`Builder::unix_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.unix_stream
+[`Builder::tcp_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.tcp_stream
+[`Builder::vsock_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.vsock_stream
+[`Builder::socket`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.socket
+[`Builder::authenticated_socket`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.authenticated_socket
 
 [^bus-less]: Unless you implemented them, none of the bus methods will exist.

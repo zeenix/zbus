@@ -58,12 +58,18 @@ pub use stats::StatsProxy;
 mod tests {
     use std::sync::Arc;
 
-    use crate::{DBusError, Error, fdo, interface, message::Message, names::WellKnownName};
+    use crate::{DBusError, Error, fdo, message::Message};
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
+    use crate::{interface, names::WellKnownName};
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     use futures_util::StreamExt;
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     use ntest::timeout;
     use test_log::test;
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     use tokio::runtime;
 
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     use super::PeerProxy;
 
     #[test]
@@ -93,6 +99,7 @@ mod tests {
         assert_eq!(e, fdo::Error::TimedOut("so long".to_string()));
     }
 
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     #[test]
     #[timeout(15000)]
     fn signal() {
@@ -107,6 +114,7 @@ mod tests {
             .block_on(test_signal());
     }
 
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     async fn test_signal() {
         let conn = crate::Connection::session().await.unwrap();
         let proxy = fdo::DBusProxy::new(&conn).await.unwrap();
@@ -163,14 +171,20 @@ mod tests {
             });
     }
 
-    #[cfg(feature = "object-manager")]
+    #[cfg(all(
+        feature = "object-manager",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     #[test]
     #[timeout(15000)]
     fn no_object_manager_signals_before_hello() {
         crate::block_on(no_object_manager_signals_before_hello_async());
     }
 
-    #[cfg(feature = "object-manager")]
+    #[cfg(all(
+        feature = "object-manager",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     async fn no_object_manager_signals_before_hello_async() {
         // We were emitting `InterfacesAdded` signals before `Hello` was called, which is wrong and
         // results in us getting disconnected by the bus. This test case ensures we don't do that
@@ -227,6 +241,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     #[test]
     #[timeout(15000)]
     fn peer_on_arbitrary_path() {
@@ -242,6 +257,7 @@ mod tests {
     ///
     /// This test verifies that Ping and GetMachineId work on paths that haven't been
     /// registered via ObjectServer::at.
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     async fn peer_on_arbitrary_path_async() {
         // Create a service with only a registered path at /registered
         struct TestObj;

@@ -1,4 +1,10 @@
-#![cfg(all(feature = "unixexec", not(target_os = "windows")))]
+// The connection here is built without a runtime of its own, which only a build with a backend
+// can do.
+#![cfg(all(
+    feature = "unixexec",
+    not(target_os = "windows"),
+    any(feature = "async-io", feature = "tokio")
+))]
 
 use ntest::timeout;
 use test_log::test;
@@ -11,10 +17,20 @@ fn unixexec_connection_async() {
     block_on(test_unixexec_connection()).unwrap();
 }
 
+/// A bus connection over the standard I/O of `systemd-stdio-bridge`.
+///
+/// A machine without that program has nothing to say about this, so the test passes there.
 async fn test_unixexec_connection() -> Result<()> {
-    let connection = Builder::address("unixexec:path=systemd-stdio-bridge")
+    let connection = match Builder::address("unixexec:path=systemd-stdio-bridge")
         .build()
-        .await?;
+        .await
+    {
+        Ok(connection) => connection,
+        Err(zbus::Error::Connection(e, _)) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
 
     match connection
         .call_method(
@@ -32,5 +48,42 @@ async fn test_unixexec_connection() -> Result<()> {
         _ => panic!(),
     };
 
+    // `kept` holds the connection open, so that only `close()` can be what closed the helper's
+    // input.
+    let kept = connection.clone();
+    connection.close().await?;
+    #[cfg(target_os = "linux")]
+    wait_for_the_helper_to_go();
+    drop(kept);
+
     Ok(())
+}
+
+/// Waits until this process has no children left.
+///
+/// A helper that was told to exit and then waited for leaves the process table for good, while
+/// one that was told nothing stays in it running and one that was never waited for stays in it
+/// as a zombie. So an empty list is both halves of what closing a connection promises, and the
+/// test's own timeout is what bounds the wait for it.
+#[cfg(target_os = "linux")]
+fn wait_for_the_helper_to_go() {
+    while !children().is_empty() {
+        std::thread::yield_now();
+    }
+}
+
+/// The process ids of this process's children, as every one of its threads reports them.
+#[cfg(target_os = "linux")]
+fn children() -> Vec<String> {
+    std::fs::read_dir("/proc/self/task")
+        .expect("a process on Linux can list its own threads")
+        .filter_map(|thread| thread.ok())
+        .filter_map(|thread| std::fs::read_to_string(thread.path().join("children")).ok())
+        .flat_map(|children| {
+            children
+                .split_whitespace()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }

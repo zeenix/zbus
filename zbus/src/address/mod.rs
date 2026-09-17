@@ -11,7 +11,7 @@
 
 pub mod transport;
 
-use crate::{Error, Guid, OwnedGuid, Result};
+use crate::{Error, Guid, OwnedGuid, Result, runtime::Runtime};
 #[cfg(all(unix, not(target_os = "macos")))]
 use rustix::process::geteuid;
 use std::{collections::HashMap, env, str::FromStr};
@@ -55,10 +55,10 @@ impl Address {
     }
 
     #[cfg_attr(any(target_os = "macos", windows), async_recursion::async_recursion)]
-    pub(crate) async fn connect(self) -> Result<Stream> {
+    pub(crate) async fn connect(self, runtime: &Runtime) -> Result<Stream> {
         // FIXME: Avoid the unconditional clone of the whole `Address`.
         let address = self.clone();
-        self.transport.connect(address).await
+        self.transport.connect(address, runtime).await
     }
 
     /// Get the address for the session socket respecting the `DBUS_SESSION_BUS_ADDRESS` environment
@@ -201,7 +201,10 @@ mod tests {
     use crate::address::transport::Unixexec;
     #[cfg(windows)]
     use crate::address::transport::{Autolaunch, AutolaunchScope};
-    use crate::address::transport::{Unix, UnixSocket};
+    use crate::{
+        address::transport::{Unix, UnixSocket},
+        runtime::test_runtime::under_every_runtime,
+    };
     use std::str::FromStr;
     use test_log::test;
 
@@ -305,7 +308,7 @@ mod tests {
             Transport::Ibus(crate::address::transport::Ibus::new()).into(),
         );
 
-        #[cfg(all(any(feature = "vsock", feature = "tokio-vsock"), feature = "p2p"))]
+        #[cfg(all(feature = "vsock", feature = "p2p"))]
         {
             let guid = crate::Guid::generate();
             assert_eq!(
@@ -408,7 +411,7 @@ mod tests {
             "ibus:"
         );
 
-        #[cfg(all(any(feature = "vsock", feature = "tokio-vsock"), feature = "p2p"))]
+        #[cfg(all(feature = "vsock", feature = "p2p"))]
         {
             let guid = crate::Guid::generate();
             assert_eq!(
@@ -422,14 +425,50 @@ mod tests {
     }
 
     #[test]
+    #[ntest::timeout(15000)]
     fn connect_tcp() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let addr = Address::from_str(&format!("tcp:host=localhost,port={port}")).unwrap();
-        crate::utils::block_on(async { addr.connect().await }).unwrap();
+
+        under_every_runtime(|runtime| {
+            let addr = addr.clone();
+
+            async move {
+                addr.connect(&runtime).await.unwrap();
+            }
+        });
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ntest::timeout(15000)]
+    fn connect_abstract_unix() {
+        use std::os::{
+            linux::net::SocketAddrExt,
+            unix::net::{SocketAddr, UnixListener},
+        };
+
+        let name = format!("zbus-abstract-{}", std::process::id());
+        // The listener is bound through the standard library, so the name in the `abstract=`
+        // address is interpreted by something other than the code under test.
+        let listener =
+            UnixListener::bind_addr(&SocketAddr::from_abstract_name(&name).unwrap()).unwrap();
+        let addr = Address::from_str(&format!("unix:abstract={name}")).unwrap();
+
+        under_every_runtime(|runtime| {
+            let addr = addr.clone();
+            let listener = &listener;
+
+            async move {
+                addr.connect(&runtime).await.unwrap();
+                listener.accept().unwrap();
+            }
+        });
     }
 
     #[test]
+    #[ntest::timeout(15000)]
     fn connect_nonce_tcp() {
         struct PercentEncoded<'a>(&'a [u8]);
 
@@ -439,7 +478,7 @@ mod tests {
             }
         }
 
-        use std::io::Write;
+        use std::io::{Read, Write};
 
         const TEST_COOKIE: &[u8] = b"VERILY SECRETIVE";
 
@@ -459,28 +498,21 @@ mod tests {
         ))
         .unwrap();
 
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        under_every_runtime(|runtime| {
+            let addr = addr.clone();
+            let listener = &listener;
 
-        std::thread::spawn(move || {
-            use std::io::Read;
+            async move {
+                // The nonce is on its way by the time the connection is handed over, so both
+                // calls below find what they are after without waiting for it.
+                addr.connect(&runtime).await.unwrap();
 
-            let mut client = listener.incoming().next().unwrap().unwrap();
+                let mut client = listener.accept().unwrap().0;
+                let mut nonce = [0u8; 16];
+                client.read_exact(&mut nonce).unwrap();
 
-            let mut buf = [0u8; 16];
-            client.read_exact(&mut buf).unwrap();
-
-            sender.send(buf == TEST_COOKIE).unwrap();
+                assert_eq!(&nonce[..], TEST_COOKIE, "the server saw a different nonce");
+            }
         });
-
-        crate::utils::block_on(addr.connect()).unwrap();
-
-        let saw_cookie = receiver
-            .recv_timeout(std::time::Duration::from_millis(100))
-            .expect("nonce file content hasn't been received by server thread in time");
-
-        assert!(
-            saw_cookie,
-            "nonce file content has been received, but was invalid"
-        );
     }
 }

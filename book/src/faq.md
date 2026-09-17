@@ -151,10 +151,9 @@ as a variant.
 
 ## Why do async tokio API calls from interface methods not work?
 
-Many of the tokio (and tokio-based) APIs assume the tokio runtime to be driving the async machinery
-and since by default, zbus runs the `ObjectServer` in its own internal runtime thread, it's not
-possible to use these APIs from interface methods. Moreover, by default zbus relies on `async-io`
-crate to communicate with the bus, which uses its own thread.
+Many of the tokio (and tokio-based) APIs assume the tokio runtime to be driving the async machinery,
+and by default zbus drives a connection's tasks and I/O on a thread of its own (the `async-io`
+backend), so it's not possible to use these APIs from interface methods.
 
 Not to worry, though! You can enable tight integration between tokio and zbus by enabling `tokio`
 feature:
@@ -166,17 +165,19 @@ feature:
 zbus = { version = "6", default-features = false, features = ["tokio"] }
 ```
 
-Disabling `async-io` is recommended but not required. When both features are enabled, zbus picks the
-runtime at run time: it uses tokio when a tokio runtime is driving the current thread, and falls back
-to `async-io` otherwise. This keeps the features additive, so an `async-io`-based application keeps
-working even when another crate in the workspace enables zbus's `tokio` feature.
+Disabling `async-io` is recommended but not required. With both features enabled, the backend is
+chosen once per connection, when it is built: Tokio when a Tokio runtime is current on the thread
+that builds it, `async-io` otherwise. This keeps the features additive, so an `async-io`-based
+application keeps working even when another crate in the workspace enables zbus's `tokio` feature.
 
-This run-time selection applies to the async API. The blocking API (`zbus::blocking`) drives its
-connections through its own `block_on`, which uses tokio whenever the `tokio` feature is enabled, so
-those connections always run on tokio when that feature is on.
+This per-connection selection applies to the async API. The blocking API (`zbus::blocking`) drives
+its connections through its own `block_on`, which uses tokio whenever the `tokio` feature is
+enabled, so those connections always run on tokio when that feature is on.
 
-**Note**: On Windows, the `async-io` feature is currently required for UNIX domain socket support,
-see [the corresponding tokio issue on GitHub][tctiog].
+**Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even
+when `async-io` is also compiled in; give it a TCP or `autolaunch:` address instead, or build it
+from a thread with no Tokio runtime current so it picks `async-io`. See [the corresponding tokio
+issue on GitHub][tctiog].
 
 ## I'm experiencing hangs, what could be wrong?
 

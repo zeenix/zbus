@@ -25,8 +25,8 @@ fn build_message_stream_does_not_drop_pipelined_hello_async_io() {
         let guid = Guid::generate();
 
         build_message_stream_does_not_drop_pipelined_hello(
-            Builder::async_io_unix_stream(s0).server(guid).p2p(),
-            Builder::async_io_unix_stream(s1),
+            Builder::unix_stream(s0).server(guid).p2p(),
+            Builder::unix_stream(s1),
         )
         .await;
     });
@@ -37,12 +37,12 @@ fn build_message_stream_does_not_drop_pipelined_hello_async_io() {
 #[timeout(15000)]
 fn build_message_stream_does_not_drop_pipelined_hello_tokio() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let (s0, s1) = tokio::net::UnixStream::pair().unwrap();
+        let (s0, s1) = std::os::unix::net::UnixStream::pair().unwrap();
         let guid = Guid::generate();
 
         build_message_stream_does_not_drop_pipelined_hello(
-            Builder::tokio_unix_stream(s0).server(guid).p2p(),
-            Builder::tokio_unix_stream(s1),
+            Builder::unix_stream(s0).server(guid).p2p(),
+            Builder::unix_stream(s1),
         )
         .await;
     });

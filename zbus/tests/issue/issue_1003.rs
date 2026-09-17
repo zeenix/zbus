@@ -19,25 +19,13 @@ const UID: u32 = 0;
 fn issue_1003() {
     // Connect to a server using [`AuthMechanism::External`] and providing a user id
     block_on(async move {
-        #[cfg(not(feature = "tokio"))]
         use std::os::unix::net::UnixStream;
-        #[cfg(feature = "tokio")]
-        use tokio::net::UnixStream;
 
         let guid = Guid::generate();
 
         let (p0, p1) = UnixStream::pair().unwrap();
-
-        #[cfg(not(feature = "tokio"))]
-        let (service_conn_builder, client_conn_builder) = (
-            Builder::async_io_unix_stream(p0),
-            Builder::async_io_unix_stream(p1),
-        );
-        #[cfg(feature = "tokio")]
-        let (service_conn_builder, client_conn_builder) = (
-            Builder::tokio_unix_stream(p0),
-            Builder::tokio_unix_stream(p1),
-        );
+        let (service_conn_builder, client_conn_builder) =
+            (Builder::unix_stream(p0), Builder::unix_stream(p1));
         let service_conn_builder = service_conn_builder
             .auth_mechanism(AuthMechanism::External)
             .server(guid)

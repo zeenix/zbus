@@ -17,12 +17,11 @@ fn issue_813() {
     // `Unexpected FDs during handshake` error.
     use futures_util::try_join;
     use rustix::process::geteuid;
-    #[cfg(not(feature = "tokio"))]
-    use std::os::unix::net::UnixStream;
-    use std::{os::fd::AsFd, vec};
-    #[cfg(feature = "tokio")]
-    use tokio::net::UnixStream;
-    use zbus::{Fd, conn::socket::WriteHalf, connection::Builder};
+    use std::{
+        os::{fd::AsFd, unix::net::UnixStream},
+        vec,
+    };
+    use zbus::{Fd, connection::Builder};
 
     #[derive(Debug)]
     struct Issue813Iface {
@@ -58,11 +57,7 @@ fn issue_813() {
         let server_event = event_listener::Event::new();
         let server_listener = server_event.listen();
         let server = async move {
-            #[cfg(not(feature = "tokio"))]
-            let builder = Builder::async_io_unix_stream(p0);
-            #[cfg(feature = "tokio")]
-            let builder = Builder::tokio_unix_stream(p0);
-            let _conn = builder
+            let _conn = Builder::unix_stream(p0)
                 .server(guid)
                 .p2p()
                 .serve_at(
@@ -97,11 +92,7 @@ fn issue_813() {
                 fds.push(fd.as_fd());
             }
 
-            #[cfg(feature = "tokio")]
-            let mut split = zbus::conn::Socket::split(p1);
-            #[cfg(not(feature = "tokio"))]
-            let mut split = zbus::conn::Socket::split(async_io::Async::new(p1)?);
-            split.write_mut().sendmsg(&bytes, &fds).await?;
+            send_with_fds(&p1, &bytes, &fds)?;
 
             server_listener.await;
             client_event.notify(1);
@@ -113,4 +104,36 @@ fn issue_813() {
         Result::<()>::Ok(())
     })
     .unwrap();
+}
+
+/// Sends `bytes` down `socket` in one `sendmsg`, with `fds` attached.
+///
+/// The socket is blocking, so the call returns once the whole buffer is with the kernel; a
+/// shorter count is a failure of the test's premise, not a reason to send the rest.
+fn send_with_fds(
+    socket: &std::os::unix::net::UnixStream,
+    bytes: &[u8],
+    fds: &[std::os::fd::BorrowedFd<'_>],
+) -> std::io::Result<()> {
+    use std::{io::IoSlice, mem::MaybeUninit};
+
+    use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+
+    let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(2))];
+    let mut ancillary = SendAncillaryBuffer::new(&mut space);
+    assert!(ancillary.push(SendAncillaryMessage::ScmRights(fds)));
+
+    let sent = sendmsg(
+        socket,
+        &[IoSlice::new(bytes)],
+        &mut ancillary,
+        SendFlags::empty(),
+    )?;
+    assert_eq!(
+        sent,
+        bytes.len(),
+        "a blocking stream socket takes the whole buffer"
+    );
+
+    Ok(())
 }

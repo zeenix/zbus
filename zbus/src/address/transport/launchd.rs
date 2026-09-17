@@ -1,6 +1,10 @@
+use std::{collections::HashMap, process::Command};
+
 use super::{Transport, Unix, UnixSocket};
-use crate::{Result, runtime::process::run};
-use std::collections::HashMap;
+use crate::{
+    Result,
+    runtime::{Runtime, process},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -23,19 +27,17 @@ impl Launchd {
     }
 
     /// Determine the actual transport details behind a launchd address.
-    pub(super) async fn bus_address(&self) -> Result<Transport> {
-        let output = run("launchctl", ["getenv", self.env()])
+    ///
+    /// The `launchctl` command runs on `runtime`, which is also what waits for it to exit.
+    pub(super) async fn bus_address(&self, runtime: &Runtime) -> Result<Transport> {
+        let mut command = Command::new("launchctl");
+        command.args(["getenv", self.env()]);
+
+        let printed = process::stdout(runtime, command)
             .await
-            .expect("failed to wait on launchctl output");
+            .map_err(|e| crate::Error::Address(format!("The launchctl command failed: {e}")))?;
 
-        if !output.status.success() {
-            return Err(crate::Error::Address(format!(
-                "launchctl terminated with code: {}",
-                output.status
-            )));
-        }
-
-        let addr = String::from_utf8(output.stdout).map_err(|e| {
+        let addr = String::from_utf8(printed).map_err(|e| {
             crate::Error::Address(format!("Unable to parse launchctl output as UTF-8: {e}"))
         })?;
 

@@ -54,22 +54,14 @@ mod doctests {
     doc_comment::doctest!("../../book/src/faq.md");
 }
 
-#[cfg(all(feature = "comms", not(feature = "async-io"), not(feature = "tokio")))]
-mod error_message {
-    #[cfg(windows)]
-    compile_error!(
-        "Either \"async-io\" (default) or \"tokio\" must be enabled. On Windows \"async-io\" is (currently) required for UNIX socket support"
-    );
+#[cfg(all(feature = "comms", not(feature = "async-lock"), not(feature = "tokio")))]
+compile_error!(
+    "Either \"async-lock\" (enabled by the default \"async-io\" feature) or \"tokio\" must be \
+     enabled: zbus takes its async locks from one of the two."
+);
 
-    #[cfg(not(windows))]
-    compile_error!("Either \"async-io\" (default) or \"tokio\" must be enabled.");
-}
-
-#[cfg(all(
-    any(feature = "vsock", feature = "tokio-vsock"),
-    not(target_os = "linux")
-))]
-compile_error!("The \"vsock\" and \"tokio-vsock\" features are only supported on Linux.");
+#[cfg(all(feature = "vsock", not(target_os = "linux")))]
+compile_error!("The \"vsock\" feature is only supported on Linux.");
 
 mod error;
 pub use error::*;
@@ -132,7 +124,7 @@ pub use message_stream::*;
 #[cfg(feature = "comms")]
 pub mod runtime;
 #[cfg(feature = "comms")]
-pub use runtime::{AsyncDrop, Executor, Task};
+pub use runtime::AsyncDrop;
 
 #[cfg(feature = "comms")]
 pub mod match_rule;

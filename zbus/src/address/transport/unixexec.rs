@@ -1,11 +1,18 @@
 use std::{
-    borrow::BorrowMut, ffi::OsString, fmt::Display, os::unix::ffi::OsStrExt, path::PathBuf,
-    process::Stdio, sync::Arc,
+    ffi::OsString,
+    fmt::Display,
+    os::unix::{ffi::OsStrExt, process::CommandExt},
+    path::PathBuf,
+    process::Command,
+    sync::Arc,
 };
 
-use crate::{Address, runtime::process::Command};
-
 use super::encode_percents;
+use crate::{
+    Address, Result,
+    connection::socket::BoxedSplit,
+    runtime::{Runtime, process},
+};
 
 /// `unixexec:` D-Bus transport.
 ///
@@ -67,18 +74,26 @@ impl Unixexec {
         self.args.as_ref()
     }
 
-    pub(super) async fn connect(
-        &self,
-        address: &Address,
-    ) -> crate::Result<crate::connection::socket::Command> {
-        let mut child = Command::for_unixexec(self)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| crate::Error::Connection(Arc::new(e), Box::new(address.clone())))?;
+    /// Runs the program and talks D-Bus over its standard input and output.
+    ///
+    /// The pipes are watched by `runtime`, which also waits for the program to exit once the
+    /// connection lets go of them.
+    pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
+        process::spawn(runtime, self.command())
+            .map(process::Child::into_split)
+            .map_err(|e| crate::Error::Connection(Arc::new(e), Box::new(address.clone())))
+    }
 
-        child.borrow_mut().try_into()
+    /// The command this address names.
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.path);
+        command.args(&self.args);
+
+        if let Some(arg0) = &self.arg0 {
+            command.arg0(arg0);
+        }
+
+        command
     }
 }
 
@@ -103,17 +118,63 @@ impl Display for Unixexec {
 
 #[cfg(test)]
 mod tests {
-    use crate::address::{Address, transport::Transport};
+    use ntest::timeout;
+
+    use crate::{
+        address::{Address, transport::Transport},
+        runtime::test_runtime::under_every_runtime,
+    };
 
     #[test]
+    #[timeout(15000)]
     fn connect() {
-        let addr: Address = "unixexec:path=echo,argv1=hello,argv2=world"
-            .try_into()
-            .unwrap();
-        let unixexec = match addr.transport() {
-            Transport::Unixexec(unixexec) => unixexec,
-            _ => unreachable!(),
+        under_every_runtime(|runtime| async move {
+            let address: Address = "unixexec:path=echo,argv1=hello,argv2=world"
+                .try_into()
+                .unwrap();
+            let Transport::Unixexec(unixexec) = address.transport() else {
+                unreachable!("the address names a unixexec transport")
+            };
+
+            unixexec.connect(&address, &runtime).await.unwrap();
+        });
+    }
+
+    /// A bus connection over the standard I/O of a helper process, on a runtime of the caller's.
+    ///
+    /// `systemd-stdio-bridge` is what plays that helper here; a machine without it has nothing
+    /// to say about this and the test passes.
+    #[test]
+    #[timeout(15000)]
+    fn a_bus_connection_over_a_helper_process() {
+        use crate::{
+            Error, conn::Builder, connection::Connection, runtime::test_runtime::TestRuntime,
         };
-        crate::utils::block_on(unixexec.connect(&addr)).unwrap();
+
+        let built = futures_lite::future::block_on(
+            Builder::address("unixexec:path=systemd-stdio-bridge")
+                .runtime(TestRuntime::new())
+                .build(),
+        );
+        let connection: Connection = match built {
+            Ok(connection) => connection,
+            Err(Error::Connection(e, _)) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => panic!("{e}"),
+        };
+
+        // The bus answered the `Hello` the build sent, so a second one is the error that says
+        // the connection is a working one.
+        let called = futures_lite::future::block_on(connection.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "Hello",
+            &(),
+        ));
+
+        assert!(
+            matches!(called, Err(Error::MethodError(..))),
+            "got {called:?}",
+        );
     }
 }

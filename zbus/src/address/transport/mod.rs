@@ -2,25 +2,20 @@
 //!
 //! This module provides the transport information for D-Bus addresses.
 
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+    str::from_utf8_unchecked,
+};
+
 #[cfg(windows)]
 use crate::win32::autolaunch_bus_address;
-use crate::{Address, Error, Result, connection::socket::BoxedSplit};
-#[cfg(feature = "async-io")]
-use async_io::Async;
-#[cfg(unix)]
-use std::os::unix::net::{SocketAddr, UnixStream};
-use std::{collections::HashMap, sync::Arc};
-#[cfg(windows)]
-use uds_windows::UnixStream;
+use crate::{Address, Error, Result, connection::socket::BoxedSplit, runtime::Runtime};
+
 #[cfg(all(unix, feature = "unixexec"))]
 mod unixexec;
 #[cfg(all(unix, feature = "unixexec"))]
 pub use unixexec::Unixexec;
-
-use std::{
-    fmt::{Display, Formatter},
-    str::from_utf8_unchecked,
-};
 
 mod unix;
 pub use unix::{Unix, UnixSocket};
@@ -38,13 +33,11 @@ pub use launchd::Launchd;
 mod ibus;
 #[cfg(all(unix, feature = "ibus"))]
 pub use ibus::Ibus;
-#[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+#[cfg(feature = "vsock")]
 #[path = "vsock.rs"]
 // Gotta rename to avoid name conflict with the `vsock` crate.
 mod vsock_transport;
-#[cfg(target_os = "linux")]
-use std::os::linux::net::SocketAddrExt;
-#[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+#[cfg(feature = "vsock")]
 pub use vsock_transport::Vsock;
 
 /// The transport properties of a D-Bus address.
@@ -67,12 +60,10 @@ pub enum Transport {
     /// IBus daemon for its D-Bus address using the `ibus address` command.
     #[cfg(all(unix, feature = "ibus"))]
     Ibus(Ibus),
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     /// A VSOCK address.
     ///
-    /// This variant is only available when either the `vsock` or `tokio-vsock` feature is enabled.
-    /// The type of `stream` is `vsock::VsockStream` with the `vsock` feature and
-    /// `tokio_vsock::VsockStream` with the `tokio-vsock` feature.
+    /// This variant is only available with the `vsock` feature.
+    #[cfg(feature = "vsock")]
     Vsock(Vsock),
     /// A `unixexec` address.
     #[cfg(all(unix, feature = "unixexec"))]
@@ -81,152 +72,45 @@ pub enum Transport {
 
 impl Transport {
     #[cfg_attr(any(unix, windows), async_recursion::async_recursion)]
-    pub(super) async fn connect(self, address: Address) -> Result<Stream> {
+    pub(super) async fn connect(self, address: Address, runtime: &Runtime) -> Result<Stream> {
         match self {
-            Transport::Unix(unix) => {
-                // This is a `path` in case of Windows until uds_windows provides the needed API:
-                // https://github.com/haraldh/rust_uds_windows/issues/14
-                let addr = match unix.take_path() {
-                    #[cfg(unix)]
-                    UnixSocket::File(path) => SocketAddr::from_pathname(path)?,
-                    #[cfg(windows)]
-                    UnixSocket::File(path) => path,
-                    #[cfg(target_os = "linux")]
-                    UnixSocket::Abstract(name) => {
-                        SocketAddr::from_abstract_name(name.as_encoded_bytes())?
-                    }
-                    UnixSocket::Dir(_) | UnixSocket::TmpDir(_) => {
-                        // you can't connect to a unix:dir
-                        return Err(Error::Unsupported);
-                    }
-                };
-                let stream = crate::Task::spawn_blocking(
-                    move || -> Result<_> {
-                        #[cfg(unix)]
-                        let stream = UnixStream::connect_addr(&addr)
-                            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address)))?;
-                        #[cfg(windows)]
-                        let stream = UnixStream::connect(addr)
-                            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address)))?;
-                        stream.set_nonblocking(true)?;
+            Transport::Unix(unix) => unix.connect(&address, runtime).await.map(Stream::Unix),
 
-                        Ok(stream)
-                    },
-                    "unix stream connection",
-                )
-                .await??;
-                #[cfg(unix)]
-                {
-                    let split = crate::runtime::select_runtime! {
-                        tokio: unix_stream_to_tokio(stream),
-                        async_io: unix_stream_to_async_io(stream),
-                    };
-                    split.map(Stream::Unix)
-                }
-                // tokio doesn't support unix sockets on Windows, so async-io is the only backend
-                // that can drive one there.
-                #[cfg(all(not(unix), feature = "async-io"))]
-                {
-                    unix_stream_to_async_io(stream).map(Stream::Unix)
-                }
-                #[cfg(all(not(unix), not(feature = "async-io")))]
-                {
-                    let _ = stream;
-                    Err(Error::Unsupported)
-                }
-            }
+            Transport::Tcp(tcp) => tcp.connect(&address, runtime).await.map(Stream::Tcp),
+
+            #[cfg(feature = "vsock")]
+            Transport::Vsock(vsock) => vsock.connect(&address, runtime).await.map(Stream::Vsock),
+
             #[cfg(all(unix, feature = "unixexec"))]
             Transport::Unixexec(unixexec) => unixexec
-                .connect(&address)
+                .connect(&address, runtime)
                 .await
-                .map(|s| Stream::Unixexec(s.into())),
-            #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
-            Transport::Vsock(addr) => {
-                #[cfg(all(feature = "vsock", feature = "tokio-vsock"))]
-                {
-                    if crate::runtime::use_tokio() {
-                        vsock_connect_tokio(&addr, &address).await
-                    } else {
-                        vsock_connect_async_io(&addr, &address)
-                    }
-                }
-                #[cfg(all(feature = "vsock", not(feature = "tokio-vsock")))]
-                {
-                    vsock_connect_async_io(&addr, &address)
-                }
-                #[cfg(all(feature = "tokio-vsock", not(feature = "vsock")))]
-                {
-                    vsock_connect_tokio(&addr, &address).await
-                }
-            }
-
-            Transport::Tcp(mut addr) => {
-                let nonce_file = addr.take_nonce_file();
-                #[allow(unused_mut)]
-                let mut stream = addr.connect(&address).await?;
-
-                if let Some(nonce_file) = nonce_file {
-                    #[cfg(unix)]
-                    let nonce_file = {
-                        use std::os::unix::ffi::OsStrExt;
-                        std::ffi::OsStr::from_bytes(&nonce_file)
-                    };
-
-                    #[cfg(windows)]
-                    let nonce_file = std::str::from_utf8(&nonce_file).map_err(|_| {
-                        Error::Address("nonce file path is invalid UTF-8".to_owned())
-                    })?;
-
-                    #[cfg(feature = "async-io")]
-                    {
-                        let nonce = std::fs::read(nonce_file)?;
-                        let mut nonce = &nonce[..];
-
-                        while !nonce.is_empty() {
-                            let len = stream
-                                .write_with(|mut s| std::io::Write::write(&mut s, nonce))
-                                .await?;
-                            nonce = &nonce[len..];
-                        }
-                    }
-
-                    #[cfg(all(feature = "tokio", not(feature = "async-io")))]
-                    {
-                        let nonce = tokio::fs::read(nonce_file).await?;
-                        tokio::io::AsyncWriteExt::write_all(&mut stream, &nonce).await?;
-                    }
-                }
-
-                #[cfg(feature = "async-io")]
-                let split = tcp_async_to_split(stream)?;
-                #[cfg(all(feature = "tokio", not(feature = "async-io")))]
-                let split = stream.into();
-
-                Ok(Stream::Tcp(split))
-            }
+                .map(Stream::Unixexec),
 
             #[cfg(windows)]
             Transport::Autolaunch(Autolaunch { scope }) => match scope {
                 Some(_) => Err(Error::Address(
                     "Autolaunch scopes are currently unsupported".to_owned(),
                 )),
+                // Reading the address takes a named Win32 mutex with an unbounded wait, so this
+                // runs off the calling task rather than risking it blocking on another process.
                 None => {
-                    let addr = autolaunch_bus_address()?;
-                    addr.connect().await
+                    runtime
+                        .spawn_blocking(autolaunch_bus_address)
+                        .await?
+                        .connect(runtime)
+                        .await
                 }
             },
 
             #[cfg(target_os = "macos")]
             Transport::Launchd(launchd) => {
-                let transport = launchd.bus_address().await?;
-                transport.connect(address).await
+                let transport = launchd.bus_address(runtime).await?;
+                transport.connect(address, runtime).await
             }
 
             #[cfg(all(unix, feature = "ibus"))]
-            Transport::Ibus(ibus) => {
-                let addr = ibus.bus_address().await?;
-                addr.connect().await
-            }
+            Transport::Ibus(ibus) => ibus.bus_address(runtime).await?.connect(runtime).await,
         }
     }
 
@@ -238,7 +122,7 @@ impl Transport {
             "unixexec" => Unixexec::from_options(options).map(Self::Unixexec),
             "tcp" => Tcp::from_options(options, false).map(Self::Tcp),
             "nonce-tcp" => Tcp::from_options(options, true).map(Self::Tcp),
-            #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+            #[cfg(feature = "vsock")]
             "vsock" => Vsock::from_options(options).map(Self::Vsock),
             #[cfg(windows)]
             "autolaunch" => Autolaunch::from_options(options).map(Self::Autolaunch),
@@ -254,57 +138,16 @@ impl Transport {
     }
 }
 
+/// The socket [`Transport::connect`] created, split into the halves a connection reads and
+/// writes through.
 #[derive(Debug)]
 pub(crate) enum Stream {
-    #[cfg(any(unix, feature = "async-io"))]
     Unix(BoxedSplit),
     #[cfg(all(unix, feature = "unixexec"))]
     Unixexec(BoxedSplit),
     Tcp(BoxedSplit),
-    #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+    #[cfg(feature = "vsock")]
     Vsock(BoxedSplit),
-}
-
-#[cfg(feature = "async-io")]
-fn unix_stream_to_async_io(stream: UnixStream) -> Result<BoxedSplit> {
-    Async::new(stream).map(Into::into).map_err(Into::into)
-}
-
-#[cfg(all(unix, feature = "tokio"))]
-fn unix_stream_to_tokio(stream: UnixStream) -> Result<BoxedSplit> {
-    tokio::net::UnixStream::from_std(stream)
-        .map(Into::into)
-        .map_err(Into::into)
-}
-
-// `async-io` always does the connecting; hand the socket over to tokio when it's in use.
-#[cfg(feature = "async-io")]
-fn tcp_async_to_split(stream: Async<std::net::TcpStream>) -> Result<BoxedSplit> {
-    #[cfg(feature = "tokio")]
-    if crate::runtime::use_tokio() {
-        return tokio::net::TcpStream::from_std(stream.into_inner()?)
-            .map(Into::into)
-            .map_err(Into::into);
-    }
-
-    Ok(stream.into())
-}
-
-#[cfg(feature = "vsock")]
-fn vsock_connect_async_io(addr: &Vsock, address: &Address) -> Result<Stream> {
-    let stream = vsock::VsockStream::connect_with_cid_port(addr.cid(), addr.port())
-        .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))?;
-    Async::new(stream)
-        .map(|s| Stream::Vsock(s.into()))
-        .map_err(Into::into)
-}
-
-#[cfg(feature = "tokio-vsock")]
-async fn vsock_connect_tokio(addr: &Vsock, address: &Address) -> Result<Stream> {
-    tokio_vsock::VsockStream::connect(tokio_vsock::VsockAddr::new(addr.cid(), addr.port()))
-        .await
-        .map(|s| Stream::Vsock(s.into()))
-        .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))
 }
 
 fn decode_hex(c: char) -> Result<u8> {
@@ -394,7 +237,7 @@ impl Display for Transport {
             Self::Unix(unix) => write!(f, "{unix}")?,
             #[cfg(all(unix, feature = "unixexec"))]
             Self::Unixexec(unixexec) => write!(f, "{unixexec}")?,
-            #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
+            #[cfg(feature = "vsock")]
             Self::Vsock(vsock) => write!(f, "{}", vsock)?,
             #[cfg(windows)]
             Self::Autolaunch(autolaunch) => write!(f, "{autolaunch}")?,

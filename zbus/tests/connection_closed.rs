@@ -14,8 +14,8 @@ fn closed_resolves_when_peer_disconnects() {
         let (s0, s1) = UnixStream::pair().unwrap();
         let guid = Guid::generate();
 
-        let server_builder = Builder::async_io_unix_stream(s0).server(guid).p2p();
-        let client_builder = Builder::async_io_unix_stream(s1).p2p();
+        let server_builder = Builder::unix_stream(s0).server(guid).p2p();
+        let client_builder = Builder::unix_stream(s1).p2p();
 
         let (server, client) = futures_util::join!(server_builder.build(), client_builder.build());
         let server = server.unwrap();
@@ -39,8 +39,8 @@ fn closed_resolves_on_explicit_close() {
         let (s0, s1) = UnixStream::pair().unwrap();
         let guid = Guid::generate();
 
-        let server_builder = Builder::async_io_unix_stream(s0).server(guid).p2p();
-        let client_builder = Builder::async_io_unix_stream(s1).p2p();
+        let server_builder = Builder::unix_stream(s0).server(guid).p2p();
+        let client_builder = Builder::unix_stream(s1).p2p();
 
         let (server, client) = futures_util::join!(server_builder.build(), client_builder.build());
         let server = server.unwrap();
@@ -63,8 +63,8 @@ fn closed_resolves_immediately_if_already_closed() {
         let (s0, s1) = UnixStream::pair().unwrap();
         let guid = Guid::generate();
 
-        let server_builder = Builder::async_io_unix_stream(s0).server(guid).p2p();
-        let client_builder = Builder::async_io_unix_stream(s1).p2p();
+        let server_builder = Builder::unix_stream(s0).server(guid).p2p();
+        let client_builder = Builder::unix_stream(s1).p2p();
 
         let (server, client) = futures_util::join!(server_builder.build(), client_builder.build());
         let server = server.unwrap();

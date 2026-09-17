@@ -111,168 +111,159 @@ fn sasl_auth_id() -> Result<String> {
     Ok(id)
 }
 
-#[cfg(feature = "p2p")]
-#[cfg(unix)]
-#[cfg(test)]
+// The handshake runs over a real socket pair.
+#[cfg(all(test, unix, feature = "p2p"))]
 mod tests {
+    use std::{io::Write, os::unix::net::UnixStream};
+
     use futures_util::future::join;
-    #[cfg(feature = "async-io")]
-    use futures_util::io::{AsyncWrite, AsyncWriteExt};
     use ntest::timeout;
-    #[cfg(feature = "async-io")]
-    use std::os::unix::net::UnixStream;
     use test_log::test;
-    #[cfg(not(feature = "async-io"))]
-    use tokio::{
-        io::{AsyncWrite, AsyncWriteExt},
-        net::UnixStream,
-    };
 
     use super::*;
-
-    use crate::{Guid, connection::Socket};
-
-    fn create_async_socket_pair() -> (impl AsyncWrite + Socket, impl AsyncWrite + Socket) {
-        // Tokio needs us to call the sync function from async context. :shrug:
-        let (p0, p1) = crate::utils::block_on(async { UnixStream::pair().unwrap() });
-
-        // initialize both handshakes
-        #[cfg(feature = "async-io")]
-        let (p0, p1) = {
-            p0.set_nonblocking(true).unwrap();
-            p1.set_nonblocking(true).unwrap();
-
-            (
-                async_io::Async::new(p0).unwrap(),
-                async_io::Async::new(p1).unwrap(),
-            )
-        };
-
-        (p0, p1)
-    }
+    use crate::{
+        Guid,
+        connection::socket::BoxedSplit,
+        runtime::{
+            Runtime,
+            io::{UnixOps, registered},
+            test_runtime::under_every_runtime,
+        },
+    };
 
     #[test]
     #[timeout(15000)]
     fn handshake() {
-        let (p0, p1) = create_async_socket_pair();
+        under_every_runtime(|runtime| async move {
+            let (p0, p1) = socket_pair(&runtime);
 
-        let guid = OwnedGuid::from(Guid::generate());
-        let client = Client::new(p0.into(), None, Some(guid.clone()), false, None);
-        let server = Server::new(p1.into(), guid, Some(geteuid().as_raw()), None, None).unwrap();
+            let guid = OwnedGuid::from(Guid::generate());
+            let client = Client::new(p0, None, Some(guid.clone()), false, None);
+            let server = Server::new(p1, guid, Some(geteuid().as_raw()), None, None).unwrap();
 
-        // proceed to the handshakes
-        let (client, server) = crate::utils::block_on(join(
-            async move { client.perform().await.unwrap() },
-            async move { server.perform().await.unwrap() },
-        ));
+            let (client, server) =
+                join(async move { client.perform().await.unwrap() }, async move {
+                    server.perform().await.unwrap()
+                })
+                .await;
 
-        assert_eq!(client.server_guid, server.server_guid);
-        assert_eq!(client.cap_unix_fd, server.cap_unix_fd);
+            assert_eq!(client.server_guid, server.server_guid);
+            assert_eq!(client.cap_unix_fd, server.cap_unix_fd);
+        });
     }
 
     #[test]
     #[timeout(15000)]
     fn pipelined_handshake() {
-        let (mut p0, p1) = create_async_socket_pair();
-        let server = Server::new(
-            p1.into(),
-            Guid::generate().into(),
-            Some(geteuid().as_raw()),
-            None,
-            None,
-        )
-        .unwrap();
+        let commands = format!(
+            "\0AUTH EXTERNAL {}\r\nNEGOTIATE_UNIX_FD\r\nBEGIN\r\n",
+            hex::encode(sasl_auth_id().unwrap()),
+        );
 
-        crate::utils::block_on(
-            p0.write_all(
-                format!(
-                    "\0AUTH EXTERNAL {}\r\nNEGOTIATE_UNIX_FD\r\nBEGIN\r\n",
-                    hex::encode(sasl_auth_id().unwrap())
-                )
-                .as_bytes(),
-            ),
-        )
-        .unwrap();
-        let server = crate::utils::block_on(server.perform()).unwrap();
+        under_every_runtime(|runtime| {
+            let commands = commands.clone();
 
-        assert!(server.cap_unix_fd);
+            async move {
+                let server = server_greeted_with(&runtime, commands.as_bytes(), None);
+
+                assert!(server.await.unwrap().cap_unix_fd);
+            }
+        });
     }
 
     #[test]
     #[timeout(15000)]
     fn separate_external_data() {
-        let (mut p0, p1) = create_async_socket_pair();
-        let server = Server::new(
-            p1.into(),
-            Guid::generate().into(),
-            Some(geteuid().as_raw()),
-            None,
-            None,
-        )
-        .unwrap();
+        let commands = format!(
+            "\0AUTH EXTERNAL\r\nDATA {}\r\nBEGIN\r\n",
+            hex::encode(sasl_auth_id().unwrap()),
+        );
 
-        crate::utils::block_on(
-            p0.write_all(
-                format!(
-                    "\0AUTH EXTERNAL\r\nDATA {}\r\nBEGIN\r\n",
-                    hex::encode(sasl_auth_id().unwrap())
-                )
-                .as_bytes(),
-            ),
-        )
-        .unwrap();
-        crate::utils::block_on(server.perform()).unwrap();
+        under_every_runtime(|runtime| {
+            let commands = commands.clone();
+
+            async move {
+                server_greeted_with(&runtime, commands.as_bytes(), None)
+                    .await
+                    .unwrap();
+            }
+        });
     }
 
     #[test]
     #[timeout(15000)]
     fn missing_external_data() {
-        let (mut p0, p1) = create_async_socket_pair();
-        let server = Server::new(
-            p1.into(),
-            Guid::generate().into(),
-            Some(geteuid().as_raw()),
-            None,
-            None,
-        )
-        .unwrap();
-
-        crate::utils::block_on(p0.write_all(b"\0AUTH EXTERNAL\r\nDATA\r\nBEGIN\r\n")).unwrap();
-        crate::utils::block_on(server.perform()).unwrap();
+        under_every_runtime(|runtime| async move {
+            server_greeted_with(&runtime, b"\0AUTH EXTERNAL\r\nDATA\r\nBEGIN\r\n", None)
+                .await
+                .unwrap();
+        });
     }
 
     #[test]
     #[timeout(15000)]
     fn anonymous_handshake() {
-        let (mut p0, p1) = create_async_socket_pair();
-        let server = Server::new(
-            p1.into(),
-            Guid::generate().into(),
-            Some(geteuid().as_raw()),
-            Some(AuthMechanism::Anonymous),
-            None,
-        )
-        .unwrap();
-
-        crate::utils::block_on(p0.write_all(b"\0AUTH ANONYMOUS abcd\r\nBEGIN\r\n")).unwrap();
-        crate::utils::block_on(server.perform()).unwrap();
+        under_every_runtime(|runtime| async move {
+            server_greeted_with(
+                &runtime,
+                b"\0AUTH ANONYMOUS abcd\r\nBEGIN\r\n",
+                Some(AuthMechanism::Anonymous),
+            )
+            .await
+            .unwrap();
+        });
     }
 
     #[test]
     #[timeout(15000)]
     fn separate_anonymous_data() {
-        let (mut p0, p1) = create_async_socket_pair();
+        under_every_runtime(|runtime| async move {
+            server_greeted_with(
+                &runtime,
+                b"\0AUTH ANONYMOUS\r\nDATA abcd\r\nBEGIN\r\n",
+                Some(AuthMechanism::Anonymous),
+            )
+            .await
+            .unwrap();
+        });
+    }
+
+    /// A server handshake over a socket a client has already sent `commands` down.
+    ///
+    /// Everything the client has to say is in the socket before the server reads a byte, which is
+    /// what a client that pipelines its commands does.
+    fn server_greeted_with(
+        runtime: &Runtime,
+        commands: &[u8],
+        mechanism: Option<AuthMechanism>,
+    ) -> impl Future<Output = Result<Authenticated>> {
+        let (client, server) = UnixStream::pair().unwrap();
+        (&client).write_all(commands).unwrap();
+
         let server = Server::new(
-            p1.into(),
+            registered(runtime, server, UnixOps).unwrap().into(),
             Guid::generate().into(),
             Some(geteuid().as_raw()),
-            Some(AuthMechanism::Anonymous),
+            mechanism,
             None,
         )
         .unwrap();
 
-        crate::utils::block_on(p0.write_all(b"\0AUTH ANONYMOUS\r\nDATA abcd\r\nBEGIN\r\n"))
-            .unwrap();
-        crate::utils::block_on(server.perform()).unwrap();
+        async move {
+            let authenticated = server.perform().await;
+            drop(client);
+
+            authenticated
+        }
+    }
+
+    /// Both ends of a socket pair, each registered on `runtime`.
+    fn socket_pair(runtime: &Runtime) -> (BoxedSplit, BoxedSplit) {
+        let (p0, p1) = UnixStream::pair().unwrap();
+
+        (
+            registered(runtime, p0, UnixOps).unwrap().into(),
+            registered(runtime, p1, UnixOps).unwrap().into(),
+        )
     }
 }
