@@ -421,6 +421,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     #[test]
     fn connect_tcp() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -429,6 +430,7 @@ mod tests {
         crate::utils::block_on(async { addr.connect().await }).unwrap();
     }
 
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     #[test]
     fn connect_nonce_tcp() {
         struct PercentEncoded<'a>(&'a [u8]);

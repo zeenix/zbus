@@ -1375,7 +1375,12 @@ enum Either<L, R> {
     Right(R),
 }
 
-#[cfg(all(test, feature = "service"))]
+// Every test here talks to the session bus, which needs a backend to connect to.
+#[cfg(all(
+    test,
+    feature = "service",
+    any(feature = "async-io", feature = "tokio")
+))]
 mod tests {
     use super::*;
     use crate::{connection, interface, object_server::SignalEmitter, proxy, utils::block_on};

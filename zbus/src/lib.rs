@@ -54,16 +54,11 @@ mod doctests {
     doc_comment::doctest!("../../book/src/faq.md");
 }
 
-#[cfg(all(feature = "comms", not(feature = "async-io"), not(feature = "tokio")))]
-mod error_message {
-    #[cfg(windows)]
-    compile_error!(
-        "Either \"async-io\" (default) or \"tokio\" must be enabled. On Windows \"async-io\" is (currently) required for UNIX socket support"
-    );
-
-    #[cfg(not(windows))]
-    compile_error!("Either \"async-io\" (default) or \"tokio\" must be enabled.");
-}
+#[cfg(all(feature = "comms", not(feature = "async-lock"), not(feature = "tokio")))]
+compile_error!(
+    "Either \"async-lock\" (enabled by the default \"async-io\" feature) or \"tokio\" must be \
+     enabled: zbus takes its async locks from one of the two."
+);
 
 #[cfg(all(
     any(feature = "vsock", feature = "tokio-vsock"),

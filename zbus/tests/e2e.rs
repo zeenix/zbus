@@ -1,4 +1,8 @@
-#![cfg(all(feature = "proxy", feature = "service"))]
+#![cfg(all(
+    feature = "proxy",
+    feature = "service",
+    any(feature = "async-io", feature = "tokio")
+))]
 #![allow(clippy::disallowed_names)]
 
 mod iface_and_proxy;

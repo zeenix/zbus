@@ -2,15 +2,19 @@
 //!
 //! This module provides the transport information for D-Bus addresses.
 
-#[cfg(windows)]
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use crate::connection::socket::BoxedSplit;
+#[cfg(all(windows, any(feature = "async-io", feature = "tokio")))]
 use crate::win32::autolaunch_bus_address;
-use crate::{Address, Error, Result, connection::socket::BoxedSplit};
+use crate::{Address, Error, Result};
 #[cfg(feature = "async-io")]
 use async_io::Async;
-#[cfg(unix)]
+use std::collections::HashMap;
+#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
 use std::os::unix::net::{SocketAddr, UnixStream};
-use std::{collections::HashMap, sync::Arc};
-#[cfg(windows)]
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use std::sync::Arc;
+#[cfg(all(windows, any(feature = "async-io", feature = "tokio")))]
 use uds_windows::UnixStream;
 #[cfg(all(unix, feature = "unixexec"))]
 mod unixexec;
@@ -42,7 +46,7 @@ pub use ibus::Ibus;
 #[path = "vsock.rs"]
 // Gotta rename to avoid name conflict with the `vsock` crate.
 mod vsock_transport;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", any(feature = "async-io", feature = "tokio")))]
 use std::os::linux::net::SocketAddrExt;
 #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
 pub use vsock_transport::Vsock;
@@ -82,6 +86,15 @@ pub enum Transport {
 impl Transport {
     #[cfg_attr(any(unix, windows), async_recursion::async_recursion)]
     pub(super) async fn connect(self, address: Address) -> Result<Stream> {
+        // Every transport here needs a backend to create its socket with. Without one, a
+        // connection can only be built from a socket the caller brings along.
+        #[cfg(not(any(feature = "async-io", feature = "tokio")))]
+        {
+            drop((self, address));
+
+            Err(Error::Unsupported)
+        }
+        #[cfg(any(feature = "async-io", feature = "tokio"))]
         match self {
             Transport::Unix(unix) => {
                 // This is a `path` in case of Windows until uds_windows provides the needed API:
@@ -254,12 +267,23 @@ impl Transport {
     }
 }
 
+/// The socket [`Transport::connect`] created, and the backend that drives it.
+///
+/// Creating one needs a backend, so this has no variants at all in a build with neither.
 #[derive(Debug)]
 pub(crate) enum Stream {
-    #[cfg(any(unix, feature = "async-io"))]
+    #[cfg(all(
+        any(unix, feature = "async-io"),
+        any(feature = "async-io", feature = "tokio")
+    ))]
     Unix(BoxedSplit),
-    #[cfg(all(unix, feature = "unixexec"))]
+    #[cfg(all(
+        unix,
+        feature = "unixexec",
+        any(feature = "async-io", feature = "tokio")
+    ))]
     Unixexec(BoxedSplit),
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     Tcp(BoxedSplit),
     #[cfg(any(feature = "vsock", feature = "tokio-vsock"))]
     Vsock(BoxedSplit),

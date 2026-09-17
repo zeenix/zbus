@@ -5,8 +5,8 @@
 //! handed to [`Builder::runtime`]; the socket it is given supplies its own readiness. Both
 //! built-in backends are implementations of that trait, picked by the `async-io` and `tokio`
 //! features. The async locks a connection holds are not part of that trait: they come from
-//! `async-lock` or from Tokio, whichever cargo feature is on. [`AsyncDrop`] is the async
-//! counterpart of [`Drop`] that zbus's own types implement.
+//! `async-lock` or from Tokio, whichever of the `async-lock` and `tokio` cargo features is on.
+//! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
 
@@ -35,8 +35,13 @@ use tokio_rt::Tokio;
 #[cfg(feature = "async-io")]
 mod unblock;
 
-// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands.
-#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+// Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands, and
+// only a backend can run one: the transports are unsupported without one.
+#[cfg(all(
+    unix,
+    any(feature = "async-io", feature = "tokio"),
+    any(feature = "unixexec", feature = "ibus", target_os = "macos")
+))]
 pub(crate) mod process;
 
 #[cfg(test)]
@@ -63,9 +68,10 @@ impl Runtime {
     ///
     /// Tokio when it is compiled in and a runtime is current on this thread, otherwise async-io
     /// when that is compiled in. This keeps the features additive: enabling `tokio` elsewhere in
-    /// the dependency graph doesn't force every zbus user into a tokio runtime. A `tokio` build
-    /// without `async-io` has no default left on a thread where no Tokio runtime is current, and
-    /// reports [`Error::Unsupported`] instead.
+    /// the dependency graph doesn't force every zbus user into a tokio runtime. Two builds have
+    /// no default left and report [`Error::Unsupported`] instead, so that a connection in them
+    /// has to be given a runtime of its own: one with neither backend compiled in, and one with
+    /// only `tokio` called from a thread where no Tokio runtime is current.
     ///
     /// [`Error::Unsupported`]: crate::Error::Unsupported
     pub(crate) fn default_for_build() -> Result<Self> {
@@ -146,7 +152,9 @@ impl Runtime {
 /// Blocking work for code that does not have a connection's runtime at hand.
 ///
 /// Transports and sockets are not tied to one connection's runtime, so they pick the backend per
-/// call the way `select_runtime!` does.
+/// call the way `select_runtime!` does. A build with neither backend has no pool to offer: this
+/// function and every path that needs it are compiled out of it.
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 pub(crate) fn spawn_blocking<F, T>(
     f: F,
     #[allow(unused)] name: &str,
@@ -176,6 +184,7 @@ where
 /// [`Runtime::default_for_build`]); use that instead of this macro for anything tied to the
 /// socket's reactor. The current call sites (timers, the blocking pool) are independent of the
 /// socket, so a per-call decision is fine.
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 macro_rules! select_runtime {
     (tokio: $tokio:expr, async_io: $async_io:expr $(,)?) => {{
         #[cfg(all(feature = "tokio", feature = "async-io"))]
@@ -196,6 +205,7 @@ macro_rules! select_runtime {
         }
     }};
 }
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 pub(crate) use select_runtime;
 
 /// Whether zbus should use tokio (rather than `async-io`) for its I/O.

@@ -2,6 +2,7 @@
 
 //! Compile-time checks that enabling another runtime feature does not replace a stream builder.
 
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 use zbus::connection::Builder;
 
 #[cfg(all(unix, feature = "async-io"))]

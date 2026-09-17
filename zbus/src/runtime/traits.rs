@@ -8,7 +8,8 @@
 //! backends are implementations of these traits, picked by the `async-io` and `tokio` features.
 //!
 //! The async locks a connection holds are not part of the trait: zbus takes those from
-//! `async-lock` or from Tokio, whichever cargo feature is on.
+//! `async-lock` or from Tokio, whichever of the `async-lock` and `tokio` cargo features is on, so
+//! a build that runs on a runtime of its own still has to enable one of the two.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
 

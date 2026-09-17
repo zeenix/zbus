@@ -1,5 +1,8 @@
+#[cfg(any(feature = "async-io", feature = "tokio"))]
 use super::{Transport, Unix, UnixSocket};
-use crate::{Result, runtime::process::run};
+use crate::Result;
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use crate::runtime::process::run;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +26,9 @@ impl Launchd {
     }
 
     /// Determine the actual transport details behind a launchd address.
+    ///
+    /// Only a backend can run the command that asks for them, so this is unavailable without one.
+    #[cfg(any(feature = "async-io", feature = "tokio"))]
     pub(super) async fn bus_address(&self) -> Result<Transport> {
         let output = run("launchctl", ["getenv", self.env()])
             .await

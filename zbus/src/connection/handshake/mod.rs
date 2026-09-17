@@ -111,9 +111,10 @@ fn sasl_auth_id() -> Result<String> {
     Ok(id)
 }
 
+// The handshake runs over a real socket pair, which only a backend can create.
 #[cfg(feature = "p2p")]
 #[cfg(unix)]
-#[cfg(test)]
+#[cfg(all(test, any(feature = "async-io", feature = "tokio")))]
 mod tests {
     use futures_util::future::join;
     #[cfg(feature = "async-io")]

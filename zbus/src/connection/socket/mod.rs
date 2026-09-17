@@ -6,9 +6,18 @@ pub use channel::Channel;
 mod split;
 pub use split::{BoxedSplit, Split};
 
-#[cfg(all(unix, feature = "unixexec"))]
+// The command's pipes are driven by a backend's reactor.
+#[cfg(all(
+    unix,
+    feature = "unixexec",
+    any(feature = "async-io", feature = "tokio")
+))]
 pub(crate) mod command;
-#[cfg(all(unix, feature = "unixexec"))]
+#[cfg(all(
+    unix,
+    feature = "unixexec",
+    any(feature = "async-io", feature = "tokio")
+))]
 pub(crate) use command::Command;
 mod tcp;
 mod unix;

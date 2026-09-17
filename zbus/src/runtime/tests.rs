@@ -205,6 +205,38 @@ fn blocking_threads() -> usize {
         .count()
 }
 
+/// Without a backend there is no socket to create for an address, whatever the runtime.
+#[cfg(not(any(feature = "async-io", feature = "tokio")))]
+#[test]
+#[timeout(15000)]
+fn an_address_cannot_be_connected_without_a_backend() {
+    use crate::{Error, connection::Builder};
+
+    let error = futures_lite::future::block_on(
+        Builder::address("unix:path=/nonexistent")
+            .runtime(TestRuntime::new())
+            .build(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, Error::Unsupported), "got {error:?}");
+}
+
+/// Without a backend, a connection can only run on a runtime the caller supplies.
+#[cfg(not(any(feature = "async-io", feature = "tokio")))]
+#[test]
+#[timeout(15000)]
+fn a_connection_without_a_runtime_is_unsupported() {
+    use crate::{Error, connection::Builder};
+
+    let error = futures_lite::future::block_on(
+        Builder::address("unix:path=/tmp/zbus-external-only").build(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, Error::Unsupported), "got {error:?}");
+}
+
 #[test]
 #[timeout(15000)]
 fn an_external_task_runs_to_completion() {

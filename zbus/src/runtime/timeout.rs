@@ -2,7 +2,11 @@ use std::{future::Future, io::ErrorKind, time::Duration};
 
 use futures_lite::FutureExt;
 
-use super::{Runtime, traits};
+use super::Runtime;
+// Only a built-in backend is reached through the trait itself; an external one goes through the
+// erased mirror of it.
+#[cfg(any(feature = "async-io", feature = "tokio"))]
+use super::traits;
 use crate::{Error, Result};
 
 impl Runtime {
