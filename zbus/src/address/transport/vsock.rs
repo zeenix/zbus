@@ -1,5 +1,15 @@
-use crate::{Error, Result};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
+
+use socket2::{Domain, SockAddr, Type};
+
+use crate::{
+    Address, Error, Result,
+    connection::socket::BoxedSplit,
+    runtime::{
+        Runtime,
+        io::{RegisteredIo, VsockOps, connect},
+    },
+};
 
 /// A VSOCK D-Bus address.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,6 +32,16 @@ impl Vsock {
     /// The port.
     pub fn port(&self) -> u32 {
         self.port
+    }
+
+    /// Connects to the VSOCK port this address names.
+    pub(super) async fn connect(self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
+        let socket_address = SockAddr::vsock(self.cid(), self.port());
+        let source = connect(runtime, Domain::VSOCK, Type::STREAM, &socket_address)
+            .await
+            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))?;
+
+        Ok(RegisteredIo::new(runtime, source, VsockOps)?.into())
     }
 
     pub(super) fn from_options(opts: HashMap<&str, &str>) -> Result<Self> {

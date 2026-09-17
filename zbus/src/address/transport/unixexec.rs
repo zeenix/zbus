@@ -1,11 +1,7 @@
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use std::{borrow::BorrowMut, process::Stdio, sync::Arc};
 use std::{ffi::OsString, fmt::Display, os::unix::ffi::OsStrExt, path::PathBuf};
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use crate::{Address, runtime::process::Command};
-
 use super::encode_percents;
+use crate::{Address, Result, connection::socket::BoxedSplit};
 
 /// `unixexec:` D-Bus transport.
 ///
@@ -69,20 +65,30 @@ impl Unixexec {
 
     /// Runs the command and talks D-Bus over its standard I/O.
     ///
-    /// Only a backend can drive the command's pipes, so this is unavailable without one.
-    #[cfg(any(feature = "async-io", feature = "tokio"))]
-    pub(super) async fn connect(
-        &self,
-        address: &Address,
-    ) -> crate::Result<crate::connection::socket::Command> {
-        let mut child = Command::for_unixexec(self)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| crate::Error::Connection(Arc::new(e), Box::new(address.clone())))?;
+    /// Only a runtime that can run a command drives the pipes it talks over, and a build with
+    /// neither backend compiled in has none.
+    pub(super) async fn connect(&self, address: &Address) -> Result<BoxedSplit> {
+        #[cfg(not(any(feature = "async-io", feature = "tokio")))]
+        {
+            let _ = address;
 
-        child.borrow_mut().try_into()
+            Err(crate::Error::Unsupported)
+        }
+        #[cfg(any(feature = "async-io", feature = "tokio"))]
+        {
+            use std::{borrow::BorrowMut, process::Stdio, sync::Arc};
+
+            use crate::{connection::socket::Command, runtime::process};
+
+            let mut child = process::Command::for_unixexec(self)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .map_err(|e| crate::Error::Connection(Arc::new(e), Box::new(address.clone())))?;
+
+            Command::try_from(child.borrow_mut()).map(Into::into)
+        }
     }
 }
 

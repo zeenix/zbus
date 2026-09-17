@@ -22,6 +22,11 @@ impl IoSource {
     pub(crate) fn new(owned: Owned) -> Self {
         Self(Arc::new(owned))
     }
+
+    /// A source over a socket zbus created for itself.
+    pub(crate) fn from_socket(socket: socket2::Socket) -> Self {
+        Self::new(socket.into())
+    }
 }
 
 #[cfg(unix)]

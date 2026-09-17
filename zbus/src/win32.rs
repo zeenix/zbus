@@ -1,44 +1,41 @@
 use std::{
-    ffi::CStr,
+    ffi::{CStr, OsStr},
     io::Error,
     net::SocketAddr,
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
+    os::windows::{
+        io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
+        prelude::OsStrExt,
+    },
     ptr,
 };
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use std::{ffi::OsStr, os::windows::prelude::OsStrExt};
 
 #[cfg(feature = "service")]
 use windows_sys::Win32::System::WindowsProgramming::{GetCurrentHwProfileA, HW_PROFILE_INFOA};
 use windows_sys::Win32::{
-    Foundation::{ERROR_INSUFFICIENT_BUFFER, FALSE, HANDLE, LocalFree, NO_ERROR},
+    Foundation::{
+        ERROR_INSUFFICIENT_BUFFER, FALSE, HANDLE, LocalFree, NO_ERROR, WAIT_ABANDONED,
+        WAIT_OBJECT_0,
+    },
     NetworkManagement::IpHelper::{GetTcpTable2, MIB_TCP_STATE_ESTAB, MIB_TCPTABLE2},
     Networking::WinSock::INADDR_LOOPBACK,
     Security::{
         Authorization::ConvertSidToStringSidA, GetTokenInformation, IsValidSid, TOKEN_QUERY,
         TOKEN_USER, TokenUser,
     },
-    System::Threading::{
-        GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_ACCESS_RIGHTS,
-        PROCESS_QUERY_LIMITED_INFORMATION,
-    },
-};
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use windows_sys::Win32::{
-    Foundation::{WAIT_ABANDONED, WAIT_OBJECT_0},
     System::{
         Memory::{FILE_MAP_READ, MapViewOfFile, OpenFileMappingW},
-        Threading::{CreateMutexW, INFINITE, ReleaseMutex, WaitForSingleObject},
+        Threading::{
+            CreateMutexW, GetCurrentProcess, INFINITE, OpenProcess, OpenProcessToken,
+            PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_LIMITED_INFORMATION, ReleaseMutex,
+            WaitForSingleObject,
+        },
     },
 };
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 use crate::Address;
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 struct Mutex(OwnedHandle);
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 impl Mutex {
     pub fn new(name: &str) -> Result<Self, crate::Error> {
         let name_wide = OsStr::new(name)
@@ -62,10 +59,8 @@ impl Mutex {
     }
 }
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 struct MutexGuard<'a>(&'a Mutex);
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 impl Drop for MutexGuard<'_> {
     fn drop(&mut self) {
         unsafe { ReleaseMutex(self.0.0.as_raw_handle()) };
@@ -272,7 +267,6 @@ pub fn unix_stream_get_peer_pid(
     Ok(ret)
 }
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 fn read_shm(name: &str) -> Result<Vec<u8>, crate::Error> {
     let handle = {
         let wide_name = OsStr::new(name)
@@ -302,7 +296,6 @@ fn read_shm(name: &str) -> Result<Vec<u8>, crate::Error> {
     Ok(data.to_bytes().to_owned())
 }
 
-#[cfg(any(feature = "async-io", feature = "tokio"))]
 pub fn autolaunch_bus_address() -> Result<Address, crate::Error> {
     let mutex = Mutex::new("DBusAutolaunchMutex")?;
     let _guard = mutex.lock();

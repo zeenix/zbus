@@ -1,6 +1,7 @@
 use ntest::timeout;
 use zbus::{Error, connection};
 
+#[cfg(not(all(windows, feature = "tokio")))]
 const UNIX_ADDRESS: &str = "unix:path=/this/path/does/not/exist";
 const TCP_ADDRESS: &str = "tcp:host=localhost,port=4142,family=ipv4";
 #[cfg(all(unix, feature = "unixexec"))]
@@ -20,7 +21,11 @@ fn connection_error() {
 
 async fn connection_error_async() {
     #[allow(unused_mut)]
-    let mut addresses = vec![UNIX_ADDRESS, TCP_ADDRESS];
+    let mut addresses = vec![TCP_ADDRESS];
+    // A Tokio connection on Windows has nothing to reach a unix socket with, so it turns the
+    // address down before any connection is attempted.
+    #[cfg(not(all(windows, feature = "tokio")))]
+    addresses.push(UNIX_ADDRESS);
     #[cfg(all(unix, feature = "unixexec"))]
     addresses.push(UNIXEXEC_ADDRESS);
     #[cfg(all(feature = "vsock", feature = "async-io"))]

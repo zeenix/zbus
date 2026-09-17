@@ -1,6 +1,4 @@
-use crate::Result;
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use crate::{Address, runtime::process::run};
+use crate::{Address, Result};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The transport properties of an IBus D-Bus address.
@@ -63,25 +61,34 @@ impl Ibus {
     /// # }).unwrap();
     /// ```
     ///
-    /// Only a backend can run the command that asks, so this is unavailable without one.
-    #[cfg(any(feature = "async-io", feature = "tokio"))]
+    /// Only a runtime that can run a command can ask, and a build with neither backend compiled
+    /// in has none.
     pub(super) async fn bus_address(&self) -> Result<Address> {
-        let output = run("ibus", ["address"])
-            .await
-            .map_err(|e| crate::Error::Address(format!("Failed to execute ibus command: {e}")))?;
-
-        if !output.status.success() {
-            return Err(crate::Error::Address(format!(
-                "ibus terminated with code: {}",
-                output.status
-            )));
+        #[cfg(not(any(feature = "async-io", feature = "tokio")))]
+        {
+            Err(crate::Error::Unsupported)
         }
+        #[cfg(any(feature = "async-io", feature = "tokio"))]
+        {
+            let output = crate::runtime::process::run("ibus", ["address"])
+                .await
+                .map_err(|e| {
+                    crate::Error::Address(format!("Failed to execute ibus command: {e}"))
+                })?;
 
-        let addr = String::from_utf8(output.stdout).map_err(|e| {
-            crate::Error::Address(format!("Unable to parse ibus output as UTF-8: {e}"))
-        })?;
+            if !output.status.success() {
+                return Err(crate::Error::Address(format!(
+                    "ibus terminated with code: {}",
+                    output.status
+                )));
+            }
 
-        addr.trim().parse()
+            let addr = String::from_utf8(output.stdout).map_err(|e| {
+                crate::Error::Address(format!("Unable to parse ibus output as UTF-8: {e}"))
+            })?;
+
+            addr.trim().parse()
+        }
     }
 
     /// Parse IBus transport from D-Bus address options.

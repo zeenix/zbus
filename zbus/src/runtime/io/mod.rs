@@ -6,14 +6,18 @@
 //! itself exists once rather than once per transport and per runtime.
 
 #[cfg(any(unix, windows))]
-pub(crate) mod unix;
+mod unix;
 
 pub(crate) mod tcp;
 #[cfg(feature = "vsock")]
 mod vsock;
 
-#[cfg(all(test, unix))]
-mod tests;
+mod connect;
+pub(crate) use connect::connect;
+
+// `RefusedPort`, which reserves the port the connection tests aim at, lives here.
+#[cfg(all(test, any(unix, windows)))]
+pub(crate) mod tests;
 
 #[cfg(unix)]
 use std::os::fd::BorrowedFd;
@@ -109,10 +113,10 @@ where
 /// Registers a descriptor zbus was handed, after switching it to non-blocking mode.
 ///
 /// The streams a builder is given come through here. The sockets zbus opens for a `unix:`,
-/// `tcp:` or `vsock:` address do not: those are created non-blocking where they are opened. A
-/// descriptor zbus did not open has to be switched over before it is watched: a runtime waits
-/// for readiness and then runs the operation, which would hold up the thread it is polled on if
-/// the descriptor still blocked.
+/// `tcp:` or `vsock:` address do not: `connect` creates those non-blocking and registers them
+/// itself. A descriptor zbus did not open has to be switched over before it is watched: a
+/// runtime waits for readiness and then runs the operation, which would hold up the thread it
+/// is polled on if the descriptor still blocked.
 ///
 /// The bound is the standard library's own conversion into what a platform owns a descriptor as,
 /// which every stream involved has — bar one, `uds_windows::UnixStream`, handled where it is

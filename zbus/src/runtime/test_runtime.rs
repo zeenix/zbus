@@ -18,7 +18,71 @@ use std::{
 use async_executor::Executor;
 use async_io::{Async, Timer};
 
-use super::{Interest, IoSource, traits};
+use super::{Interest, IoSource, Runtime, traits, unblock};
+
+/// Runs `body` once under every runtime this build can make.
+///
+/// Everything but Tokio is driven by `futures_lite`; a Tokio connection is polled inside the
+/// runtime it belongs to, which is where a Tokio user would poll it.
+pub(crate) fn under_every_runtime<Body, Fut>(body: Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    under_the_polled_runtimes(&body);
+
+    #[cfg(feature = "tokio")]
+    under_tokio(&body);
+}
+
+/// [`under_every_runtime`], minus any runtime that cannot watch a socket zbus owns.
+///
+/// Tokio on Windows reaches a socket through a type that owns it, so it has nowhere to keep a
+/// descriptor of zbus's own and [`traits::Runtime::register_io_source`] reports `Unsupported`
+/// there. So on Windows this sweep leaves Tokio out: a test that has zbus register a descriptor
+/// of its own cannot run under it, while one that does not runs under Tokio there as anywhere.
+pub(crate) fn under_every_watching_runtime<Body, Fut>(body: Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    under_the_polled_runtimes(&body);
+
+    #[cfg(all(feature = "tokio", not(windows)))]
+    under_tokio(&body);
+}
+
+/// Runs `body` under the runtimes a test drives with `futures_lite` from the calling thread.
+///
+/// The last two are the same runtime in the two orders [`traits::PollIo`] leaves an
+/// implementation to choose between, so every test in the sweep is run under both.
+fn under_the_polled_runtimes<Body, Fut>(body: &Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    #[cfg(feature = "async-io")]
+    futures_lite::future::block_on(body(Runtime::AsyncIo(super::AsyncIo::new())));
+
+    futures_lite::future::block_on(body(Runtime::from_external(TestRuntime::new())));
+    futures_lite::future::block_on(body(Runtime::from_external(ReadinessFirst::new())));
+}
+
+/// Runs `body` inside a Tokio runtime of its own, which is where a Tokio user would poll it.
+#[cfg(feature = "tokio")]
+fn under_tokio<Body, Fut>(body: &Body)
+where
+    Body: Fn(Runtime) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+
+    tokio.block_on(async {
+        let runtime = super::Tokio::current().expect("a Tokio runtime is current");
+
+        body(Runtime::Tokio(runtime)).await
+    });
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct TestRuntime {
@@ -94,7 +158,57 @@ impl traits::Runtime for TestRuntime {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) += 1;
 
-        Box::pin(blocking::unblock(work))
+        unblock::run(work)
+    }
+}
+
+/// A [`TestRuntime`] whose registrations wait for readiness before they try an operation.
+///
+/// [`TestRuntime`] polls the other way round, trying the operation first and waiting only once it
+/// reports a would-block, and [`traits::PollIo`] allows either. Running the sweeps under both is
+/// what holds an operation to the same answer whichever order it is asked in; the connect
+/// predicate, which has to tell a connection still under way from one that has settled, is the
+/// one that could tell the difference.
+#[derive(Clone, Debug)]
+pub(crate) struct ReadinessFirst(TestRuntime);
+
+impl ReadinessFirst {
+    pub(crate) fn new() -> Self {
+        Self(TestRuntime::new())
+    }
+}
+
+impl traits::Runtime for ReadinessFirst {
+    type RegisteredIoSource = ReadinessFirstRegistration;
+    type Sleep = Sleep;
+    type Task<T>
+        = Task<T>
+    where
+        T: Send + 'static;
+
+    fn register_io_source(&self, source: IoSource) -> io::Result<ReadinessFirstRegistration> {
+        Async::new(source).map(ReadinessFirstRegistration)
+    }
+
+    fn sleep(&self, duration: Duration) -> Sleep {
+        traits::Runtime::sleep(&self.0, duration)
+    }
+
+    fn spawn<T>(&self, name: &str, future: impl Future<Output = T> + Send + 'static) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        traits::Runtime::spawn(&self.0, name, future)
+    }
+
+    fn spawn_blocking<T>(
+        &self,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Pin<Box<dyn Future<Output = T> + Send + 'static>>
+    where
+        T: Send + 'static,
+    {
+        traits::Runtime::spawn_blocking(&self.0, work)
     }
 }
 
@@ -233,6 +347,35 @@ impl traits::PollIo for Registration {
             };
             if let Err(e) = std::task::ready!(ready) {
                 return Poll::Ready(Err(e));
+            }
+        }
+    }
+}
+
+/// A registration on async-io's reactor that waits for readiness first.
+#[derive(Debug)]
+pub(crate) struct ReadinessFirstRegistration(Async<IoSource>);
+
+impl traits::PollIo for ReadinessFirstRegistration {
+    fn poll_io<T>(
+        &self,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        mut operation: impl FnMut() -> io::Result<T>,
+    ) -> Poll<io::Result<T>> {
+        loop {
+            // async-io re-arms the interest and returns `Pending` unless a readiness event newer
+            // than the one it last reported is already there, so this loop cannot spin.
+            let ready = match interest {
+                Interest::Readable => self.0.poll_readable(cx),
+                Interest::Writable => self.0.poll_writable(cx),
+            };
+            if let Err(e) = std::task::ready!(ready) {
+                return Poll::Ready(Err(e));
+            }
+            match operation() {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                result => return Poll::Ready(result),
             }
         }
     }

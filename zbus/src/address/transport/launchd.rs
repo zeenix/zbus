@@ -1,9 +1,7 @@
-#[cfg(any(feature = "async-io", feature = "tokio"))]
+use std::collections::HashMap;
+
 use super::{Transport, Unix, UnixSocket};
 use crate::Result;
-#[cfg(any(feature = "async-io", feature = "tokio"))]
-use crate::runtime::process::run;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -27,27 +25,34 @@ impl Launchd {
 
     /// Determine the actual transport details behind a launchd address.
     ///
-    /// Only a backend can run the command that asks for them, so this is unavailable without one.
-    #[cfg(any(feature = "async-io", feature = "tokio"))]
+    /// Only a runtime that can run a command can ask for them, and a build with neither backend
+    /// compiled in has none.
     pub(super) async fn bus_address(&self) -> Result<Transport> {
-        let output = run("launchctl", ["getenv", self.env()])
-            .await
-            .expect("failed to wait on launchctl output");
-
-        if !output.status.success() {
-            return Err(crate::Error::Address(format!(
-                "launchctl terminated with code: {}",
-                output.status
-            )));
+        #[cfg(not(any(feature = "async-io", feature = "tokio")))]
+        {
+            Err(crate::Error::Unsupported)
         }
+        #[cfg(any(feature = "async-io", feature = "tokio"))]
+        {
+            let output = crate::runtime::process::run("launchctl", ["getenv", self.env()])
+                .await
+                .expect("failed to wait on launchctl output");
 
-        let addr = String::from_utf8(output.stdout).map_err(|e| {
-            crate::Error::Address(format!("Unable to parse launchctl output as UTF-8: {e}"))
-        })?;
+            if !output.status.success() {
+                return Err(crate::Error::Address(format!(
+                    "launchctl terminated with code: {}",
+                    output.status
+                )));
+            }
 
-        Ok(Transport::Unix(Unix::new(UnixSocket::File(
-            addr.trim().into(),
-        ))))
+            let addr = String::from_utf8(output.stdout).map_err(|e| {
+                crate::Error::Address(format!("Unable to parse launchctl output as UTF-8: {e}"))
+            })?;
+
+            Ok(Transport::Unix(Unix::new(UnixSocket::File(
+                addr.trim().into(),
+            ))))
+        }
     }
 
     pub(super) fn from_options(opts: HashMap<&str, &str>) -> Result<Self> {

@@ -100,7 +100,7 @@ async fn peer_credentials(
 
 /// The credentials the peer of a Windows unix socket reports.
 #[cfg(windows)]
-pub(crate) fn credentials_from_socket(
+fn credentials_from_socket(
     socket: &impl std::os::windows::io::AsRawSocket,
 ) -> io::Result<ConnectionCredentials> {
     use crate::win32::{ProcessToken, unix_stream_get_peer_pid};
@@ -115,7 +115,7 @@ pub(crate) fn credentials_from_socket(
 }
 
 #[cfg(unix)]
-pub(crate) fn fd_recvmsg(fd: BorrowedFd<'_>, buffer: &mut [u8]) -> RecvmsgResult {
+fn fd_recvmsg(fd: BorrowedFd<'_>, buffer: &mut [u8]) -> RecvmsgResult {
     use std::{io::IoSliceMut, mem::MaybeUninit};
 
     let mut iov = [IoSliceMut::new(buffer)];
@@ -154,11 +154,7 @@ pub(crate) fn fd_recvmsg(fd: BorrowedFd<'_>, buffer: &mut [u8]) -> RecvmsgResult
 }
 
 #[cfg(unix)]
-pub(crate) fn fd_sendmsg(
-    fd: BorrowedFd<'_>,
-    buffer: &[u8],
-    fds: &[BorrowedFd<'_>],
-) -> io::Result<usize> {
+fn fd_sendmsg(fd: BorrowedFd<'_>, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::Result<usize> {
     use std::{io::IoSlice, mem::MaybeUninit};
 
     let iov = [IoSlice::new(buffer)];
@@ -182,19 +178,6 @@ pub(crate) fn fd_sendmsg(
     }
 
     Ok(sent)
-}
-
-/// The peer's credentials, groups and all, on the calling thread.
-#[cfg(all(unix, any(feature = "async-io", feature = "tokio")))]
-pub(crate) fn get_unix_peer_creds_blocking(
-    fd: std::os::fd::RawFd,
-) -> io::Result<ConnectionCredentials> {
-    // TODO: take this `BorrowedFd` from the caller, but that requires a 'static lifetime due to
-    // the Task.
-    let fd = unsafe { BorrowedFd::borrow_raw(fd) };
-    let (credentials, lookup) = socket_credentials(fd)?;
-
-    Ok(lookup.complete_blocking(credentials))
 }
 
 /// Everything about a peer that the socket itself reports.
@@ -340,28 +323,6 @@ impl GroupLookup {
         credentials
     }
 
-    /// `credentials`, with the peer's groups looked up on the calling thread and added to
-    /// them.
-    ///
-    /// The caller is already on a thread it may block, so the lookup runs there rather than
-    /// going to a runtime.
-    #[cfg(any(feature = "async-io", feature = "tokio"))]
-    fn complete_blocking(self, credentials: ConnectionCredentials) -> ConnectionCredentials {
-        #[cfg(not(any(target_os = "android", target_os = "linux")))]
-        {
-            credentials
-        }
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        {
-            let mut credentials = credentials;
-            for group in self.groups() {
-                credentials = credentials.add_unix_group_id(group);
-            }
-
-            credentials
-        }
-    }
-
     /// The peer's primary and supplementary groups, numerically sorted as the D-Bus
     /// specification requires them.
     ///
@@ -429,7 +390,7 @@ impl GroupLookup {
 /// already non-blocking and the call runs inside a write the runtime has found the socket ready
 /// for, so a `WouldBlock` from here is waited on the same way any other send's is.
 #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
-pub(crate) fn send_credentials_byte(fd: std::os::fd::RawFd) -> io::Result<usize> {
+pub(super) fn send_credentials_byte(fd: std::os::fd::RawFd) -> io::Result<usize> {
     // FIXME: Replace with rustix API when it provides SCM_CREDS support for BSD.
     // For now, use libc directly since rustix doesn't support sending SCM_CREDS on BSD.
     use std::mem::MaybeUninit;

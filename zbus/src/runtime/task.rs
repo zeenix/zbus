@@ -55,29 +55,6 @@ where
     }
 }
 
-/// Spawns blocking `f` on tokio, naming the task when `tokio_unstable` is on.
-#[cfg(feature = "tokio")]
-pub(super) fn tokio_spawn_blocking<F, T>(
-    f: F,
-    #[allow(unused)] name: &str,
-) -> tokio::task::JoinHandle<T>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    #[cfg(tokio_unstable)]
-    {
-        tokio::task::Builder::new()
-            .name(name)
-            .spawn_blocking(f)
-            .expect("`Builder::spawn_blocking` never returns `Err`")
-    }
-    #[cfg(not(tokio_unstable))]
-    {
-        tokio::task::spawn_blocking(f)
-    }
-}
-
 impl<T> super::traits::TaskHandle<T> for Task<T>
 where
     T: Send + 'static,
