@@ -11,7 +11,7 @@ use crate::{
     log::{Instrument, debug, trace, trace_span},
     message::{Header, Message},
     names::InterfaceName,
-    runtime::async_lock::RwLock,
+    runtime::locks::RwLock,
 };
 #[cfg(feature = "object-manager")]
 use crate::{Value, fdo::ObjectManager};

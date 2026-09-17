@@ -23,7 +23,7 @@ use crate::{
     log::{Instrument, info, info_span, trace, trace_span, warn},
     message::{self, Flags, Message, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
-    runtime::{async_lock::Mutex, timeout::timeout},
+    runtime::{locks::Mutex, timeout::timeout},
 };
 
 mod builder;

@@ -69,8 +69,8 @@ mod async_drop;
 pub use async_drop::AsyncDrop;
 mod executor;
 pub use executor::{Executor, Task};
-pub(crate) mod async_lock;
 mod blocking_thread;
+pub(crate) mod locks;
 pub(crate) mod timeout;
 
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run commands.

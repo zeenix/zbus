@@ -13,7 +13,7 @@ use crate::{
     connection::{MsgBroadcaster, PendingMethodCalls},
     log::{debug, trace},
     message::Type,
-    runtime::async_lock::Mutex,
+    runtime::locks::Mutex,
 };
 
 use super::socket::ReadHalf;
