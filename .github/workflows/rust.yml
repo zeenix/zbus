@@ -122,6 +122,9 @@ jobs:
           # The service-only fixture has to be built on its own: in a workspace-wide build, the
           # features of its `zbus` dependency are unified with those of the other members.
           cargo --locked clippy -p service_only_fixture
+          cargo --locked clippy -p geoclue_service_fixture -p geoclue_client_fixture
+          cargo --locked clippy -p geoclue_service_fixture -p geoclue_client_fixture \
+            --no-default-features --features tokio
 
   linux_test:
     runs-on: ubuntu-latest
