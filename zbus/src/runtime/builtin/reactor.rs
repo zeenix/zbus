@@ -12,11 +12,12 @@
 //! stores a waker breaks the wait under way: that wait was built before the waker existed, and
 //! only the wait after it takes the source in.
 //!
-//! Two locks guard all of this. Where both a source's place in the map and the wakers of that
-//! source are needed, the map is taken first and never the other way round; the timers are taken
-//! on their own. Neither lock is held across the wait, which may last until a deadline, nor
-//! across a wake, which runs a task's code and may come straight back here to register a source,
-//! to ask for a timer or to let either go.
+//! Two locks guard the sources and the timers. Where both a source's place in the map and the
+//! wakers of that source are needed, the map is taken first and never the other way round; the
+//! timers are taken on their own. Neither lock is held across the wait, which may last until a
+//! deadline, nor across a wake, which runs a task's code and may come straight back here to
+//! register a source, to ask for a timer or to let either go. A third guards the flag that says
+//! a wake-up is in the channel, and is held for no longer than it takes to read or set it.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -37,6 +38,8 @@ pub(super) struct Reactor {
     poller: Poller,
     sources: Mutex<Sources>,
     timers: Mutex<Timers>,
+    /// Whether a wake-up is in the channel already, waiting for a worker to take it out.
+    wake_pending: Mutex<bool>,
 }
 
 impl Reactor {
@@ -46,17 +49,43 @@ impl Reactor {
             poller: Poller::new()?,
             sources: Mutex::new(Sources::default()),
             timers: Mutex::new(Timers::default()),
+            wake_pending: Mutex::new(false),
         })
     }
 
     /// Wakes this reactor's worker inside its wait, unless called from that worker, which sees
     /// every change before its next wait anyway.
+    ///
+    /// One wake-up in the channel ends a wait as surely as a hundred do, so the rest are left
+    /// unwritten: a burst of spawns, or a task cancelled alongside them, costs one write between
+    /// two waits rather than one apiece.
     pub(super) fn notify(&self) {
-        if !super::worker::on_worker_thread(self) {
-            // A channel that cannot be written to leaves a worker waiting until its timeout, and
-            // there is nobody here to tell about it who could do any better.
-            let _ = self.poller.notify();
+        if super::worker::on_worker_thread(self) {
+            return;
         }
+        {
+            let mut pending = lock(&self.wake_pending);
+            if *pending {
+                return;
+            }
+            *pending = true;
+        }
+
+        // Clear of the lock, because the write is a syscall and whoever finds the flag raised is
+        // turned away above rather than left waiting on it.
+        if self.poller.notify().is_err() {
+            // The flag stands for a wake-up in the channel, so one that never got there takes it
+            // down again and the next caller tries afresh. A channel that cannot be written to
+            // leaves a worker waiting until its timeout, and there is nobody here to tell about
+            // it who could do any better.
+            *lock(&self.wake_pending) = false;
+        }
+    }
+
+    /// Whether a wake-up this reactor wrote is in the channel, waiting to be taken out.
+    #[cfg(test)]
+    pub(super) fn wake_pending(&self) -> bool {
+        *lock(&self.wake_pending)
     }
 
     /// Puts `source` under this reactor's watch, with a key of its own to report it by.
@@ -123,6 +152,13 @@ impl Reactor {
         };
 
         let ready = self.poller.wait(&wants, timeout)?;
+        // The wait takes whatever wake-up it finds out of the channel, so the flag comes down
+        // here and the next caller writes again. One that came between the two is turned away
+        // without a write, and loses nothing by it: what it had to say — a task queued, a source
+        // registered, a deadline stored — it said before it called, and the rounds below and in
+        // the worker look at all three afresh. The other way about, a wake-up left in the
+        // channel by a wait that ended some other way only ends the next one at once.
+        *lock(&self.wake_pending) = false;
 
         let woken = {
             let sources = lock(&self.sources);
@@ -422,6 +458,36 @@ mod tests {
 
         assert!(started.elapsed() < Duration::from_secs(1));
         breaker.join().unwrap();
+    }
+
+    /// A burst of wakes with no wait between them puts one wake-up in the channel, not ten.
+    ///
+    /// The wait that follows is unbounded, so it can only end on the wake-up the first of them
+    /// wrote; that it ends at all is what says the burst was not swallowed along with the nine
+    /// writes it saved.
+    #[test]
+    #[timeout(15000)]
+    fn many_notifies_between_waits_write_once() {
+        let reactor = reactor();
+        // From a thread of its own: a reactor's own worker is the one caller that needs no
+        // telling, and this test has no worker at all.
+        let notifying = {
+            let reactor = reactor.clone();
+            thread::spawn(move || {
+                reactor.notify();
+                assert!(reactor.wake_pending(), "the first wake reached the channel");
+
+                for _ in 0..9 {
+                    reactor.notify();
+                }
+                assert!(reactor.wake_pending(), "the wake-up is there to be taken");
+            })
+        };
+        notifying.join().unwrap();
+
+        reactor.wait(None).unwrap();
+
+        assert!(!reactor.wake_pending(), "the wait took the wake-up out");
     }
 
     #[test]
