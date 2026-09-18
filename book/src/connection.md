@@ -74,21 +74,24 @@ cargo feature of `zbus` is enabled.
 
 ## Runtimes
 
-zbus ships no async executor and no reactor of its own. A connection takes its readiness
-notifications, timers, spawned tasks and blocking work from one runtime, chosen once when it is
-built. Its async locks are zbus's own, except on a Tokio build, where Tokio's locks stand in
-instead.
+A connection takes its readiness notifications, timers, spawned tasks and blocking work from one
+runtime, chosen once when it is built. Its async locks are zbus's own, except on a Tokio build,
+where Tokio's locks stand in instead.
 
 ### Built-in backends
 
-With the `async-io` cargo feature (a default feature), a connection runs on the `async-io`
-backend, unless the `tokio` feature is also enabled and a Tokio runtime is current on the thread
-that builds it, in which case it runs on Tokio instead. With only `tokio` enabled, a connection
-always runs on the Tokio runtime that is current when it is built; building one from a thread
-with no such runtime fails with `Error::Unsupported`.
+With the `builtin-runtime` cargo feature (a default feature), a connection runs on the runtime
+zbus brings along: one worker thread and one wake pipe per connection, running only while the
+connection has something to run, watch or time, and depending on no runtime crate at all. A
+program that wants no async runtime at all can drive such a connection synchronously with any
+`block_on`, such as `zbus::block_on`. If the `tokio` feature is also enabled and a Tokio runtime
+is current on the thread that builds the connection, it runs on Tokio instead, sparing itself
+that worker thread. With only `tokio` enabled, a connection always runs on the Tokio runtime that
+is current when it is built; building one from a thread with no such runtime fails with
+`Error::Unsupported`.
 
-A build with neither feature depends on no `tokio` crate, and on nothing the `async-io` feature
-owns: zbus's own locks build on `event-listener`, not on anything `async-io` pulls in, so this
+A build with neither feature depends on no `tokio` crate, and on nothing `builtin-runtime` owns:
+zbus's own locks build on `event-listener`, not on anything either feature pulls in, so this
 build needs neither an extra feature nor an extra crate for them. Every connection in the build
 needs an explicit runtime, given through [`Builder::runtime`].
 
@@ -133,10 +136,9 @@ it cannot do until the call it is blocked in returns.
 Besides an address, a connection can be built directly over a socket you already have.
 [`Builder::unix_stream`], [`Builder::tcp_stream`] and [`Builder::vsock_stream`] each take an
 owned, platform-native stream and register it on the connection's runtime; a stream of another
-kind is handed over as the socket it wraps, such as `into_std()` for a Tokio stream or
-`into_inner()` for an `async-io` one. [`Builder::socket`] and [`Builder::authenticated_socket`]
-take any other implementation of `Socket`, for a transport that is not a file descriptor at all,
-such as an in-process channel.
+kind is handed over as the socket it wraps, such as `into_std()` for a Tokio stream.
+[`Builder::socket`] and [`Builder::authenticated_socket`] take any other implementation of
+`Socket`, for a transport that is not a file descriptor at all, such as an in-process channel.
 
 [NetworkManager]: https://developer.gnome.org/NetworkManager/stable/spec.html
 [BlueZ]: https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc

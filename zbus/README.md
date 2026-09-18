@@ -131,9 +131,10 @@ size of your binary.
 ## Compatibility with async runtimes
 
 zbus is runtime-agnostic. By default (the `builtin-runtime` feature), a connection runs its I/O,
-timers and tasks on two threads of zbus's own: one running the tasks and one running
-[`async-io`]'s reactor. With `tokio` instead, it runs on your Tokio runtime, with no extra thread.
-For any other runtime, hand an implementation of [`runtime::traits::Runtime`] to
+timers and tasks on one worker thread and one wake pipe of zbus's own, running only while the
+connection has something to run, watch or time, with no runtime dependency of its own. With
+`tokio` instead, it runs on your Tokio runtime, with no extra thread. For any other runtime, hand
+an implementation of [`runtime::traits::Runtime`] to
 [`connection::Builder::runtime`], which then supplies everything a connection needs, sockets
 included — except a handful of calls with no async form (a couple of transport lookups, a
 peer-credential group lookup, waiting on a helper process), which go through the trait's
@@ -161,7 +162,7 @@ Enabling the `tokio` feature puts a connection on your [`tokio`] runtime instead
 ```toml
 # Sample Cargo.toml snippet.
 [dependencies]
-# Also disable the default `builtin-runtime` feature to avoid unused dependencies.
+# Also disable the default `builtin-runtime` feature to skip compiling in the fallback backend.
 zbus = { version = "6", default-features = false, features = ["tokio"] }
 ```
 
@@ -180,7 +181,6 @@ feature is on.
 [zbus]: https://github.com/z-galaxy/zbus\#readme
 [bw]: https://docs.rs/zbus/latest/zbus/blocking/index.html
 [tctiog]: https://github.com/tokio-rs/tokio/issues/2201
-[`async-io`]: https://crates.io/crates/async-io
 [`connection::Builder::runtime`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.runtime
 [`runtime::traits::Runtime`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html
 [`tokio`]: https://crates.io/crates/tokio
