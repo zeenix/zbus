@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use core::fmt;
 use std::{
-    borrow::Cow,
     fmt::{Display, Formatter},
     hash::Hash,
     str::FromStr,
@@ -823,10 +822,32 @@ impl Serialize for Signature {
 }
 
 impl<'de> Deserialize<'de> for Signature {
-    fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Cow::<str>::deserialize(deserializer).and_then(|s| {
-            Signature::from_str(s.as_ref()).map_err(|e| serde::de::Error::custom(e.to_string()))
-        })
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(SignatureVisitor)
+    }
+}
+
+/// Parses a signature directly from the string the deserializer provides.
+///
+/// The parsed `Signature` owns no part of the input, so borrowed and transient strings are handled
+/// alike, without first copying the input into a `String`.
+struct SignatureVisitor;
+
+impl serde::de::Visitor<'_> for SignatureVisitor {
+    type Value = Signature;
+
+    fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a D-Bus type signature")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Signature::from_str(s).map_err(E::custom)
     }
 }
 
