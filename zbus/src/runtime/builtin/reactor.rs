@@ -20,6 +20,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    fmt,
     future::Future,
     io, mem,
     pin::Pin,
@@ -48,10 +49,10 @@ impl Reactor {
         })
     }
 
-    /// Wakes a worker inside its wait, unless called from that worker, which sees every change
-    /// before its next wait anyway.
+    /// Wakes this reactor's worker inside its wait, unless called from that worker, which sees
+    /// every change before its next wait anyway.
     pub(super) fn notify(&self) {
-        if !super::worker::on_worker_thread() {
+        if !super::worker::on_worker_thread(self) {
             // A channel that cannot be written to leaves a worker waiting until its timeout, and
             // there is nobody here to tell about it who could do any better.
             let _ = self.poller.notify();
@@ -193,6 +194,14 @@ impl Reactor {
 pub(crate) struct RegisteredIoSource {
     reactor: Arc<Reactor>,
     state: Arc<SourceState>,
+}
+
+impl fmt::Debug for RegisteredIoSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegisteredIoSource")
+            .field("source", &self.state.source)
+            .finish_non_exhaustive()
+    }
 }
 
 impl traits::PollIo for RegisteredIoSource {

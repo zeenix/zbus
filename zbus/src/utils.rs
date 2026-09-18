@@ -28,15 +28,9 @@ impl<T, E> ResultAdapter for Result<T, E> {
     type Err = E;
 }
 
-#[cfg(all(not(feature = "tokio"), feature = "async-io"))]
-#[doc(hidden)]
-pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    async_io::block_on(future)
-}
-
-/// With neither backend a connection's tasks run on its runtime, so the blocking facade only has
-/// to poll the caller's future.
-#[cfg(not(any(feature = "tokio", feature = "async-io")))]
+/// The caller's future is all there is to poll here: a connection's tasks run on a thread of its
+/// runtime's, not on the one the blocking API is called from.
+#[cfg(not(feature = "tokio"))]
 #[doc(hidden)]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)

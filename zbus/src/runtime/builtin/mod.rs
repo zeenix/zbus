@@ -42,6 +42,8 @@ use std::{
     time::Duration,
 };
 
+pub(crate) use reactor::RegisteredIoSource;
+
 use reactor::Reactor;
 use scheduler::{JoinHandle, Scheduler};
 
@@ -159,6 +161,12 @@ impl Future for Sleep {
 
 /// A task spawned on a built-in runtime, which cancels that task when dropped.
 pub(crate) struct Task<T>(JoinHandle<T>);
+
+impl<T> fmt::Debug for Task<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Task").field(&self.0).finish()
+    }
+}
 
 impl<T> Future for Task<T> {
     type Output = io::Result<T>;

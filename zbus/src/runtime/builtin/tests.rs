@@ -11,6 +11,7 @@ use std::{
     time::Instant,
 };
 
+use event_listener::Event;
 use futures_lite::future::{block_on, poll_once};
 use ntest::timeout;
 use socket2::{SockRef, Socket};
@@ -84,6 +85,48 @@ fn cancelling_the_last_task_from_another_thread_lets_the_worker_exit() {
     drop(task);
 
     assert!(worker_gone(&runtime));
+}
+
+/// A wake that crosses from one runtime's worker to another's reaches the task it is meant for.
+///
+/// A process runs a runtime per connection built without one of its own, and connections talk,
+/// so a task of one wakes a task of another from the first runtime's worker thread. The second
+/// worker is asleep in its own wait by then and has to be told; a wake is only ever left unsent
+/// when it comes from the very worker it would be telling.
+///
+/// The waiting task announces itself and the thread here waits that announcement out, so that
+/// the wake is sent to a worker which has nothing of its own left to poll and is therefore in a
+/// wait that only its wake channel can end.
+#[test]
+#[timeout(15000)]
+fn a_task_on_one_runtime_wakes_a_task_on_another() {
+    let waiting_runtime = runtime();
+    let waking_runtime = runtime();
+    let listening = Arc::new(Event::new());
+    let woken = Arc::new(Event::new());
+
+    // Taken before the task is spawned, so the announcement cannot be missed.
+    let announced = listening.listen();
+    let waiting = {
+        let woken = woken.clone();
+        waiting_runtime.spawn("a task waiting to be woken", async move {
+            let wake = woken.listen();
+            listening.notify(1);
+            wake.await;
+
+            42
+        })
+    };
+    block_on(announced);
+    // The announcement is made inside the poll that leaves the task waiting, so the worker
+    // reaches its wait a moment after it; this is that moment.
+    thread::sleep(Duration::from_millis(100));
+
+    let _waking = waking_runtime.spawn("a task on another runtime", async move {
+        woken.notify(1);
+    });
+
+    assert_eq!(block_on(waiting).unwrap(), 42);
 }
 
 #[test]
