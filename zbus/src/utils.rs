@@ -28,16 +28,33 @@ impl<T, E> ResultAdapter for Result<T, E> {
     type Err = E;
 }
 
-/// The caller's future is all there is to poll here: a connection's tasks run on a thread of its
-/// runtime's, not on the one the blocking API is called from.
+/// Runs a future to completion on the calling thread.
+///
+/// This is for a program that has no async runtime of its own: it turns one call into zbus's
+/// async API into a blocking one. The future handed to it is the only one polled on this thread
+/// — a connection's own work runs on a thread of the connection's runtime.
+///
+/// Do not call this from an async context, that is, from inside a future another runtime is
+/// polling. It holds the thread that future runs on until the call returns, and where the two
+/// end up waiting on each other, neither of them ever does.
 #[cfg(not(feature = "tokio"))]
-#[doc(hidden)]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }
 
+/// Runs a future to completion, holding the calling thread until it is done.
+///
+/// This is for a program that has no async runtime of its own: it turns one call into zbus's
+/// async API into a blocking one. With the `tokio` feature the future is polled by a Tokio
+/// runtime that zbus builds on the first such call and keeps for the rest of the process, so a
+/// connection built inside that future finds a Tokio runtime current and runs on the Tokio
+/// backend. The future handed here is the only one this polls — a connection's own work runs on
+/// a thread of the connection's runtime.
+///
+/// Do not call this from an async context, that is, from inside a future another runtime is
+/// polling. Tokio panics where its own runtime is the one polling, and any other blocks the
+/// thread that future runs on until the call returns.
 #[cfg(feature = "tokio")]
-#[doc(hidden)]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     use std::sync::OnceLock;
 
