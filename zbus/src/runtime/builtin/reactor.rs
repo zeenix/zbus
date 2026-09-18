@@ -190,7 +190,7 @@ impl Reactor {
 }
 
 /// One source this reactor watches, and what a connection does its I/O through.
-pub(super) struct RegisteredIoSource {
+pub(crate) struct RegisteredIoSource {
     reactor: Arc<Reactor>,
     state: Arc<SourceState>,
 }
