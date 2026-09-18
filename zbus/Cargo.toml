@@ -242,6 +242,11 @@ harness = false
 required-features = ["p2p", "service"]
 
 [[bench]]
+name = "runtime"
+harness = false
+required-features = ["p2p", "service"]
+
+[[bench]]
 name = "names"
 harness = false
 
