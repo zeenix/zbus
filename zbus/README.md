@@ -27,8 +27,8 @@ zbus = { version = "6", default-features = false }
 That build compiles `zbus::wire` and `zbus::names` and nothing else — no connection, proxy or
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
 `chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
-and enabling any D-Bus feature (`comms`, `async-io`, `tokio`, `async-lock`, `blocking-api`,
-`p2p`, `bus-impl`, `vsock`, `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
+and enabling any D-Bus feature (`comms`, `async-io`, `tokio`, `async-lock`, `p2p`, `bus-impl`,
+`vsock`, `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
 
 zbus logs through [`tracing`], behind the default `tracing` feature; a `default-features =
 false` build that wants zbus's logs must re-enable it explicitly.
@@ -115,11 +115,11 @@ async fn main() -> Result<()> {
 }
 ```
 
-## Blocking API
+## Synchronous programs
 
-While zbus is primarily asynchronous (since 2.0), [blocking wrappers][bw] are provided for
-convenience. Since zbus 5.0, blocking API can be disabled by disabling the `blocking-api` cargo
-feature.
+zbus's API is async. A program with no async runtime of its own drives it with `zbus::block_on`,
+which runs a future to completion on the calling thread. See the [synchronous programs
+chapter][bw] of the book.
 
 ## Proxy and service API
 
@@ -149,9 +149,9 @@ zbus's async locks come from a cargo feature rather than from the runtime: `asyn
 `async-io` enables) or `tokio`. A build with neither of those two does not compile, so a build on
 a runtime of your own names `async-lock` itself.
 
-`zbus::blocking` over a runtime of your own only works while that runtime's loop runs on another
-thread. A blocking call made from the loop's own thread deadlocks: it waits on a connection that
-only makes progress while the loop it just stopped runs.
+`zbus::block_on` over a runtime of your own only works while that runtime's loop runs on another
+thread. A call made from the loop's own thread deadlocks: it waits on a connection that only makes
+progress while the loop it just stopped runs.
 
 ### Special tokio support
 
@@ -169,15 +169,15 @@ The `tokio` and `async-io` features are additive: with both enabled, zbus picks 
 runtime is current on the thread that builds the connection, and `async-io` otherwise. With only
 `tokio` (no `async-io`), a connection must be built from a thread running a Tokio runtime.
 
-The blocking API (`zbus::blocking`) drives its connections through its own `block_on`, which uses
-tokio whenever the `tokio` feature is enabled, so those connections always run on tokio when that
-feature is on.
+A program with no async runtime of its own drives the API from inside `zbus::block_on`, which
+with the `tokio` feature polls the future on a Tokio runtime of its own, so a connection built
+inside that call always runs on tokio when that feature is on.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even when
 `async-io` is also compiled in; see [the corresponding tokio issue on GitHub][tctiog].
 
 [zbus]: https://github.com/z-galaxy/zbus\#readme
-[bw]: https://docs.rs/zbus/latest/zbus/blocking/index.html
+[bw]: https://z-galaxy.github.io/zbus/blocking.html
 [tctiog]: https://github.com/tokio-rs/tokio/issues/2201
 [`async-io`]: https://crates.io/crates/async-io
 [`connection::Builder::runtime`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.runtime
