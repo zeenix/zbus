@@ -28,22 +28,46 @@ impl<T, E> ResultAdapter for Result<T, E> {
     type Err = E;
 }
 
+/// Runs a future to completion on the calling thread.
+///
+/// This is for a program that has no async runtime of its own. Put the async code in one call to
+/// this function; the call blocks the thread until the future completes. Only the future passed
+/// in runs on this thread; a connection's own tasks and I/O run on threads zbus starts for them.
+///
+/// Do not call this from another runtime's task. It blocks that task's thread until the future
+/// completes, which deadlocks the program if the future needs that thread to make progress.
 #[cfg(all(not(feature = "tokio"), feature = "async-io"))]
-#[doc(hidden)]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     async_io::block_on(future)
 }
 
-/// With neither backend a connection's tasks run on its runtime, so the blocking facade only has
-/// to poll the caller's future.
+/// Runs a future to completion on the calling thread.
+///
+/// In a build with neither `async-io` nor `tokio` enabled, every connection runs on the runtime
+/// given to [`Builder::runtime`]. This call drives no connection itself: it only polls the
+/// future passed in, blocking the calling thread until it is done.
+///
+/// Do not call this from another runtime's task. It blocks that task's thread until the future
+/// completes, which deadlocks the program if the future needs that thread to make progress.
+///
+/// [`Builder::runtime`]: crate::connection::Builder::runtime
 #[cfg(not(any(feature = "tokio", feature = "async-io")))]
-#[doc(hidden)]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }
 
+/// Runs a future to completion, blocking the calling thread until it is done.
+///
+/// This is for a program that has no async runtime of its own. Put the async code in one call to
+/// this function; the call blocks the thread until the future completes. With the `tokio`
+/// feature, the call runs inside a Tokio runtime that zbus creates on first use and keeps for
+/// the rest of the process, so a connection built inside the future runs on Tokio as well.
+///
+/// Do not call this from another runtime's task. From inside a Tokio async task it panics, as
+/// Tokio's own `block_on` does. From any other runtime's task it blocks that task's thread until
+/// the future completes, which deadlocks the program if the future needs that thread to make
+/// progress.
 #[cfg(feature = "tokio")]
-#[doc(hidden)]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     use std::sync::OnceLock;
 
