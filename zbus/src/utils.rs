@@ -44,7 +44,7 @@ impl<T, E> ResultAdapter for Result<T, E> {
 /// because it could only wait for the thread it is on. From a future some other runtime is
 /// polling it holds that thread until it returns, and where the two end up waiting on each
 /// other, neither of them ever does.
-#[cfg(all(feature = "async-io", not(feature = "tokio")))]
+#[cfg(all(feature = "builtin-runtime", not(feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     crate::runtime::builtin::block_on(future)
 }
@@ -60,7 +60,7 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
 /// end up waiting on each other, neither of them ever does.
 ///
 /// [`Builder::runtime`]: crate::connection::Builder::runtime
-#[cfg(not(any(feature = "tokio", feature = "async-io")))]
+#[cfg(not(any(feature = "builtin-runtime", feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }
