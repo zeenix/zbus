@@ -33,6 +33,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt,
     future::Future,
+    hash::{BuildHasherDefault, Hasher},
     io, mem,
     panic::{AssertUnwindSafe, catch_unwind},
     pin::{Pin, pin},
@@ -56,7 +57,7 @@ impl Scheduler {
         Self {
             state: Mutex::new(State {
                 ready: VecDeque::new(),
-                live: HashMap::new(),
+                live: HashMap::default(),
                 next_id: 0,
             }),
             notify: Box::new(notify),
@@ -316,8 +317,31 @@ struct State {
     ///
     /// Keyed, rather than a list to scan: an object server hands each method call a task of its
     /// own, and a burst of calls would make a scan per completion quadratic.
-    live: HashMap<u64, Arc<TaskCell>>,
+    live: HashMap<u64, Arc<TaskCell>, BuildHasherDefault<IdHasher>>,
     next_id: u64,
+}
+
+/// Hashes a task id as itself.
+///
+/// Ids come from a counter, so they are spread as evenly as a hash could spread them, and the
+/// default hasher's defence against chosen keys buys nothing for keys no caller chooses.
+#[derive(Default)]
+struct IdHasher(u64);
+
+impl Hasher for IdHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 = (self.0 << 8) | u64::from(*byte);
+        }
+    }
+
+    fn write_u64(&mut self, id: u64) {
+        self.0 = id;
+    }
 }
 
 /// One task: its future, and what the scheduler and its handle need to know about it.
