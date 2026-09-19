@@ -46,22 +46,22 @@ impl<T, E> ResultAdapter for Result<T, E> {
 /// the very thread it is on. Do not call it from another runtime's task either: it blocks that
 /// task's thread until the future completes, which deadlocks the program if the future needs
 /// that thread to make progress.
-#[cfg(all(feature = "async-io", not(feature = "tokio")))]
+#[cfg(all(feature = "builtin-runtime", not(feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     crate::runtime::builtin::block_on(future)
 }
 
 /// Runs a future to completion on the calling thread.
 ///
-/// In a build with neither `async-io` nor `tokio` enabled, every connection runs on the runtime
-/// given to [`Builder::runtime`]. This call drives no connection itself: it only polls the
-/// future passed in, blocking the calling thread until it is done.
+/// In a build with neither `builtin-runtime` nor `tokio` enabled, every connection runs on the
+/// runtime given to [`Builder::runtime`]. This call drives no connection itself: it only polls
+/// the future passed in, blocking the calling thread until it is done.
 ///
 /// Do not call this from another runtime's task. It blocks that task's thread until the future
 /// completes, which deadlocks the program if the future needs that thread to make progress.
 ///
 /// [`Builder::runtime`]: crate::connection::Builder::runtime
-#[cfg(not(any(feature = "tokio", feature = "async-io")))]
+#[cfg(not(any(feature = "builtin-runtime", feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }
