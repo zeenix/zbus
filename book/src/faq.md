@@ -197,9 +197,10 @@ Two rules follow from the connection's work running on the calling thread:
 
 ## Why do async tokio API calls from interface methods not work?
 
-Many of the tokio (and tokio-based) APIs assume the tokio runtime to be driving the async machinery,
-and by default zbus drives a connection's tasks and I/O on a thread of its own (the `async-io`
-backend), so it's not possible to use these APIs from interface methods.
+Many of the tokio (and tokio-based) APIs assume the tokio runtime to be driving the async
+machinery, and by default a connection's tasks and I/O run on zbus's own runtime, on the thread
+inside `zbus::block_on` (the `builtin-runtime` backend), which is not a tokio runtime. So it's not
+possible to use these APIs from interface methods.
 
 Not to worry, though! You can enable tight integration between tokio and zbus by enabling `tokio`
 feature:
@@ -207,24 +208,26 @@ feature:
 ```toml
 # Sample Cargo.toml snippet.
 [dependencies]
-# Also disable the default `async-io` feature to avoid unused dependencies.
-zbus = { version = "6", default-features = false, features = ["tokio"] }
+zbus = { version = "6", features = ["tokio"] }
 ```
 
-Disabling `async-io` is recommended but not required. With both features enabled, the backend is
-chosen once per connection, when it is built: Tokio when a Tokio runtime is current on the thread
-that builds it, `async-io` otherwise. This keeps the features additive, so an `async-io`-based
-application keeps working even when another crate in the workspace enables zbus's `tokio` feature.
+With both features enabled, the backend is chosen once per connection, when it is built: Tokio when
+a Tokio runtime is current on the thread that builds it, the runtime zbus brings along otherwise.
+This keeps the features additive, so an application that relies on the built-in backend keeps
+working even when another crate in the workspace enables zbus's `tokio` feature. To leave the
+built-in backend out of the build, disable default features and list what you use instead, e.g.
+`default-features = false, features = ["tokio", "proxy", "service"]`.
 
 This per-connection selection only matters for a program that has an async runtime of its own. A
 program without one uses `zbus::block_on` instead. Without the `tokio` feature, that call and the
-connection built inside it use `async-io`; with it, the call runs inside a Tokio runtime, so a
-connection built inside it always uses Tokio.
+connection built inside it use the built-in runtime; with it, the call runs inside a Tokio
+runtime, so a connection built inside it always uses Tokio. Note that `zbus::block_on` must not
+be called from inside a task zbus is running, such as an interface method: it panics there.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even
-when `async-io` is also compiled in; give it a TCP or `autolaunch:` address instead, or build it
-from a thread with no Tokio runtime current so it picks `async-io`. See [the corresponding tokio
-issue on GitHub][tctiog].
+when `builtin-runtime` is also compiled in; give it a TCP or `autolaunch:` address instead, or
+build it from a thread with no Tokio runtime current so it picks the built-in backend. See [the
+corresponding tokio issue on GitHub][tctiog].
 
 ## I'm experiencing hangs, what could be wrong?
 
