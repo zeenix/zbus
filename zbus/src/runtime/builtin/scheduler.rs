@@ -281,7 +281,9 @@ impl<T> Drop for JoinHandle<T> {
 
                     None
                 }
-                Stage::Done => None,
+                // Finished, or cancelled by an earlier drop: nothing to take back, nobody to
+                // tell.
+                Stage::Done => return,
             }
         };
         // On the thread that let the handle go, with no lock held: a destructor that panics
