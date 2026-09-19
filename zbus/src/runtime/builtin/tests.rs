@@ -91,8 +91,8 @@ fn cancelling_the_last_task_from_another_thread_lets_the_worker_exit() {
 ///
 /// A process runs a runtime per connection built without one of its own, and connections talk,
 /// so a task of one wakes a task of another from the first runtime's worker thread. The second
-/// worker is asleep in its own wait by then and has to be told; a wake is only ever left unsent
-/// when it comes from the very worker it would be telling.
+/// worker is asleep in its own wait by then and has to be told; the wakes left unsent are those
+/// for a worker that has announced no wait, and those from the very worker they would tell.
 ///
 /// The waiting task announces itself and the thread here waits that announcement out, so that
 /// the wake is sent to a worker which has nothing of its own left to poll and is therefore in a

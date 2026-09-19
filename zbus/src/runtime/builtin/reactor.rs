@@ -16,8 +16,18 @@
 //! wakers of that source are needed, the map is taken first and never the other way round; the
 //! timers are taken on their own. Neither lock is held across the wait, which may last until a
 //! deadline, nor across a wake, which runs a task's code and may come straight back here to
-//! register a source, to ask for a timer or to let either go. A third guards the flag that says
-//! a wake-up is in the channel, and is held for no longer than it takes to read or set it.
+//! register a source, to ask for a timer or to let either go. A third guards what the wake-up
+//! channel stands at — whether a worker has announced a wait, and whether a wake-up for it is in
+//! the channel — and is held for no longer than it takes to read or set the two.
+//!
+//! A wake-up is a write on that channel, and the only worker one is needed for is a worker about
+//! to block. What makes leaving the rest unwritten safe is the order the two sides keep: whoever
+//! has something to say — a task queued, a source registered, a deadline stored — says it and
+//! then calls [`Reactor::notify`], while a worker announces its wait and then reads all three.
+//! A caller that finds no wait announced therefore writes nothing and loses nothing: the
+//! announcement it missed comes after its own message, and the reads that follow that
+//! announcement find the message. A caller that finds a wait announced writes, and the byte
+//! either ends the wait under way or ends the one about to begin the moment it begins.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -38,8 +48,8 @@ pub(super) struct Reactor {
     poller: Poller,
     sources: Mutex<Sources>,
     timers: Mutex<Timers>,
-    /// Whether a wake-up is in the channel already, waiting for a worker to take it out.
-    wake_pending: Mutex<bool>,
+    /// What the wake-up channel stands at: who is waiting for a wake-up and what is in there.
+    wake: Mutex<WakeState>,
 }
 
 impl Reactor {
@@ -49,26 +59,32 @@ impl Reactor {
             poller: Poller::new()?,
             sources: Mutex::new(Sources::default()),
             timers: Mutex::new(Timers::default()),
-            wake_pending: Mutex::new(false),
+            wake: Mutex::default(),
         })
     }
 
-    /// Wakes this reactor's worker inside its wait, unless called from that worker, which sees
-    /// every change before its next wait anyway.
+    /// Wakes this reactor's worker where it has announced a wait, and writes nothing where it
+    /// has not or where a wake-up is in the channel already.
     ///
-    /// One wake-up in the channel ends a wait as surely as a hundred do, so the rest are left
-    /// unwritten: a burst of spawns, or a task cancelled alongside them, costs one write between
-    /// two waits rather than one apiece.
+    /// The write is a syscall, and a worker which has announced no wait needs none: it reads the
+    /// queue, the sources and the timers before it blocks, and so reads whatever this caller had
+    /// to say, which was in place before the call. Where a wait is announced, one wake-up in the
+    /// channel ends it as surely as a hundred do, so the rest are left unwritten: a burst of
+    /// spawns, or a task cancelled alongside them, costs at most one write between two waits
+    /// rather than one apiece.
+    ///
+    /// A call from the worker's own thread is turned away outright, since that worker sees every
+    /// change before its next wait anyway.
     pub(super) fn notify(&self) {
         if super::worker::on_worker_thread(self) {
             return;
         }
         {
-            let mut pending = lock(&self.wake_pending);
-            if *pending {
+            let mut wake = lock(&self.wake);
+            if !wake.waiting || wake.pending {
                 return;
             }
-            *pending = true;
+            wake.pending = true;
         }
 
         // Clear of the lock, because the write is a syscall and whoever finds the flag raised is
@@ -78,14 +94,20 @@ impl Reactor {
             // down again and the next caller tries afresh. A channel that cannot be written to
             // leaves a worker waiting until its timeout, and there is nobody here to tell about
             // it who could do any better.
-            *lock(&self.wake_pending) = false;
+            lock(&self.wake).pending = false;
         }
     }
 
     /// Whether a wake-up this reactor wrote is in the channel, waiting to be taken out.
     #[cfg(test)]
     pub(super) fn wake_pending(&self) -> bool {
-        *lock(&self.wake_pending)
+        lock(&self.wake).pending
+    }
+
+    /// Whether a worker has announced a wait that no poll has returned from.
+    #[cfg(test)]
+    pub(super) fn waiting(&self) -> bool {
+        lock(&self.wake).waiting
     }
 
     /// Puts `source` under this reactor's watch, with a key of its own to report it by.
@@ -123,9 +145,16 @@ impl Reactor {
         }
     }
 
-    /// One wait on the poller, bounded by `at_most` and by the nearest deadline, then the wakes
-    /// for what it found ready and for the timers that are due.
-    pub(super) fn wait(&self, at_most: Option<Duration>) -> io::Result<()> {
+    /// One wait on the poller, bounded by what `at_most` asks for and by the nearest deadline,
+    /// then the wakes for what it found ready and for the timers that are due.
+    ///
+    /// The wait is announced before a thing it might block on is read: the bound `at_most` works
+    /// out, the sources, the timers. That order is what [`Reactor::notify`] leans on, and the
+    /// bound is a closure rather than a value because of it — a caller working the bound out for
+    /// itself would be reading a queue, and reading it ahead of the announcement.
+    pub(super) fn wait(&self, at_most: impl FnOnce() -> Option<Duration>) -> io::Result<()> {
+        self.announce_wait();
+        let at_most = at_most();
         let wants: Vec<(IoSource, Want)> = lock(&self.sources)
             .states
             .values()
@@ -151,14 +180,16 @@ impl Reactor {
             (bound, None) | (None, bound) => bound,
         };
 
-        let ready = self.poller.wait(&wants, timeout)?;
-        // The wait takes whatever wake-up it finds out of the channel, so the flag comes down
-        // here and the next caller writes again. One that came between the two is turned away
-        // without a write, and loses nothing by it: what it had to say — a task queued, a source
+        let ready = self.poller.wait(&wants, timeout);
+        // The wait is over however it ended, so the announcement comes down; and the poll takes
+        // whatever wake-up it finds out of the channel, so that flag comes down with it and the
+        // next caller writes afresh. A caller that comes between the two is turned away without
+        // a write, and loses nothing by it: what it had to say — a task queued, a source
         // registered, a deadline stored — it said before it called, and the rounds below and in
         // the worker look at all three afresh. The other way about, a wake-up left in the
         // channel by a wait that ended some other way only ends the next one at once.
-        *lock(&self.wake_pending) = false;
+        *lock(&self.wake) = WakeState::default();
+        let ready = ready?;
 
         let woken = {
             let sources = lock(&self.sources);
@@ -223,6 +254,11 @@ impl Reactor {
         let no_sources = lock(&self.sources).states.is_empty();
 
         no_sources && lock(&self.timers).pending.is_empty()
+    }
+
+    /// Says a wait is about to begin, which is what a wake-up is written for.
+    fn announce_wait(&self) {
+        lock(&self.wake).waiting = true;
     }
 }
 
@@ -391,6 +427,16 @@ struct Timers {
     next_id: u64,
 }
 
+/// Who the wake-up channel is for and what is in it.
+#[derive(Default)]
+struct WakeState {
+    /// Whether a worker has announced a wait that no poll has returned from, which is the one
+    /// state of things a wake-up is worth writing in.
+    waiting: bool,
+    /// Whether a wake-up is in the channel already, waiting for a worker to take it out.
+    pending: bool,
+}
+
 /// The value behind a lock, taken whether or not a panic poisoned it.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -417,7 +463,7 @@ mod tests {
         assert!(read_one(&registration, &source, &mut cx).is_pending());
 
         peer.write_all(&[7]).unwrap();
-        reactor.wait(Some(Duration::from_secs(1))).unwrap();
+        reactor.wait(|| Some(Duration::from_secs(1))).unwrap();
 
         assert_eq!(counter.count(), 1);
         assert!(matches!(
@@ -441,10 +487,14 @@ mod tests {
         assert_eq!(counter.count(), 0);
     }
 
+    /// A wake sent once a wait is announced ends that wait.
     #[test]
     #[timeout(15000)]
-    fn notify_breaks_a_wait() {
+    fn a_notify_after_the_wait_is_announced_ends_it() {
         let reactor = reactor();
+        // Announced here rather than left to the wait below, so that the thread finds the
+        // announcement standing however the two are scheduled against one another.
+        reactor.announce_wait();
         let breaker = {
             let reactor = reactor.clone();
             thread::spawn(move || {
@@ -454,10 +504,41 @@ mod tests {
         };
 
         let started = Instant::now();
-        reactor.wait(None).unwrap();
+        reactor.wait(|| None).unwrap();
 
         assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(!reactor.waiting(), "the wait is over");
+        assert!(!reactor.wake_pending(), "the wait took the wake-up out");
         breaker.join().unwrap();
+    }
+
+    /// A wake sent where no wait is announced writes nothing at all.
+    ///
+    /// The bounded wait at the end stands in for the worker's next one: it ends at its bound
+    /// rather than at once, which is what says the channel was left empty.
+    #[test]
+    #[timeout(15000)]
+    fn a_notify_while_no_wait_is_announced_writes_nothing() {
+        let reactor = reactor();
+        // From a thread of its own: a reactor's own worker is turned away on that ground alone,
+        // and what is under test here is the ground that a caller off it is turned away on.
+        let notifying = {
+            let reactor = reactor.clone();
+            thread::spawn(move || {
+                for _ in 0..10 {
+                    reactor.notify();
+                }
+                assert!(!reactor.wake_pending(), "nobody was there to be woken");
+            })
+        };
+        notifying.join().unwrap();
+
+        reactor.announce_wait();
+        let started = Instant::now();
+        reactor.wait(|| Some(Duration::from_millis(50))).unwrap();
+
+        // A wait a wake-up ends is over in microseconds, far short of this.
+        assert!(started.elapsed() >= Duration::from_millis(40));
     }
 
     /// A burst of wakes with no wait between them puts one wake-up in the channel, not ten.
@@ -469,6 +550,7 @@ mod tests {
     #[timeout(15000)]
     fn many_notifies_between_waits_write_once() {
         let reactor = reactor();
+        reactor.announce_wait();
         // From a thread of its own: a reactor's own worker is the one caller that needs no
         // telling, and this test has no worker at all.
         let notifying = {
@@ -485,8 +567,27 @@ mod tests {
         };
         notifying.join().unwrap();
 
-        reactor.wait(None).unwrap();
+        reactor.wait(|| None).unwrap();
 
+        assert!(!reactor.wake_pending(), "the wait took the wake-up out");
+    }
+
+    /// A wake sent between the announcement and the poll ends the wait all the same.
+    ///
+    /// Which is the moment the announcement is made for: the wake-up is written before there is
+    /// a poll to break, and the poll it meets ends on the byte waiting in the channel.
+    #[test]
+    #[timeout(15000)]
+    fn a_notify_between_the_announcement_and_the_poll_is_not_lost() {
+        let reactor = reactor();
+        reactor.announce_wait();
+
+        reactor.notify();
+        assert!(reactor.wake_pending(), "the wake reached the channel");
+        let started = Instant::now();
+        reactor.wait(|| None).unwrap();
+
+        assert!(started.elapsed() < Duration::from_secs(1));
         assert!(!reactor.wake_pending(), "the wait took the wake-up out");
     }
 
@@ -500,12 +601,12 @@ mod tests {
         let mut sleep = pin!(reactor.sleep(Duration::from_millis(200)));
         let polled = sleep.as_mut().poll(&mut Context::from_waker(&waker));
         assert!(polled.is_pending());
-        // That poll broke the wait a worker would have been in, and this stands in for it, so
-        // that the wait measured below is bounded by the deadline and by nothing else.
-        reactor.wait(Some(Duration::ZERO)).unwrap();
+        // Whatever that poll left in the channel is taken out here, so that the wait measured
+        // below is bounded by the deadline and by nothing else.
+        reactor.wait(|| Some(Duration::ZERO)).unwrap();
 
         let started = Instant::now();
-        reactor.wait(None).unwrap();
+        reactor.wait(|| None).unwrap();
 
         assert!(started.elapsed() < Duration::from_secs(2));
         assert_eq!(counter.count(), 1);
@@ -540,7 +641,7 @@ mod tests {
 
         drop(registration);
         peer.write_all(&[7]).unwrap();
-        reactor.wait(Some(Duration::from_millis(50))).unwrap();
+        reactor.wait(|| Some(Duration::from_millis(50))).unwrap();
 
         assert_eq!(counter.count(), 0);
         assert!(reactor.is_idle());
@@ -579,10 +680,10 @@ mod tests {
 
         // Two entries under the one deadline: what tells them apart is the id beside it.
         assert_eq!(lock(&reactor.timers).pending.len(), 2);
-        // A wait ends at the deadline or at the notification the first poll left behind, so it
-        // takes as many as it takes for both of these to come due.
+        // A wait ends at the nearest deadline, so it takes as many waits as it takes for both of
+        // these to come due.
         while first.count() == 0 || second.count() == 0 {
-            reactor.wait(None).unwrap();
+            reactor.wait(|| None).unwrap();
         }
 
         assert_eq!(first.count(), 1);

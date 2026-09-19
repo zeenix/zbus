@@ -37,6 +37,9 @@ pub(super) fn on_worker_thread(reactor: &Reactor) -> bool {
 /// something is, the round ends in one wait on the reactor: bounded by no time at all where a
 /// task is ready, so that the round after it polls that task, and by nothing where none is, so
 /// that the thread sleeps until a source, a deadline or a notification has something for it.
+///
+/// That bound is worked out inside the wait rather than here, because the queue it is read from
+/// is one of the things the wait announces itself before reading.
 pub(super) fn run(inner: Arc<Inner>) {
     let _marks = Marks::put_up(&inner);
     let mut failed_waits = 0u32;
@@ -49,8 +52,10 @@ pub(super) fn run(inner: Arc<Inner>) {
         if inner.retire_if_idle() {
             return;
         }
-        let at_most = inner.scheduler.has_ready().then_some(Duration::ZERO);
-        match inner.reactor.wait(at_most) {
+        match inner
+            .reactor
+            .wait(|| inner.scheduler.has_ready().then_some(Duration::ZERO))
+        {
             Ok(()) => failed_waits = 0,
             Err(e) => {
                 failed_waits += 1;
