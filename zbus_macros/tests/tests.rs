@@ -490,6 +490,50 @@ async fn proxy_object_list() {
     check_return(proxy.objects().await.unwrap());
 }
 
+// `proxy_type_name` and its `async_object` alias must both resolve the same method's return
+// type to the named proxy, overriding the `<object>Proxy` derivation.
+#[test]
+fn method_object_proxy_type_name_and_its_alias() {
+    #[zbus_macros::proxy(
+        interface = "org.freedesktop.zbus_macros.ProxyTypeName",
+        default_service = "org.freedesktop.zbus_macros"
+    )]
+    trait ProxyTypeNameTarget {}
+
+    #[zbus_macros::proxy(
+        interface = "org.freedesktop.zbus_macros.UsesProxyTypeName",
+        default_service = "org.freedesktop.zbus_macros",
+        default_path = "/org/freedesktop/zbus_macros/uses_proxy_type_name"
+    )]
+    trait UsesProxyTypeName {
+        #[zbus(object = "ProxyTypeName", proxy_type_name = "ProxyTypeNameTargetProxy")]
+        fn get_target(&self);
+    }
+
+    #[zbus_macros::proxy(
+        interface = "org.freedesktop.zbus_macros.UsesAsyncObjectAlias",
+        default_service = "org.freedesktop.zbus_macros",
+        default_path = "/org/freedesktop/zbus_macros/uses_async_object_alias"
+    )]
+    trait UsesAsyncObjectAlias {
+        #[zbus(object = "ProxyTypeName", async_object = "ProxyTypeNameTargetProxy")]
+        fn get_target(&self);
+    }
+
+    block_on(async move {
+        let connection = zbus::Connection::session().await.unwrap();
+
+        let target = UsesProxyTypeNameProxy::new(&connection).await.unwrap();
+        // Nothing replies, but the point of the call is the return type, checked below.
+        let result: zbus::Result<ProxyTypeNameTargetProxy<'_>> = target.get_target().await;
+        assert!(result.is_err());
+
+        let alias = UsesAsyncObjectAliasProxy::new(&connection).await.unwrap();
+        let result: zbus::Result<ProxyTypeNameTargetProxy<'_>> = alias.get_target().await;
+        assert!(result.is_err());
+    });
+}
+
 // This crate has no `zvariant` dependency, so the path `signature!` expands to has to resolve
 // through the `zbus` re-export.
 #[test]

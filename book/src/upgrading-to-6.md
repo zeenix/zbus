@@ -736,7 +736,8 @@ drop.
 
 The `#[proxy]` attributes `gen_blocking`, `blocking_name` and `blocking_object` are gone
 with the proxies they configured, and so is `gen_async`, since the async proxy is the only one;
-`async_name` and `async_object` stay. See [the FAQ](faq.md#how-do-i-use-zbus-from-synchronous-code).
+`async_name` stays; `async_object` is `proxy_type_name` (the old name is still accepted,
+undocumented). See [the FAQ](faq.md#how-do-i-use-zbus-from-synchronous-code).
 
 ### Logging through `tracing` is a feature
 

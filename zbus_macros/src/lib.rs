@@ -93,11 +93,11 @@ mod utils;
 ///   `object` attribute to specify the proxy object to be constructed from the returned
 ///   [`ObjectPath`].
 ///
-/// * `async_object` - if the assumptions made by `object` attribute about naming of the proxy type,
-///   don't fit your bill, you can use this to specify its exact name.
+/// * `proxy_type_name` - if the assumptions made by `object` attribute about naming of the proxy
+///   type, don't fit your bill, you can use this to specify its exact name.
 ///
 /// * `object_vec` - this method returns a list of [`ObjectPath`]s (DBus signature `ao`) that should
-///   be converted to the proxy object type named by `object` and `async_object` attributes, and
+///   be converted to the proxy object type named by `object` and `proxy_type_name` attributes, and
 ///   returned as a `Vec<_>`.
 ///
 ///   NB: Any doc comments provided shall be appended to the ones added by the macro.
@@ -140,14 +140,14 @@ mod utils;
 ///     #[zbus(signal)]
 ///     fn some_signal(&self, arg1: &str, arg2: u32) -> fdo::Result<()>;
 ///
-///     #[zbus(object = "SomeOtherIface", async_object = "SomeOtherInterfaceProxy")]
+///     #[zbus(object = "SomeOtherIface", proxy_type_name = "SomeOtherInterfaceProxy")]
 ///     // The method will return a `SomeOtherInterfaceProxy`.
 ///     //
 ///     // NB: We explicitly specified the exact name of the proxy type. If we hadn't,
 ///     // `SomeOtherIfaceProxy` would have been assumed and expected.
 ///     fn some_method(&self, arg1: &str);
 ///
-///     #[zbus(property, object = "SomeOtherIface", async_object = "SomeOtherInterfaceProxy")]
+///     #[zbus(property, object = "SomeOtherIface", proxy_type_name = "SomeOtherInterfaceProxy")]
 ///     // Properties that return an ObjectPath can also use the `object` attribute.
 ///     fn related_object(&self);
 /// }

@@ -31,6 +31,8 @@ def_attrs! {
         },
         signal none,
         object str,
+        proxy_type_name str,
+        // Accepted as another name for `proxy_type_name`.
         async_object str,
         object_vec none,
         no_reply none,
@@ -170,7 +172,7 @@ pub fn create_proxy(
                     &method_attrs,
                     emits_changed_signal,
                     &zbus,
-                )
+                )?
             } else if is_signal {
                 let (method, types) = gen_proxy_signal(
                     &proxy_name,
@@ -397,12 +399,7 @@ fn gen_proxy_method_call(
         .filter_map(pat_ident)
         .collect();
 
-    let proxy_object = method_attrs.object.as_ref().map(|o| {
-        method_attrs
-            .async_object
-            .clone()
-            .unwrap_or_else(|| format!("{o}Proxy"))
-    });
+    let proxy_object = resolve_proxy_type_name(&method_attrs, m.span())?;
     let proxy_vec = method_attrs.object_vec;
 
     let method_flags = match (
@@ -592,7 +589,7 @@ fn gen_proxy_property(
     method_attrs: &MethodAttributes,
     emits_changed_signal: PropertyEmitsChangedSignal,
     zbus: &TokenStream,
-) -> TokenStream {
+) -> Result<TokenStream, Error> {
     let other_attrs: Vec<_> = m
         .attrs
         .iter()
@@ -601,21 +598,16 @@ fn gen_proxy_property(
     let signature = &m.sig;
     if signature.inputs.len() > 1 {
         let value = pat_ident(typed_arg(signature.inputs.last().unwrap()).unwrap()).unwrap();
-        quote! {
+        Ok(quote! {
             #(#other_attrs)*
             #[allow(clippy::needless_question_mark)]
             pub async #signature {
                 ::std::result::Result::Ok(self.0.set_property(#property_name, #value).await?)
             }
-        }
+        })
     } else {
         // Check for object attribute to return a proxy instead of OwnedObjectPath
-        let proxy_object = method_attrs.object.as_ref().map(|o| {
-            method_attrs
-                .async_object
-                .clone()
-                .unwrap_or_else(|| format!("{o}Proxy"))
-        });
+        let proxy_object = resolve_proxy_type_name(method_attrs, m.span())?;
 
         let proxy_vec = method_attrs.object_vec;
 
@@ -751,7 +743,7 @@ fn gen_proxy_property(
             )
         };
 
-        quote! {
+        Ok(quote! {
             #(#other_attrs)*
             #[allow(clippy::needless_question_mark)]
             pub async #sig {
@@ -759,7 +751,7 @@ fn gen_proxy_property(
             }
 
             #extra_methods
-        }
+        })
     }
 }
 
@@ -774,6 +766,27 @@ impl Fold for SetLifetimeS {
 
     fn fold_lifetime(&mut self, _node: syn::Lifetime) -> syn::Lifetime {
         syn::Lifetime::new("'s", Span::call_site())
+    }
+}
+
+/// The proxy type to build from the `ObjectPath` an `object`-attributed method or property
+/// returns: `proxy_type_name` if given, its `async_object` alias if given, or `<object>Proxy`
+/// derived from the `object` attribute's value when neither is given.
+fn resolve_proxy_type_name(
+    method_attrs: &MethodAttributes,
+    span: Span,
+) -> Result<Option<String>, Error> {
+    let Some(object) = &method_attrs.object else {
+        return Ok(None);
+    };
+
+    match (&method_attrs.proxy_type_name, &method_attrs.async_object) {
+        (Some(_), Some(_)) => Err(Error::new(
+            span,
+            "`proxy_type_name` and `async_object` name the same thing; use `proxy_type_name`",
+        )),
+        (Some(name), None) | (None, Some(name)) => Ok(Some(name.clone())),
+        (None, None) => Ok(Some(format!("{object}Proxy"))),
     }
 }
 
