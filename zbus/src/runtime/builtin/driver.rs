@@ -27,7 +27,7 @@ use std::{
 use std::{
     future::Future,
     pin::pin,
-    sync::Mutex,
+    sync::{Mutex, Weak},
     task::{Context, Poll, Wake, Waker},
 };
 
@@ -224,6 +224,7 @@ where
         thread: thread::current(),
         woken: Mutex::new(false),
         resolve: resolve.clone(),
+        runtime: Mutex::new(Weak::new()),
     });
     let waker = Waker::from(signal.clone());
     let mut cx = Context::from_waker(&waker);
@@ -437,6 +438,8 @@ struct Signal {
     /// Whether the future has been woken since it was last polled.
     woken: Mutex<bool>,
     resolve: Resolve,
+    /// The runtime a wake reaches: found through `resolve` the first time, kept after.
+    runtime: Mutex<Weak<Inner>>,
 }
 
 #[cfg(any(test, not(feature = "tokio")))]
@@ -452,7 +455,23 @@ impl Wake for Signal {
     fn wake_by_ref(self: &Arc<Self>) {
         *lock(&self.woken) = true;
         self.thread.unpark();
-        if let Some(inner) = (self.resolve)() {
+        // The runtime is looked up through the registry once, then kept: a wake is on the hot
+        // path of every reply, and the registry's lock is the whole process's.
+        let inner = {
+            let mut runtime = lock(&self.runtime);
+            match runtime.upgrade() {
+                Some(inner) => Some(inner),
+                None => {
+                    let inner = (self.resolve)();
+                    if let Some(inner) = &inner {
+                        *runtime = Arc::downgrade(inner);
+                    }
+
+                    inner
+                }
+            }
+        };
+        if let Some(inner) = inner {
             inner.reactor.notify();
         }
     }
