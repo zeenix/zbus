@@ -52,6 +52,27 @@ fn a_spawned_task_hands_its_output_back() {
 
 #[test]
 #[timeout(15000)]
+fn a_finished_task_whose_handle_is_dropped_leaves_nothing_behind() {
+    let runtime = runtime();
+    let task = runtime.spawn("a task that finishes at once", async {});
+    // Run the task to completion on this thread, keeping the handle alive past it.
+    drive(&runtime, async {
+        std::future::poll_fn(|cx| {
+            cx.waker().wake_by_ref();
+            std::task::Poll::<()>::Ready(())
+        })
+        .await
+    });
+    assert!(within_a_second(|| !runtime.inner().is_busy()));
+
+    drop(task);
+
+    assert!(!runtime.inner().is_busy());
+    assert!(!runtime.helper_running());
+}
+
+#[test]
+#[timeout(15000)]
 fn the_helper_starts_on_the_first_spawn() {
     let runtime = runtime();
     let task = runtime.spawn("a task that names the thread it runs on", async {

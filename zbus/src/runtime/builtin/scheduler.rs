@@ -315,7 +315,9 @@ impl<T> Drop for JoinHandle<T> {
 
                     None
                 }
-                CellState::Done => None,
+                // Finished, or cancelled by an earlier drop: nothing to take back, nobody to
+                // tell.
+                CellState::Done => return,
             }
         };
         // On the thread that let the handle go, with no lock held: a destructor that panics
