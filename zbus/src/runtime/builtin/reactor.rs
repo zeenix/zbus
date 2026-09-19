@@ -33,7 +33,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::poll::{Poller, Want};
+use super::{
+    Inner,
+    poll::{Poller, Want},
+};
 use crate::runtime::{Interest, IoSource, traits};
 
 /// The sockets one runtime watches and the timers it keeps.
@@ -94,47 +97,6 @@ impl Reactor {
     #[cfg(test)]
     pub(super) fn wake_pending(&self) -> bool {
         self.wake_pending.load(Ordering::Acquire)
-    }
-
-    /// Puts `source` under this reactor's watch, with a key of its own to report it by.
-    pub(super) fn register(self: &Arc<Self>, source: IoSource) -> io::Result<RegisteredIoSource> {
-        let mut sources = lock(&self.sources);
-        // One `select` takes a fixed number of sockets, one place of which is spoken for by the
-        // channel that breaks the wait.
-        #[cfg(windows)]
-        if sources.states.len() >= super::poll::MAX_SOURCES {
-            return Err(io::Error::other(format!(
-                "this runtime watches at most {} sockets",
-                super::poll::MAX_SOURCES
-            )));
-        }
-        let key = sources.next_key;
-        let state = Arc::new(SourceState {
-            source,
-            wakers: Mutex::default(),
-            key,
-        });
-        sources.next_key += 1;
-        sources.states.insert(key, state.clone());
-
-        Ok(RegisteredIoSource {
-            reactor: self.clone(),
-            state,
-        })
-    }
-
-    /// A timer that is due once `duration` has passed, or one that never comes due where the
-    /// clock cannot reach that far.
-    pub(super) fn sleep(self: &Arc<Self>, duration: Duration) -> Sleep {
-        Sleep {
-            reactor: self.clone(),
-            // This reactor's timers run on the standard clock, so a length of time is a deadline
-            // on it — where the clock has a moment that far ahead. `Duration::MAX`, which a
-            // method timeout of "however long it takes" comes to, has none, and asks for a timer
-            // that never fires rather than for a moment the clock cannot name.
-            deadline: Instant::now().checked_add(duration),
-            id: None,
-        }
     }
 
     /// One wait on the poller, bounded by `at_most` and by the nearest deadline, then the wakes
@@ -240,9 +202,52 @@ impl Reactor {
     }
 }
 
+impl Inner {
+    /// Puts `source` under the reactor's watch, with a key of its own to report it by.
+    pub(super) fn register(self: &Arc<Self>, source: IoSource) -> io::Result<RegisteredIoSource> {
+        let mut sources = lock(&self.reactor.sources);
+        // One `select` takes a fixed number of sockets, one place of which is spoken for by the
+        // channel that breaks the wait.
+        #[cfg(windows)]
+        if sources.states.len() >= super::poll::MAX_SOURCES {
+            return Err(io::Error::other(format!(
+                "this runtime watches at most {} sockets",
+                super::poll::MAX_SOURCES
+            )));
+        }
+        let key = sources.next_key;
+        let state = Arc::new(SourceState {
+            source,
+            wakers: Mutex::default(),
+            key,
+        });
+        sources.next_key += 1;
+        sources.states.insert(key, state.clone());
+
+        Ok(RegisteredIoSource {
+            runtime: self.clone(),
+            state,
+        })
+    }
+
+    /// A timer that is due once `duration` has passed, or one that never comes due where the
+    /// clock cannot reach that far.
+    pub(super) fn sleep(self: &Arc<Self>, duration: Duration) -> Sleep {
+        Sleep {
+            runtime: self.clone(),
+            // This reactor's timers run on the standard clock, so a length of time is a deadline
+            // on it — where the clock has a moment that far ahead. `Duration::MAX`, which a
+            // method timeout of "however long it takes" comes to, has none, and asks for a timer
+            // that never fires rather than for a moment the clock cannot name.
+            deadline: Instant::now().checked_add(duration),
+            id: None,
+        }
+    }
+}
+
 /// One source this reactor watches, and what a connection does its I/O through.
 pub(crate) struct RegisteredIoSource {
-    reactor: Arc<Reactor>,
+    runtime: Arc<Inner>,
     state: Arc<SourceState>,
 }
 
@@ -280,7 +285,7 @@ impl traits::PollIo for RegisteredIoSource {
         drop(replaced);
         // The wait under way was built before this waker was stored, so it is broken here and
         // the one that follows it watches this source.
-        self.reactor.notify();
+        self.runtime.reactor.notify();
 
         Poll::Pending
     }
@@ -292,7 +297,7 @@ impl Drop for RegisteredIoSource {
         // `IoSource`; a wait holding a clone of that source keeps the descriptor open until it
         // returns, so the watch is over before the descriptor can close.
         let removed = {
-            let mut sources = lock(&self.reactor.sources);
+            let mut sources = lock(&self.runtime.reactor.sources);
 
             sources.states.remove(&self.state.key)
         };
@@ -302,13 +307,13 @@ impl Drop for RegisteredIoSource {
         drop(removed);
         // Clear of the lock as well: the wait built from a source that has gone is broken, so
         // that the wait after it leaves that source out.
-        self.reactor.notify();
+        self.runtime.reactor.notify();
     }
 }
 
 /// A timer this reactor wakes once its deadline has passed.
 pub(super) struct Sleep {
-    reactor: Arc<Reactor>,
+    runtime: Arc<Inner>,
     /// When this timer comes due, and nothing where the clock has no such moment: a timer that
     /// never fires.
     deadline: Option<Instant>,
@@ -317,6 +322,11 @@ pub(super) struct Sleep {
 }
 
 impl Sleep {
+    /// The runtime this timer belongs to.
+    pub(super) fn runtime(&self) -> &Arc<Inner> {
+        &self.runtime
+    }
+
     /// Whether this timer has no deadline the clock can name, and so never comes due.
     pub(super) fn never_fires(&self) -> bool {
         self.deadline.is_none()
@@ -338,7 +348,7 @@ impl Future for Sleep {
         }
 
         let (first_deadline, replaced) = {
-            let mut timers = lock(&this.reactor.timers);
+            let mut timers = lock(&this.runtime.reactor.timers);
             let id = match this.id {
                 Some(id) => id,
                 None => {
@@ -366,7 +376,7 @@ impl Future for Sleep {
         // that stores a deadline the map had lost — a failed wait drops every timer it holds —
         // brings in an earliest deadline just as a first poll does.
         if stored && first_deadline {
-            this.reactor.notify();
+            this.runtime.reactor.notify();
         }
 
         Poll::Pending
@@ -382,7 +392,7 @@ impl Drop for Sleep {
         };
         let key = (deadline, id);
         let (was_first, removed) = {
-            let mut timers = lock(&self.reactor.timers);
+            let mut timers = lock(&self.runtime.reactor.timers);
             let was_first = timers.pending.keys().next() == Some(&key);
 
             (was_first, timers.pending.remove(&key))
@@ -393,7 +403,7 @@ impl Drop for Sleep {
         // A thread whose wait is bounded by nothing but this deadline can retire at once rather
         // than sit out a deadline nobody waits for any more.
         if was_first {
-            self.reactor.notify();
+            self.runtime.reactor.notify();
         }
     }
 }
@@ -444,9 +454,10 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_readable_source_wakes_its_waker() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (source, mut peer) = pair();
-        let registration = reactor.register(source.clone()).unwrap();
+        let registration = runtime.register(source.clone()).unwrap();
         let (counter, waker) = counting_waker();
         let mut cx = Context::from_waker(&waker);
         assert!(read_one(&registration, &source, &mut cx).is_pending());
@@ -464,10 +475,10 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_source_written_before_registration_is_seen() {
-        let reactor = reactor();
+        let runtime = runtime();
         let (source, mut peer) = pair();
         peer.write_all(&[7]).unwrap();
-        let registration = reactor.register(source.clone()).unwrap();
+        let registration = runtime.register(source.clone()).unwrap();
         let (counter, waker) = counting_waker();
 
         let read = read_one(&registration, &source, &mut Context::from_waker(&waker));
@@ -479,10 +490,12 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn notify_breaks_a_wait() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let breaker = {
-            let reactor = reactor.clone();
+            let runtime = runtime.clone();
             thread::spawn(move || {
+                let reactor = &runtime.reactor;
                 thread::sleep(Duration::from_millis(50));
                 reactor.notify();
             })
@@ -503,12 +516,14 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn many_notifies_between_waits_write_once() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         // From a thread of its own: the thread running a reactor is the one caller that needs
         // no telling, and this test has no such thread at all.
         let notifying = {
-            let reactor = reactor.clone();
+            let runtime = runtime.clone();
             thread::spawn(move || {
+                let reactor = &runtime.reactor;
                 reactor.notify();
                 assert!(reactor.wake_pending(), "the first wake reached the channel");
 
@@ -528,11 +543,12 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_wait_ends_at_the_nearest_deadline() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (counter, waker) = counting_waker();
         // Far enough ahead that the deadline lies past the wait under test even where the
         // machine stalls between that wait and the poll below.
-        let mut sleep = pin!(reactor.sleep(Duration::from_millis(200)));
+        let mut sleep = pin!(runtime.sleep(Duration::from_millis(200)));
         let polled = sleep.as_mut().poll(&mut Context::from_waker(&waker));
         assert!(polled.is_pending());
         // That poll broke the wait a thread running the reactor would have been in, and this
@@ -556,10 +572,11 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_dropped_sleep_leaves_no_deadline() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (counter, waker) = counting_waker();
         {
-            let mut sleep = pin!(reactor.sleep(Duration::from_secs(60)));
+            let mut sleep = pin!(runtime.sleep(Duration::from_secs(60)));
             let polled = sleep.as_mut().poll(&mut Context::from_waker(&waker));
             assert!(polled.is_pending());
             assert!(!reactor.is_idle());
@@ -572,9 +589,10 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_dropped_registration_stops_the_watch() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (source, mut peer) = pair();
-        let registration = reactor.register(source.clone()).unwrap();
+        let registration = runtime.register(source.clone()).unwrap();
         let (counter, waker) = counting_waker();
         let mut cx = Context::from_waker(&waker);
         assert!(read_one(&registration, &source, &mut cx).is_pending());
@@ -590,19 +608,20 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn two_sleeps_with_one_deadline_both_fire() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (first, first_waker) = counting_waker();
         let (second, second_waker) = counting_waker();
-        // Built by hand from the one deadline: `Reactor::sleep` reads the clock afresh for each
+        // Built by hand from the one deadline: `Inner::sleep` reads the clock afresh for each
         // timer, and two deadlines nanoseconds apart would keep the pair apart on their own.
         let deadline = Instant::now() + Duration::from_millis(5);
         let mut one = pin!(Sleep {
-            reactor: reactor.clone(),
+            runtime: runtime.clone(),
             deadline: Some(deadline),
             id: None,
         });
         let mut other = pin!(Sleep {
-            reactor: reactor.clone(),
+            runtime: runtime.clone(),
             deadline: Some(deadline),
             id: None,
         });
@@ -634,14 +653,15 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_failed_wait_wakes_everything() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (source, _peer) = pair();
-        let registration = reactor.register(source.clone()).unwrap();
+        let registration = runtime.register(source.clone()).unwrap();
         let (reader, reader_waker) = counting_waker();
         let (timer, timer_waker) = counting_waker();
         let mut cx = Context::from_waker(&reader_waker);
         assert!(read_one(&registration, &source, &mut cx).is_pending());
-        let mut sleep = pin!(reactor.sleep(Duration::from_secs(60)));
+        let mut sleep = pin!(runtime.sleep(Duration::from_secs(60)));
         let polled = sleep.as_mut().poll(&mut Context::from_waker(&timer_waker));
         assert!(polled.is_pending());
 
@@ -659,9 +679,10 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_sleep_beyond_the_clock_never_fires() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (counter, waker) = counting_waker();
-        let mut sleep = pin!(reactor.sleep(Duration::MAX));
+        let mut sleep = pin!(runtime.sleep(Duration::MAX));
 
         let polled = sleep.as_mut().poll(&mut Context::from_waker(&waker));
 
@@ -680,10 +701,11 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_deadline_stored_again_breaks_the_wait() {
-        let reactor = reactor();
+        let runtime = runtime();
+        let reactor = &runtime.reactor;
         let (first, first_waker) = counting_waker();
         // Far enough ahead that it is still to come while the wait below is under way.
-        let mut sleep = pin!(reactor.sleep(Duration::from_millis(500)));
+        let mut sleep = pin!(runtime.sleep(Duration::from_millis(500)));
         assert!(
             sleep
                 .as_mut()
@@ -699,8 +721,9 @@ mod tests {
         assert!(reactor.is_idle());
 
         let waiting = {
-            let reactor = reactor.clone();
+            let runtime = runtime.clone();
             thread::spawn(move || {
+                let reactor = &runtime.reactor;
                 let started = Instant::now();
                 reactor.wait(None).unwrap();
 
@@ -728,8 +751,8 @@ mod tests {
     }
 
     /// A reactor, held the way the thread running a runtime holds one.
-    fn reactor() -> Arc<Reactor> {
-        Arc::new(Reactor::new().unwrap())
+    fn runtime() -> Arc<Inner> {
+        Inner::new().unwrap()
     }
 
     /// A counter and the waker that counts into it.

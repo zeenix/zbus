@@ -11,7 +11,7 @@
 //! has gone, does nothing, so a task woken three times is polled once; a wake that arrives while
 //! the task is being polled is remembered and queues the cell again once that poll returns.
 //!
-//! [`Scheduler::spawn`] hands back a handle that resolves to what the task produced. Dropping
+//! [`Inner::spawn`] hands back a handle that resolves to what the task produced. Dropping
 //! the handle cancels the task: the future is dropped there and then if nobody is polling it,
 //! and by the poll under way otherwise. A task whose outcome is of no further interest is
 //! detached instead, and runs until it ends.
@@ -42,6 +42,8 @@ use std::{
 
 use crate::log::error;
 
+use super::Inner;
+
 /// The tasks of one runtime: what has been spawned on it, and what is ready to be polled.
 pub(super) struct Scheduler {
     state: Mutex<State>,
@@ -60,61 +62,6 @@ impl Scheduler {
                 next_id: 0,
             }),
             notify: Box::new(notify),
-        }
-    }
-
-    /// Queues `future` and hands back the handle that joins or cancels it.
-    ///
-    /// `name` says what the task is there for. It is for diagnostics alone: the message a
-    /// panicking task logs, and the handle's [`Debug`](fmt::Debug).
-    pub(super) fn spawn<T>(
-        self: &Arc<Self>,
-        name: &str,
-        future: impl Future<Output = T> + Send + 'static,
-    ) -> JoinHandle<T>
-    where
-        T: Send + 'static,
-    {
-        let joint = Arc::new(Mutex::new(Joint {
-            output: None,
-            waker: None,
-        }));
-        let wrapped = {
-            let joint = joint.clone();
-            async move {
-                // Pinned in place and awaited through that pin, rather than awaited by value:
-                // the output is then stored before the future it came from is dropped, at the
-                // end of this block, so a future whose destructor panics hands its value back
-                // all the same.
-                let mut future = pin!(future);
-                Joint::finish(&joint, Ok(future.as_mut().await));
-            }
-        };
-        let cell = {
-            let mut state = lock(&self.state);
-            let id = state.next_id;
-            state.next_id += 1;
-            let cell = Arc::new(TaskCell {
-                id,
-                name: name.into(),
-                scheduler: Arc::downgrade(self),
-                joint: joint.clone(),
-                cell: Mutex::new(CellState::Idle {
-                    future: Box::pin(wrapped),
-                    queued: false,
-                }),
-            });
-            state.live.insert(id, cell.clone());
-
-            cell
-        };
-        // Queued through a wake, so that a task reaches the queue by one path only.
-        cell.wake_by_ref();
-
-        JoinHandle {
-            cell,
-            joint,
-            detached: false,
         }
     }
 
@@ -211,6 +158,63 @@ impl Scheduler {
     }
 }
 
+impl Inner {
+    /// Queues `future` and hands back the handle that joins or cancels it.
+    ///
+    /// `name` says what the task is there for. It is for diagnostics alone: the message a
+    /// panicking task logs, and the handle's [`Debug`](fmt::Debug).
+    pub(super) fn spawn<T>(
+        self: &Arc<Self>,
+        name: &str,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> JoinHandle<T>
+    where
+        T: Send + 'static,
+    {
+        let joint = Arc::new(Mutex::new(Joint {
+            output: None,
+            waker: None,
+        }));
+        let wrapped = {
+            let joint = joint.clone();
+            async move {
+                // Pinned in place and awaited through that pin, rather than awaited by value:
+                // the output is then stored before the future it came from is dropped, at the
+                // end of this block, so a future whose destructor panics hands its value back
+                // all the same.
+                let mut future = pin!(future);
+                Joint::finish(&joint, Ok(future.as_mut().await));
+            }
+        };
+        let cell = {
+            let mut state = lock(&self.scheduler.state);
+            let id = state.next_id;
+            state.next_id += 1;
+            let cell = Arc::new(TaskCell {
+                id,
+                name: name.into(),
+                runtime: Arc::downgrade(self),
+                joint: joint.clone(),
+                cell: Mutex::new(CellState::Idle {
+                    future: Box::pin(wrapped),
+                    queued: false,
+                }),
+            });
+            state.live.insert(id, cell.clone());
+
+            cell
+        };
+        // Queued through a wake, so that a task reaches the queue by one path only.
+        cell.wake_by_ref();
+
+        JoinHandle {
+            cell,
+            joint,
+            detached: false,
+        }
+    }
+}
+
 impl Drop for Scheduler {
     fn drop(&mut self) {
         // A cell outlives the scheduler wherever something holds a waker of it, so every future
@@ -290,7 +294,8 @@ impl<T> Drop for JoinHandle<T> {
         if self.detached {
             return;
         }
-        let scheduler = self.cell.scheduler.upgrade();
+        let runtime = self.cell.runtime.upgrade();
+        let scheduler = runtime.as_ref().map(|runtime| &runtime.scheduler);
         let future = {
             let mut guard = lock(&self.cell.cell);
             match mem::replace(&mut *guard, CellState::Done) {
@@ -357,7 +362,7 @@ struct State {
 struct TaskCell {
     id: u64,
     name: Box<str>,
-    scheduler: Weak<Scheduler>,
+    runtime: Weak<Inner>,
     /// The handle's side of the task, reached from here without knowing what the task produces.
     joint: Arc<dyn Fail>,
     cell: Mutex<CellState>,
@@ -369,10 +374,11 @@ impl Wake for TaskCell {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        let Some(scheduler) = self.scheduler.upgrade() else {
+        let Some(runtime) = self.runtime.upgrade() else {
             // The runtime is gone, and with it the queue this cell would go on.
             return;
         };
+        let scheduler = &runtime.scheduler;
         let mut guard = lock(&self.cell);
         match &mut *guard {
             // The future is out of its cell; the poll it is out for queues the cell again.
@@ -490,31 +496,31 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_spawned_task_runs_and_hands_its_output_back() {
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("an answer", async { 42 });
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("an answer", async { 42 });
 
-        drive(&scheduler);
+        drive(&runtime.scheduler);
 
         assert_eq!(block_on(handle).unwrap(), 42);
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     #[test]
     #[timeout(15000)]
     fn a_wake_from_another_thread_notifies_the_worker() {
-        let (scheduler, notifications) = scheduler();
+        let (runtime, notifications) = runtime();
         let event = Arc::new(Event::new());
         let handle = {
             let event = event.clone();
-            scheduler.spawn("a waiting task", async move {
+            runtime.spawn("a waiting task", async move {
                 event.listen().await;
                 "woken"
             })
         };
 
         // Polled here, so that it is waiting for the event rather than for its first poll.
-        drive(&scheduler);
-        assert!(!scheduler.has_ready());
+        drive(&runtime.scheduler);
+        assert!(!runtime.scheduler.has_ready());
         let before = *lock(&notifications);
 
         thread::spawn(move || {
@@ -524,8 +530,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(*lock(&notifications), before + 1);
-        assert!(scheduler.has_ready());
-        drive(&scheduler);
+        assert!(runtime.scheduler.has_ready());
+        drive(&runtime.scheduler);
         assert_eq!(block_on(handle).unwrap(), "woken");
     }
 
@@ -548,46 +554,46 @@ mod tests {
             }
         }
 
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("a self-waking task", WakeOnce(false));
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("a self-waking task", WakeOnce(false));
 
-        assert!(scheduler.run_one());
-        assert!(scheduler.has_ready());
-        assert!(scheduler.run_one());
-        assert!(!scheduler.run_one());
+        assert!(runtime.scheduler.run_one());
+        assert!(runtime.scheduler.has_ready());
+        assert!(runtime.scheduler.run_one());
+        assert!(!runtime.scheduler.run_one());
         assert!(block_on(handle).is_ok());
     }
 
     #[test]
     #[timeout(15000)]
     fn dropping_the_handle_cancels_and_drops_the_future() {
-        let (scheduler, _) = scheduler();
+        let (runtime, _) = runtime();
         let dropped = Arc::new(AtomicBool::new(false));
         let handle = {
             let marker = SetOnDrop(dropped.clone());
-            scheduler.spawn("a task that never finishes", async move {
+            runtime.spawn("a task that never finishes", async move {
                 let _marker = marker;
                 std::future::pending::<()>().await;
             })
         };
 
         // Polled here, so that the cancellation finds it idle rather than merely queued.
-        drive(&scheduler);
+        drive(&runtime.scheduler);
         assert!(!dropped.load(Ordering::Acquire));
 
         drop(handle);
 
         assert!(dropped.load(Ordering::Acquire));
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     #[test]
     #[timeout(15000)]
     fn cancelling_notifies_the_worker() {
-        let (scheduler, notifications) = scheduler();
-        let handle = scheduler.spawn("a task that never finishes", std::future::pending::<()>());
+        let (runtime, notifications) = runtime();
+        let handle = runtime.spawn("a task that never finishes", std::future::pending::<()>());
 
-        drive(&scheduler);
+        drive(&runtime.scheduler);
         let before = *lock(&notifications);
 
         drop(handle);
@@ -598,11 +604,11 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_detached_task_runs_to_completion() {
-        let (scheduler, _) = scheduler();
+        let (runtime, _) = runtime();
         let ran = Arc::new(AtomicBool::new(false));
         {
             let ran = ran.clone();
-            scheduler
+            runtime
                 .spawn("a detached task", async move {
                     yield_now().await;
                     ran.store(true, Ordering::Release);
@@ -610,25 +616,25 @@ mod tests {
                 .detach();
         }
 
-        drive(&scheduler);
+        drive(&runtime.scheduler);
 
         assert!(ran.load(Ordering::Acquire));
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     #[test]
     #[timeout(15000)]
     fn a_panicking_task_fails_its_handle_and_is_forgotten() {
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("a task that panics", async {
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("a task that panics", async {
             panic!("the task panicked on purpose");
         });
 
-        drive(&scheduler);
+        drive(&runtime.scheduler);
 
         let error = block_on(handle).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::Other);
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     /// A panic whose payload panics as it goes takes its task down with it all the same.
@@ -647,16 +653,16 @@ mod tests {
             }
         }
 
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("a task that panics with a payload of its own", async {
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("a task that panics with a payload of its own", async {
             std::panic::panic_any(PanickingPayload);
         });
 
-        assert!(scheduler.run_one());
+        assert!(runtime.scheduler.run_one());
 
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
         assert_eq!(block_on(handle).unwrap_err().kind(), io::ErrorKind::Other);
-        assert!(!scheduler.run_one());
+        assert!(!runtime.scheduler.run_one());
     }
 
     /// Cancelling a task from inside its own poll, whose future's drop panics with a payload
@@ -681,10 +687,10 @@ mod tests {
             }
         }
 
-        let (scheduler, _) = scheduler();
+        let (runtime, _) = runtime();
         let own_handle: Arc<Mutex<Option<JoinHandle<()>>>> = Arc::new(Mutex::new(None));
         let dropped_from_inside = own_handle.clone();
-        let handle = scheduler.spawn(
+        let handle = runtime.spawn(
             "a task that cancels itself from within its own poll",
             async move {
                 let _marker = PanicsWithAPayloadWhenDropped;
@@ -696,16 +702,16 @@ mod tests {
 
         let ran = Arc::new(AtomicBool::new(false));
         let flag = ran.clone();
-        let other = scheduler.spawn("an unrelated task", async move {
+        let other = runtime.spawn("an unrelated task", async move {
             flag.store(true, Ordering::Release);
         });
 
-        assert!(scheduler.run_one());
-        assert!(scheduler.run_one());
+        assert!(runtime.scheduler.run_one());
+        assert!(runtime.scheduler.run_one());
 
         assert!(ran.load(Ordering::Acquire));
         assert!(block_on(other).is_ok());
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     /// A panic payload whose own drop panics with a further payload, whose drop panics too, is
@@ -729,18 +735,18 @@ mod tests {
             }
         }
 
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("a task whose panic payload panics twice over", async {
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("a task whose panic payload panics twice over", async {
             std::panic::panic_any(Outer);
         });
 
-        assert!(scheduler.run_one());
+        assert!(runtime.scheduler.run_one());
 
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
         assert_eq!(block_on(handle).unwrap_err().kind(), io::ErrorKind::Other);
 
-        let next = scheduler.spawn("the task after it", async { 7 });
-        drive(&scheduler);
+        let next = runtime.spawn("the task after it", async { 7 });
+        drive(&runtime.scheduler);
         assert_eq!(block_on(next).unwrap(), 7);
     }
 
@@ -763,14 +769,14 @@ mod tests {
             }
         }
 
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("a task that panics as it goes", PanicOnDrop);
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("a task that panics as it goes", PanicOnDrop);
 
-        assert!(scheduler.run_one());
+        assert!(runtime.scheduler.run_one());
         assert!(block_on(handle).is_ok());
 
-        let next = scheduler.spawn("the task after it", async { 7 });
-        drive(&scheduler);
+        let next = runtime.spawn("the task after it", async { 7 });
+        drive(&runtime.scheduler);
         assert_eq!(block_on(next).unwrap(), 7);
     }
 
@@ -790,17 +796,17 @@ mod tests {
             }
         }
 
-        let (scheduler, notifications) = scheduler();
+        let (runtime, notifications) = runtime();
         let handle = {
             let marker = PanicOnDrop;
-            scheduler.spawn("a task that never finishes", async move {
+            runtime.spawn("a task that never finishes", async move {
                 let _marker = marker;
                 std::future::pending::<()>().await;
             })
         };
         // Polled here, so that the cancellation finds the future idle and the drop of it is this
         // thread's to make.
-        drive(&scheduler);
+        drive(&runtime.scheduler);
         let before = *lock(&notifications);
 
         let cancelled = catch_unwind(AssertUnwindSafe(|| drop(handle)));
@@ -808,14 +814,14 @@ mod tests {
         // The panic is the caller's to see, where the handle was let go of.
         assert!(cancelled.is_err());
         assert_eq!(*lock(&notifications), before + 1);
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     #[test]
     #[timeout(15000)]
     fn a_ready_task_is_queued_once_however_often_it_is_woken() {
-        let (scheduler, notifications) = scheduler();
-        let handle = scheduler.spawn("a task that never finishes", std::future::pending::<()>());
+        let (runtime, notifications) = runtime();
+        let handle = runtime.spawn("a task that never finishes", std::future::pending::<()>());
         let waker = Waker::from(handle.cell.clone());
 
         for _ in 0..3 {
@@ -823,23 +829,23 @@ mod tests {
         }
 
         assert_eq!(*lock(&notifications), 1);
-        assert!(scheduler.has_ready());
-        assert!(scheduler.run_one());
-        assert!(!scheduler.run_one());
+        assert!(runtime.scheduler.has_ready());
+        assert!(runtime.scheduler.run_one());
+        assert!(!runtime.scheduler.run_one());
     }
 
     #[test]
     #[timeout(15000)]
     fn a_cancelled_futures_drop_may_spawn_on_the_scheduler() {
         struct SpawnOnDrop {
-            scheduler: Arc<Scheduler>,
+            runtime: Arc<Inner>,
             ran: Arc<AtomicBool>,
         }
 
         impl Drop for SpawnOnDrop {
             fn drop(&mut self) {
                 let ran = self.ran.clone();
-                self.scheduler
+                self.runtime
                     .spawn("a task spawned from a drop", async move {
                         ran.store(true, Ordering::Release);
                     })
@@ -847,53 +853,53 @@ mod tests {
             }
         }
 
-        let (scheduler, _) = scheduler();
+        let (runtime, _) = runtime();
         let ran = Arc::new(AtomicBool::new(false));
         let handle = {
             let spawner = SpawnOnDrop {
-                scheduler: scheduler.clone(),
+                runtime: runtime.clone(),
                 ran: ran.clone(),
             };
-            scheduler.spawn("a task that never finishes", async move {
+            runtime.spawn("a task that never finishes", async move {
                 let _spawner = spawner;
                 std::future::pending::<()>().await;
             })
         };
 
-        drive(&scheduler);
+        drive(&runtime.scheduler);
         drop(handle);
 
         assert!(!ran.load(Ordering::Acquire));
-        drive(&scheduler);
+        drive(&runtime.scheduler);
         assert!(ran.load(Ordering::Acquire));
     }
 
     #[test]
     #[timeout(15000)]
     fn live_tasks_counts_unfinished_futures_only() {
-        let (scheduler, _) = scheduler();
-        let done = scheduler.spawn("a task that finishes at once", async {});
-        let pending = scheduler.spawn("a task that never finishes", std::future::pending::<()>());
-        assert_eq!(scheduler.live_tasks(), 2);
+        let (runtime, _) = runtime();
+        let done = runtime.spawn("a task that finishes at once", async {});
+        let pending = runtime.spawn("a task that never finishes", std::future::pending::<()>());
+        assert_eq!(runtime.scheduler.live_tasks(), 2);
 
-        drive(&scheduler);
+        drive(&runtime.scheduler);
 
-        assert_eq!(scheduler.live_tasks(), 1);
+        assert_eq!(runtime.scheduler.live_tasks(), 1);
         assert!(block_on(done).is_ok());
 
         drop(pending);
 
-        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(runtime.scheduler.live_tasks(), 0);
     }
 
     #[test]
     #[timeout(15000)]
     fn dropping_the_scheduler_fails_pending_joins() {
-        let (scheduler, _) = scheduler();
-        let handle = scheduler.spawn("a task that never finishes", std::future::pending::<()>());
+        let (runtime, _) = runtime();
+        let handle = runtime.spawn("a task that never finishes", std::future::pending::<()>());
 
-        drive(&scheduler);
-        drop(scheduler);
+        drive(&runtime.scheduler);
+        drop(runtime);
 
         assert!(block_on(handle).is_err());
     }
@@ -904,12 +910,12 @@ mod tests {
     }
 
     /// A scheduler, and the count of the notifications it has sent.
-    fn scheduler() -> (Arc<Scheduler>, Arc<Mutex<usize>>) {
+    fn runtime() -> (Arc<Inner>, Arc<Mutex<usize>>) {
         let notifications = Arc::new(Mutex::new(0));
         let counter = notifications.clone();
 
         (
-            Arc::new(Scheduler::new(move || *lock(&counter) += 1)),
+            Inner::with_notify(move || *lock(&counter) += 1),
             notifications,
         )
     }
