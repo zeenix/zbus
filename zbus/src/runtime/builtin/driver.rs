@@ -11,7 +11,9 @@
 //! Work that outlives every `block_on` — a connection polled from some other executor, or a
 //! task left running once `block_on` has returned — is run by a helper thread, started where
 //! that work is found with nobody in the seat, and gone once nothing is left to run, watch or
-//! time.
+//! time. A `block_on` that arrives while the helper is in the seat is given it, the helper
+//! parking until that call leaves, so that a program calling `block_on` once per operation runs
+//! each of them on its own thread rather than behind a thread of zbus's own.
 
 use std::{
     cell::Cell,
@@ -109,6 +111,12 @@ impl Drop for Leaving<'_> {
         };
         let mut seat = lock(&inner.seat);
         seat.stop_waiting();
+        // The helper gives the seat up to a call that asks for it and parks; a call that asks
+        // and then finds its future done without ever taking the seat up leaves nobody in it,
+        // and the helper is the one to rouse.
+        if matches!(seat.holder, Holder::Nobody { .. }) {
+            seat.rouse_helper();
+        }
         hand_over(&inner, &mut seat);
     }
 }
@@ -126,7 +134,14 @@ pub(super) fn ensure_helper(inner: &Arc<Inner>) {
         return;
     }
     let mut seat = lock(&inner.seat);
-    if seat.helper || seat.holder == Holder::BlockOn {
+    // Whoever is in the seat finds the work, and so does a helper parked with the seat left to
+    // nobody, which was roused as the seat was left.
+    if !matches!(
+        seat.holder,
+        Holder::Nobody {
+            parked_helper: None
+        }
+    ) {
         return;
     }
     spawn_helper(inner, &mut seat);
@@ -142,24 +157,28 @@ pub(super) struct Seat {
     /// thread takes the seat or leaves `block_on`, so that what is held here is the threads
     /// there may be something to unpark, and no more.
     waiting: HashMap<ThreadId, Thread>,
-    /// Whether the helper thread is up. Set under the lock where the thread is started and
-    /// cleared under it where the thread decides to leave.
-    helper: bool,
 }
 
 impl Seat {
     /// A seat nobody is in.
     pub(super) fn new() -> Self {
         Self {
-            holder: Holder::Nobody,
+            holder: Holder::Nobody {
+                parked_helper: None,
+            },
             waiting: HashMap::new(),
-            helper: false,
         }
     }
 
-    /// Whether the helper thread is up.
+    /// Whether the helper thread is up, in the seat or parked.
     pub(super) fn helper_running(&self) -> bool {
-        self.helper
+        matches!(self.holder, Holder::Helper) || self.parked_helper().is_some()
+    }
+
+    /// Whether the helper thread is up and parked, having left the seat to a `block_on`.
+    #[cfg(test)]
+    pub(super) fn helper_parked(&self) -> bool {
+        self.parked_helper().is_some()
     }
 
     /// How many threads are down as waiting for the seat.
@@ -174,22 +193,54 @@ impl Seat {
     }
 
     /// Frees the seat, and unparks every thread waiting for it: to take it, or to find its
-    /// future done.
+    /// future done. A helper that parked for want of it is roused too, a freed seat being the
+    /// very thing it parked for.
     fn free(&mut self) {
-        self.holder = Holder::Nobody;
+        let parked_helper = match &mut self.holder {
+            Holder::Nobody { parked_helper } | Holder::BlockOn { parked_helper } => {
+                parked_helper.take()
+            }
+            Holder::Helper => None,
+        };
+        self.holder = Holder::Nobody { parked_helper };
         DRIVER_REACTOR.with(|reactor| reactor.set(None));
         for (_, thread) in self.waiting.drain() {
             thread.unpark();
         }
+        self.rouse_helper();
+    }
+
+    /// Rouses the helper where it is parked, so that it looks at the seat again: to take it
+    /// back where work is left, and to leave where none is.
+    ///
+    /// The helper parks for the sake of a `block_on` that wants the seat, so whoever takes the
+    /// last such call away — by freeing the seat, or by leaving the list of those waiting for
+    /// it empty with nobody in it — owes the helper this.
+    fn rouse_helper(&self) {
+        if let Some(thread) = self.parked_helper() {
+            thread.unpark();
+        }
+    }
+
+    /// The helper thread, where it is parked with the seat left to a `block_on`.
+    fn parked_helper(&self) -> Option<&Thread> {
+        match &self.holder {
+            Holder::Nobody { parked_helper } | Holder::BlockOn { parked_helper } => {
+                parked_helper.as_ref()
+            }
+            Holder::Helper => None,
+        }
     }
 }
 
-/// Who is in the seat.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Who is in the seat, and the helper thread where it is parked outside it.
 enum Holder {
-    Nobody,
-    /// A thread inside `block_on`.
-    BlockOn,
+    /// Nobody. The parked helper, if there is one, gave the seat up to a `block_on` that has
+    /// not taken it yet, or that took it and already left again; it is roused to look at the
+    /// seat once more.
+    Nobody { parked_helper: Option<Thread> },
+    /// A thread inside `block_on`, with the helper parked behind it if the helper is up.
+    BlockOn { parked_helper: Option<Thread> },
     /// The helper thread.
     Helper,
 }
@@ -259,7 +310,13 @@ where
 /// Unlike [`ensure_helper`], this pays no heed to the caller being inside `block_on`: it is for
 /// the two places where a thread that was running the work stops being able to.
 fn hand_over(inner: &Arc<Inner>, seat: &mut Seat) {
-    if seat.helper || seat.holder != Holder::Nobody || !inner.is_busy() {
+    if !matches!(
+        seat.holder,
+        Holder::Nobody {
+            parked_helper: None
+        }
+    ) || !inner.is_busy()
+    {
         return;
     }
     spawn_helper(inner, seat);
@@ -272,9 +329,11 @@ fn spawn_helper(inner: &Arc<Inner>, seat: &mut Seat) {
         .name(THREAD_NAME.into())
         .spawn(move || helper(inner))
         .expect("the thread a built-in runtime's helper runs on");
-    // Set once the thread is there: a spawn that fails panics with the flag clear, so that the
-    // next call tries again rather than wait on a thread that was never started.
-    seat.helper = true;
+    // The seat is the helper's from here, under the lock this is called with, so there is no
+    // window in which the thread is on its way and the seat looks free to a second spawn or to a
+    // `block_on`. Set once the thread is there: a spawn that fails panics with the seat free, so
+    // that the next call tries again rather than wait on a thread that was never started.
+    seat.holder = Holder::Helper;
 }
 
 /// The name the helper thread carries: twelve bytes, which fits the fifteen Linux keeps for one.
@@ -285,18 +344,30 @@ pub(super) const THREAD_NAME: &str = "zbus runtime";
 /// Each round polls what is ready, a batch at a time, and then asks whether anything is left to
 /// run, watch or time. Where nothing is, the thread leaves there and then, rather than sit in a
 /// wait until something comes along to tell it what it could have worked out for itself. Where
-/// something is, the round ends in one wait on the reactor.
+/// something is, the round ends in one wait on the reactor — unless a `block_on` is waiting for
+/// the seat, in which case the seat is that call's and this thread parks until it is free again.
 fn helper(inner: Arc<Inner>) {
-    let Some(driving) = Driving::take(inner, Driver::Helper) else {
-        return;
-    };
     let mut failed_waits = 0u32;
+    // The seat was made this thread's by whoever started it.
+    let mut driving = Some(Driving::enter(inner.clone(), Driver::Helper));
     loop {
-        driving.run_batch();
-        if driving.leave_if_idle() {
-            return;
+        if let Some(driving) = driving {
+            loop {
+                driving.run_batch();
+                if driving.leave_if_idle() {
+                    return;
+                }
+                if driving.yield_if_wanted() {
+                    break;
+                }
+                driving.wait(false, &mut failed_waits);
+            }
         }
-        driving.wait(false, &mut failed_waits);
+        // Both ways of getting here put this thread down as parked, with the seat a
+        // `block_on`'s to take or to hand back, and that call is what ends the park. A park
+        // that ends of its own accord costs no more than another look at the seat.
+        thread::park();
+        driving = Driving::take(inner.clone(), Driver::Helper);
     }
 }
 
@@ -304,8 +375,8 @@ fn helper(inner: Arc<Inner>) {
 struct Driving {
     inner: Arc<Inner>,
     who: Driver,
-    /// Whether the seat has been given up already, which [`Driving::leave_if_idle`] is the one
-    /// thing that does before the drop.
+    /// Whether the seat has been given up already, which [`Driving::leave_if_idle`] and
+    /// [`Driving::yield_if_wanted`] are the two things that do before the drop.
     left: Cell<bool>,
 }
 
@@ -313,38 +384,61 @@ impl Driving {
     /// Takes the seat as `who` if it is free.
     ///
     /// A `block_on` that finds it taken is put down as waiting, to be unparked when the seat is
-    /// freed. A helper that finds it taken leaves, and takes its flag down under the very lock
-    /// the seat's holder looks at that flag under when it leaves: whoever is in the seat asks
-    /// for a helper again then, if anything is left by then.
+    /// freed, and tells the helper where the helper is the one in it: the helper looks for
+    /// waiters between a batch and a wait, so the notification is what brings its wait to an
+    /// end. A `block_on` in the seat frees it when its future is done and needs no telling.
+    ///
+    /// A helper that finds the seat taken parks rather than leaves, and puts itself down as
+    /// parked under the very lock the seat's holder frees the seat under: whoever is in the
+    /// seat rouses it as it goes.
     fn take(inner: Arc<Inner>, who: Driver) -> Option<Self> {
         let mut seat = lock(&inner.seat);
-        if seat.holder != Holder::Nobody {
-            if who == Driver::Helper {
-                seat.helper = false;
-            } else {
+        match (&mut seat.holder, who) {
+            (Holder::Nobody { parked_helper }, Driver::BlockOn) => {
+                let parked_helper = parked_helper.take();
+                seat.holder = Holder::BlockOn { parked_helper };
+                // A turn of this call's loop before this one may have found the seat taken and
+                // put the thread down as waiting for it, which a thread in the seat is not.
+                seat.stop_waiting();
+            }
+            // The parked thread, if any, was this very helper.
+            (Holder::Nobody { .. }, Driver::Helper) => seat.holder = Holder::Helper,
+            (Holder::BlockOn { parked_helper }, Driver::Helper) => {
+                *parked_helper = Some(thread::current());
+
+                return None;
+            }
+            // One helper runs per runtime, so a helper cannot find another already there.
+            (Holder::Helper, Driver::Helper) => {
+                unreachable!("a second helper for the same runtime")
+            }
+            (holder, Driver::BlockOn) => {
+                let helper_in_seat = matches!(holder, Holder::Helper);
                 let thread = thread::current();
                 seat.waiting.insert(thread.id(), thread);
-            }
+                if helper_in_seat {
+                    drop(seat);
+                    inner.reactor.notify();
+                }
 
-            return None;
-        }
-        seat.holder = match who {
-            Driver::BlockOn => Holder::BlockOn,
-            Driver::Helper => Holder::Helper,
-        };
-        // A turn of this call's loop before this one may have found the seat taken and put the
-        // thread down as waiting for it, which a thread in the seat is not.
-        if who == Driver::BlockOn {
-            seat.stop_waiting();
+                return None;
+            }
         }
         drop(seat);
+
+        Some(Self::enter(inner, who))
+    }
+
+    /// Marks the calling thread as the one in the seat of `inner`, which the caller has made it:
+    /// [`Driving::take`] under the seat lock, or the spawn of the helper thread.
+    fn enter(inner: Arc<Inner>, who: Driver) -> Self {
         DRIVER_REACTOR.with(|reactor| reactor.set(Some(NonNull::from(&inner.reactor))));
 
-        Some(Self {
+        Self {
             inner,
             who,
             left: Cell::new(false),
-        })
+        }
     }
 
     /// Polls up to `BATCH` ready tasks.
@@ -399,10 +493,27 @@ impl Driving {
         if self.inner.is_busy() {
             return false;
         }
-        if self.who == Driver::Helper {
-            seat.helper = false;
+        seat.free();
+        self.left.set(true);
+
+        true
+    }
+
+    /// Gives the seat up to the `block_on` calls waiting for it and puts this thread down as
+    /// parked; what the helper asks before each wait. `true` where it did, and the caller parks.
+    ///
+    /// Freed first, with the holder still `Helper` and so no parked helper for [`Seat::free`] to
+    /// rouse, and marked parked after: a rouse of this very thread would only cut short the park
+    /// it is about to make.
+    fn yield_if_wanted(&self) -> bool {
+        let mut seat = lock(&self.inner.seat);
+        if seat.waiting.is_empty() {
+            return false;
         }
         seat.free();
+        seat.holder = Holder::Nobody {
+            parked_helper: Some(thread::current()),
+        };
         self.left.set(true);
 
         true
@@ -414,21 +525,19 @@ impl Driving {
 const BATCH: usize = 32;
 
 impl Drop for Driving {
-    /// Gives the seat up, unless [`Driving::leave_if_idle`] did already, which is what the flag
-    /// this reads says: the seat may be somebody else's by now, and what is asked here is
-    /// whether it is still this thread's to give up, not who is in it.
+    /// Gives the seat up, unless [`Driving::leave_if_idle`] or [`Driving::yield_if_wanted`] did
+    /// already, which is what the flag this reads says: the seat may be somebody else's by now,
+    /// and what is asked here is whether it is still this thread's to give up, not who is in it.
     ///
     /// A `block_on` that leaves work behind starts a helper for it, because whatever is left
     /// may be awaited by a thread that is not going to drive; a helper that unwinds out of the
-    /// loop clears its flag, so that the next spawn, registration or timer poll starts another.
+    /// loop puts itself down as gone, so that the next spawn, registration or timer poll starts
+    /// another.
     fn drop(&mut self) {
         if self.left.get() {
             return;
         }
         let mut seat = lock(&self.inner.seat);
-        if self.who == Driver::Helper {
-            seat.helper = false;
-        }
         seat.free();
         if self.who == Driver::BlockOn {
             hand_over(&self.inner, &mut seat);
