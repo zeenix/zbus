@@ -15,7 +15,6 @@ readme = "README.md"
 [features]
 default = [
     "async-io",
-    "blocking-api",
     "proxy",
     "service",
     "object-manager",
@@ -75,8 +74,6 @@ async-lock = ["comms", "dep:async-lock"]
 # `tokio`'s own `tracing` feature is not enabled either.
 tracing = ["dep:tracing", "tokio?/tracing"]
 vsock = ["comms", "dep:vsock"]
-# Enable blocking API (default).
-blocking-api = ["comms"]
 # The client-side (proxy) API (default).
 proxy = ["comms", "zbus_macros/proxy"]
 # The service-side (object server) API (default).
@@ -200,7 +197,6 @@ polling.workspace = true
 features = [
     "async-io",
     "async-lock",
-    "blocking-api",
     "comms",
     "arrayvec",
     "camino",
@@ -256,7 +252,7 @@ harness = false
 [[example]]
 name = "screen-brightness"
 path = "examples/screen-brightness.rs"
-required-features = ["blocking-api"]
+required-features = ["proxy"]
 
 [[example]]
 name = "watch-systemd-jobs"
