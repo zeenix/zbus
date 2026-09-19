@@ -3,11 +3,18 @@
 <!-- toc -->
 
 zbus's API is async, and a program does not need an async runtime of its own to use it:
-[`zbus::block_on`] runs a future to completion on the calling thread, while the connection's own
-tasks, sockets and timers run on threads zbus starts for them, so the program below runs on the
-program's thread plus zbus's own two, with zbus as its one dependency, plus `futures-util` for the
-stream extension trait where a program reads a stream. Everything in the other chapters works the
-same way inside the future handed to `zbus::block_on`.
+[`zbus::block_on`] runs a future to completion on the calling thread, and with the default
+`builtin-runtime` feature that same thread runs the connection's work in between, so the program
+below is one thread with zbus as its one dependency, plus `futures-util` for the stream extension
+trait where a program reads a stream. Everything in the other chapters works the same way inside
+the future handed to `zbus::block_on`.
+
+Two rules come with it. The future must not block the thread waiting for something the connection
+has to do — a synchronous wait for a reply, a busy loop until a signal has arrived — because that
+work runs on this very thread between two polls of the future, so such a wait never ends. And
+`zbus::block_on` must not be called from inside a task zbus is running: from a method of an
+interface the connection serves, say, or from a future polled inside another `zbus::block_on`.
+Such a call panics, because it could only wait for the thread it is on.
 
 ## Client
 
@@ -118,8 +125,11 @@ fn main() -> Result<()> {
 ## Server
 
 A service is the same as in the [service chapter](service.md), with the connection built and the
-object served inside one `zbus::block_on`: the future that never resolves keeps the program alive
-while the connection's own thread handles the calls arriving on it.
+object served inside one `zbus::block_on`: the future that never resolves keeps the program alive,
+and the calls arriving on the connection are handled in between its polls.
+
+Note that the methods of the interface are called from the connection's own tasks. They are
+therefore subject to the second rule above: an interface method must not call `zbus::block_on`.
 
 ```rust,no_run
 use std::future::pending;
