@@ -42,6 +42,32 @@ mod unix {
         });
         group.finish();
 
+        // `spawn/100-tasks` below spawns from a thread that parks behind the helper thread the
+        // connection pair left in the seat; here the pair is built inside the same `block_on`
+        // and left out of the timing, so the spawning thread is the one in the seat and no
+        // thread of zbus's own exists.
+        let mut group = c.benchmark_group("spawn");
+        group.throughput(Throughput::Elements(100));
+        group.bench_function("100-tasks-inside", |b| {
+            b.iter_custom(|iters| {
+                zbus::block_on(async move {
+                    let (_server, client) = pair().await;
+                    let started = Instant::now();
+                    for _ in 0..iters {
+                        let tasks: Vec<_> = (0..100u32)
+                            .map(|i| client.spawn("bench", async move { i }))
+                            .collect();
+                        for task in tasks {
+                            black_box(task.await.unwrap());
+                        }
+                    }
+
+                    started.elapsed()
+                })
+            });
+        });
+        group.finish();
+
         let mut group = c.benchmark_group("connection");
         group.sample_size(20);
         group.bench_function("build-and-drop", |b| {
