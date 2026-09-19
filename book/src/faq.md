@@ -181,10 +181,19 @@ fn main() -> Result<()> {
 
 Everything shown in the other chapters works the same way inside that future, and the program
 depends on zbus alone, plus `futures-util` if it reads signals or property changes from a
-stream. With the default `async-io` backend, the connection's own tasks, sockets and timers run
-on threads that zbus starts for them; with the `tokio` feature, they run on Tokio's runtime. Do
-not call `zbus::block_on` from inside a task of another runtime; the function's documentation
-has the details.
+stream. With the default `builtin-runtime` feature, the same thread also runs the connection's
+tasks, sockets and timers in between polls of the future, so the whole program is a single
+thread; with the `tokio` feature, Tokio's runtime runs them instead.
+
+Two rules follow from the connection's work running on the calling thread:
+
+1. The future must not block the thread waiting for the connection. A synchronous wait for a
+   reply, or a busy loop until a signal arrives, never finishes, because the work it waits for
+   can only run in between polls of the future.
+2. `zbus::block_on` must not be called from inside a task zbus is running, such as a method of
+   an interface the connection serves, or a future inside another `zbus::block_on`. Such a call
+   panics, because it would be waiting for the very thread it is on. Nor should it be called
+   from a task of another runtime; the function's documentation has the details.
 
 ## Why do async tokio API calls from interface methods not work?
 

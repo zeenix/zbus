@@ -28,17 +28,27 @@ impl<T, E> ResultAdapter for Result<T, E> {
     type Err = E;
 }
 
-/// Runs a future to completion on the calling thread.
+/// Runs a future to completion on the calling thread, and zbus's runtime with it.
 ///
 /// This is for a program that has no async runtime of its own. Put the async code in one call to
-/// this function; the call blocks the thread until the future completes. Only the future passed
-/// in runs on this thread; a connection's own tasks and I/O run on threads zbus starts for them.
+/// this function; the call blocks the thread until the future completes. In between polls of the
+/// future, the calling thread also runs the tasks, sockets and timers of every connection on
+/// zbus's built-in runtime, so such a program stays a single thread. If the call returns while a
+/// connection is still alive, a helper thread takes over that connection's work until the next
+/// call, or until the connection is gone.
 ///
-/// Do not call this from another runtime's task. It blocks that task's thread until the future
-/// completes, which deadlocks the program if the future needs that thread to make progress.
-#[cfg(all(not(feature = "tokio"), feature = "async-io"))]
+/// Because the connections' work runs on the calling thread in between polls, the future must
+/// not block that thread waiting for it. A synchronous wait for a reply, or a busy loop until a
+/// signal arrives, never finishes.
+///
+/// Do not call this from inside a task zbus is running, such as a method of a served interface
+/// or a future inside another `block_on` call. It panics there, because it would be waiting for
+/// the very thread it is on. Do not call it from another runtime's task either: it blocks that
+/// task's thread until the future completes, which deadlocks the program if the future needs
+/// that thread to make progress.
+#[cfg(all(feature = "async-io", not(feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    async_io::block_on(future)
+    crate::runtime::builtin::block_on(future)
 }
 
 /// Runs a future to completion on the calling thread.

@@ -45,6 +45,8 @@ use std::{
     time::Duration,
 };
 
+pub(crate) use reactor::RegisteredIoSource;
+
 use reactor::Reactor;
 use scheduler::{JoinHandle, Scheduler};
 
@@ -57,6 +59,15 @@ pub(crate) struct Builtin {
 }
 
 impl Builtin {
+    /// A handle on the process's runtime, brought into being here if none is alive.
+    ///
+    /// What can fail is the reactor: it opens the channel a wait is broken through.
+    pub(crate) fn new() -> io::Result<Self> {
+        Ok(Self {
+            inner: Inner::shared()?,
+        })
+    }
+
     /// A handle on `inner`, whatever registry it is or is not in.
     #[cfg(test)]
     pub(super) fn from_inner(inner: Arc<Inner>) -> Self {
@@ -118,6 +129,16 @@ impl traits::Runtime for Builtin {
     }
 }
 
+/// Runs `future` to completion on the calling thread, running the process's runtime alongside
+/// it: see [`driver::block_on`].
+#[cfg(not(feature = "tokio"))]
+pub(crate) fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    driver::block_on(Arc::new(|| lock(&SHARED).upgrade()), future)
+}
+
 /// A timer on a built-in runtime, which keeps a thread on it for as long as it has a deadline.
 ///
 /// The reactor takes a timer's deadline on the first poll of it rather than where it is made, and
@@ -150,6 +171,12 @@ impl Future for Sleep {
 /// A task spawned on a built-in runtime, which cancels that task when dropped.
 pub(crate) struct Task<T>(JoinHandle<T>);
 
+impl<T> fmt::Debug for Task<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Task").field(&self.0).finish()
+    }
+}
+
 impl<T> Future for Task<T> {
     type Output = io::Result<T>;
 
@@ -176,6 +203,11 @@ pub(super) struct Inner {
 }
 
 impl Inner {
+    /// The process's runtime, made here if none is alive.
+    fn shared() -> io::Result<Arc<Self>> {
+        Self::shared_in(&SHARED)
+    }
+
     /// The runtime `registry` names, made here if none is alive.
     pub(super) fn shared_in(registry: &Mutex<Weak<Self>>) -> io::Result<Arc<Self>> {
         let mut shared = lock(registry);
@@ -232,6 +264,12 @@ impl Inner {
         driver::ensure_helper(self);
     }
 }
+
+/// The runtime alive in this process, if one is: the one every [`Builtin`] handle is on.
+///
+/// A `Weak`, so that the runtime and the two descriptors its reactor holds go once the last
+/// handle and any thread running it are gone, and the next handle brings a fresh one.
+static SHARED: Mutex<Weak<Inner>> = Mutex::new(Weak::new());
 
 /// The value behind a lock, taken whether or not a panic poisoned it.
 pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
