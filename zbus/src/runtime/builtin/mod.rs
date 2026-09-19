@@ -16,14 +16,16 @@
 //! one: it runs the tasks and waits on the reactor between two polls of its own future. Where
 //! none has — the connection is polled from some other executor, or work is left once
 //! `block_on` has returned — a helper thread takes the seat, and leaves in the round it finds
-//! nothing left to run, watch or time.
+//! nothing left to run, watch or time. A `block_on` that arrives while the helper is in the seat
+//! is given it, the helper parking until that call leaves, so that a program calling `block_on`
+//! once per operation runs each of them on its own thread.
 //!
 //! A panic in a task is caught and fails that task's handle. A panic outside a task — in a
 //! waker, say — unwinds the thread in the seat: out of `block_on`, to whoever called it, with
-//! the seat freed on the way; out of the helper's loop, with its flag cleared so that the next
-//! spawn, registration or timer poll starts another. The wakers the reactor had taken out of
-//! its maps to wake are dropped in the unwind without being woken, and the waiters they
-//! belonged to are served by the next thread in the seat.
+//! the seat freed on the way; out of the helper's loop, the helper putting itself down as gone
+//! so that the next spawn, registration or timer poll starts another. The wakers the reactor had
+//! taken out of its maps to wake are dropped in the unwind without being woken, and the waiters
+//! they belonged to are served by the next thread in the seat.
 //!
 //! Nothing here takes a runtime down while it has work: a detached task that never finishes
 //! keeps a helper, and everything that task's future holds, for the life of the process.
@@ -82,6 +84,12 @@ impl Builtin {
     #[cfg(test)]
     pub(super) fn helper_running(&self) -> bool {
         lock(&self.inner.seat).helper_running()
+    }
+
+    /// Whether the helper thread is parked for want of the seat.
+    #[cfg(test)]
+    pub(super) fn helper_parked(&self) -> bool {
+        lock(&self.inner.seat).helper_parked()
     }
 }
 

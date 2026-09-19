@@ -12,7 +12,7 @@ use std::{
     time::Instant,
 };
 
-use event_listener::Event;
+use event_listener::{Event, EventListener};
 use futures_lite::future::{block_on, poll_once};
 use ntest::timeout;
 use socket2::{SockRef, Socket};
@@ -67,7 +67,9 @@ fn a_finished_task_whose_handle_is_dropped_leaves_nothing_behind() {
     drop(task);
 
     assert!(!runtime.inner().is_busy());
-    assert!(!runtime.helper_running());
+    // A helper that gave the seat up to the call above is parked until that call leaves and
+    // rouses it, so the round it retires in comes a moment later.
+    assert!(helper_gone(&runtime));
 }
 
 #[test]
@@ -631,6 +633,91 @@ fn work_left_by_a_block_on_that_panicked_without_the_seat_goes_to_a_helper() {
 
 #[test]
 #[timeout(15000)]
+fn a_block_on_takes_the_seat_from_the_helper() {
+    let runtime = runtime();
+    let _held = held_by_the_helper(&runtime);
+    let (parked, watcher) = the_parked_helper_announced(&runtime);
+
+    let ran_on = drive(&runtime, async {
+        // Awaited before the spawn below, so that the spawn is made by a thread that has the
+        // seat: the helper gives it up as it finds this call waiting for it, and stays parked
+        // until the call leaves.
+        parked.await;
+        runtime
+            .spawn("a task that names the thread it runs on", async {
+                thread::current().id()
+            })
+            .await
+    })
+    .unwrap();
+
+    assert!(watcher.join().unwrap());
+    assert_eq!(ran_on, thread::current().id());
+}
+
+#[test]
+#[timeout(15000)]
+fn the_helper_takes_the_seat_back_when_block_on_leaves() {
+    let runtime = runtime();
+    let _held = held_by_the_helper(&runtime);
+    let (parked, watcher) = the_parked_helper_announced(&runtime);
+    // Asks the helper for the seat and leaves once it has it, so that what is tested below is
+    // the helper taking the seat back rather than never having given it up.
+    drive(&runtime, parked);
+    assert!(watcher.join().unwrap());
+
+    // Awaited from outside `block_on`, so that the helper is the one thing that can run it.
+    let task = runtime.spawn("a task that names the thread it runs on", async {
+        thread::current().name().map(str::to_owned)
+    });
+    let name = block_on(task).unwrap();
+
+    assert_eq!(name.as_deref(), Some("zbus runtime"));
+}
+
+/// A call that never takes the seat up rouses the helper it parked all the same.
+///
+/// A `block_on` asks for the seat before it polls, and the helper gives it up in the round the
+/// asking wakes it for. A future that is done at that first poll leaves the seat free with the
+/// helper parked, and nothing but this call is there to tell the helper to look again.
+#[test]
+#[timeout(15000)]
+fn a_block_on_that_leaves_without_the_seat_rouses_the_helper() {
+    let runtime = runtime();
+    let held = held_by_the_helper(&runtime);
+    let (parked, watcher) = the_parked_helper_announced(&runtime);
+
+    drive(&runtime, async {
+        // Waited out inside the poll rather than awaited, so that the call leaves from this
+        // very poll: a future that went back to its caller pending would be handed the seat
+        // the helper freed, and this call would be the one to give it up again.
+        block_on(parked);
+    });
+
+    assert!(watcher.join().unwrap());
+    // Roused by the call above as it left, the helper is back in the seat.
+    assert!(within_a_second(|| !runtime.helper_parked()));
+    drop(held);
+    assert!(helper_gone(&runtime));
+}
+
+#[test]
+#[timeout(15000)]
+fn a_parked_helper_leaves_once_nothing_is_left() {
+    let runtime = runtime();
+    let held = held_by_the_helper(&runtime);
+    // Asks the helper for the seat, which leaves the helper parked or back in it, and up
+    // either way: the task above rules retiring out.
+    drive(&runtime, async {});
+    assert!(runtime.helper_running());
+
+    drop(held);
+
+    assert!(helper_gone(&runtime));
+}
+
+#[test]
+#[timeout(15000)]
 fn a_second_block_on_parks_while_the_first_drives() {
     let runtime = runtime();
     let release = Arc::new(Event::new());
@@ -736,6 +823,47 @@ where
     let inner = runtime.inner().clone();
 
     driver::block_on(Arc::new(move || Some(inner.clone())), future)
+}
+
+/// A task of `runtime`'s that never finishes, spawned from outside `block_on` and waited for
+/// until the helper thread has taken it up.
+///
+/// A helper is up the moment a spawn from outside asks for one, but the thread it is on takes a
+/// moment to reach the seat. The task announces its first poll, which the helper makes from the
+/// seat, and this returns once that announcement is out: the helper is in the seat by then, and
+/// what keeps it there until the task is dropped is the task itself.
+fn held_by_the_helper(runtime: &Builtin) -> Task<()> {
+    let announce = Arc::new(Event::new());
+    let announced = announce.listen();
+    let task = runtime.spawn("a task that never finishes", async move {
+        announce.notify(1);
+        pending::<()>().await
+    });
+    block_on(announced);
+
+    task
+}
+
+/// An announcement of `runtime`'s helper being parked: what a `block_on` awaits to know that
+/// the seat has been given up to it, and the thread that watches for the park.
+///
+/// A thread of its own, because the `block_on` this is for is the very thing the helper parks
+/// for and has no poll to spare for the watching. The announcement is made whether or not the
+/// park is seen, so that a call awaiting it is never left waiting on one that did not happen;
+/// whether it did is what the thread hands back where it is joined.
+fn the_parked_helper_announced(runtime: &Builtin) -> (EventListener, thread::JoinHandle<bool>) {
+    let announce = Arc::new(Event::new());
+    // Taken before the thread is started, so that the announcement cannot be missed.
+    let announced = announce.listen();
+    let runtime = runtime.clone();
+    let watcher = thread::spawn(move || {
+        let parked = within_a_second(|| runtime.helper_parked());
+        announce.notify(1);
+
+        parked
+    });
+
+    (announced, watcher)
 }
 
 /// A resolver that finds no runtime the first time it is asked and `runtime` every time after.
