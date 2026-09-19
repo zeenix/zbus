@@ -149,6 +149,43 @@ The same pattern works for `a{oa{sv}}` (object-path keys) and composes to deeper
 outer derive defers each field to its own `Serialize`/`Deserialize` impl rather than wrapping it
 as a variant.
 
+## How do I use zbus from synchronous code?
+
+zbus's API is async, but a program does not need an async runtime of its own to use it.
+[`zbus::block_on`] runs a future to completion on the calling thread, so put the D-Bus code
+inside one call:
+
+```rust,no_run
+use zbus::{Connection, Result, proxy};
+
+#[proxy(
+    interface = "org.freedesktop.systemd1.Manager",
+    default_service = "org.freedesktop.systemd1",
+    default_path = "/org/freedesktop/systemd1"
+)]
+trait SystemdManager {
+    #[zbus(property)]
+    fn log_level(&self) -> Result<String>;
+}
+
+fn main() -> Result<()> {
+    zbus::block_on(async {
+        let connection = Connection::session().await?;
+        let manager = SystemdManagerProxy::new(&connection).await?;
+        println!("LogLevel: {}", manager.log_level().await?);
+
+        Ok(())
+    })
+}
+```
+
+Everything shown in the other chapters works the same way inside that future, and the program
+depends on zbus alone, plus `futures-util` if it reads signals or property changes from a
+stream. With the default `async-io` backend, the connection's own tasks, sockets and timers run
+on threads that zbus starts for them; with the `tokio` feature, they run on Tokio's runtime. Do
+not call `zbus::block_on` from inside a task of another runtime; the function's documentation
+has the details.
+
 ## Why do async tokio API calls from interface methods not work?
 
 Many of the tokio (and tokio-based) APIs assume the tokio runtime to be driving the async machinery,
@@ -170,9 +207,10 @@ chosen once per connection, when it is built: Tokio when a Tokio runtime is curr
 that builds it, `async-io` otherwise. This keeps the features additive, so an `async-io`-based
 application keeps working even when another crate in the workspace enables zbus's `tokio` feature.
 
-This per-connection selection applies to the async API. The blocking API (`zbus::blocking`) drives
-its connections through its own `block_on`, which uses tokio whenever the `tokio` feature is
-enabled, so those connections always run on tokio when that feature is on.
+This per-connection selection only matters for a program that has an async runtime of its own. A
+program without one uses `zbus::block_on` instead. Without the `tokio` feature, that call and the
+connection built inside it use `async-io`; with it, the call runs inside a Tokio runtime, so a
+connection built inside it always uses Tokio.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even
 when `async-io` is also compiled in; give it a TCP or `autolaunch:` address instead, or build it
@@ -338,6 +376,7 @@ assert_eq!(s, "Variant2");
 [`proxy::Builder::cache_properties`]: https://docs.rs/zbus/latest/zbus/proxy/struct.Builder.html#method.cache_properties
 [`proxy`]: https://docs.rs/zbus/latest/zbus/attr.proxy.html
 [tctiog]: https://github.com/tokio-rs/tokio/issues/2201
+[`zbus::block_on`]: https://docs.rs/zbus/latest/zbus/fn.block_on.html
 [`MessageStream`]: https://docs.rs/zbus/latest/zbus/struct.MessageStream.html
 [nonull]: https://gitlab.freedesktop.org/dbus/dbus/-/issues/25
 [dsi]: http://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces
