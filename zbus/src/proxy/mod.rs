@@ -1505,9 +1505,6 @@ mod tests {
             let server_fut = async move {
                 use std::time::Duration;
 
-                #[cfg(feature = "builtin-runtime")]
-                use async_io::Timer;
-
                 #[cfg(all(feature = "tokio", not(feature = "builtin-runtime")))]
                 use tokio::time::sleep;
 
@@ -1526,7 +1523,7 @@ mod tests {
                     }
 
                     #[cfg(feature = "builtin-runtime")]
-                    Timer::after(Duration::from_millis(5)).await;
+                    conn.runtime().sleep(Duration::from_millis(5)).await;
 
                     #[cfg(all(feature = "tokio", not(feature = "builtin-runtime")))]
                     sleep(Duration::from_millis(5)).await;

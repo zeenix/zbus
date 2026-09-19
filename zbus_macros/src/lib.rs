@@ -121,7 +121,7 @@ mod utils;
 /// use zbus::proxy;
 /// use zbus::{Connection, Result, fdo, Value};
 /// use futures_util::stream::StreamExt;
-/// use async_io::block_on;
+/// use zbus::block_on;
 ///
 /// #[proxy(
 ///     interface = "org.test.SomeIface",
