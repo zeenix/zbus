@@ -681,8 +681,8 @@ connection working when the build also enables the `tokio` feature or hands a ru
 `Builder::runtime` — otherwise nothing supplies a backend and building a connection returns
 `Error::Unsupported`. The backend behind it changed too: 5.x's feature pulled in the `async-io`,
 `async-executor`, `async-task` and `blocking` crates, whereas `builtin-runtime` is zbus's own
-reactor and task scheduler — one runtime per process, driven by the thread inside `zbus::block_on` —
-and depends on none of them.
+reactor and task scheduler — one runtime per thread that runs `zbus::block_on`, driven by that
+thread — and depends on none of them.
 
 An implementation of `zbus::runtime::traits::Runtime` supplies a readiness registration, a timer
 and task spawning; every async runtime already has all three. Every socket a connection owns goes

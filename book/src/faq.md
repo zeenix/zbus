@@ -182,8 +182,11 @@ fn main() -> Result<()> {
 Everything shown in the other chapters works the same way inside that future, and the program
 depends on zbus alone, plus `futures-util` if it reads signals or property changes from a
 stream. With the default `builtin-runtime` feature, the same thread also runs the connection's
-tasks, sockets and timers in between polls of the future, so the whole program is a single
-thread; with the `tokio` feature, Tokio's runtime runs them instead.
+scheduler and I/O reactor in between polls of the future, and a program that runs `block_on` on
+several threads drives their connections in parallel; with the `tokio` feature, Tokio's runtime
+runs them instead. A handful of blocking system calls — a DNS lookup, a nonce-file read, a
+peer-credential lookup — run on a short-lived worker thread of their own, so they do not tie up
+the connection's thread.
 
 Two rules follow from the connection's work running on the calling thread:
 

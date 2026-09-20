@@ -16,10 +16,10 @@
 //! each of them on its own thread rather than behind a thread of zbus's own.
 
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     ptr::NonNull,
-    sync::Arc,
+    sync::{Arc, Weak},
     thread::{self, Thread, ThreadId},
     time::Duration,
 };
@@ -30,7 +30,7 @@ use std::{
     future::Future,
     pin::pin,
     sync::{
-        Mutex, Weak,
+        Mutex,
         atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll, Wake, Waker},
@@ -48,13 +48,37 @@ pub(super) fn on_driver_thread(reactor: &Reactor) -> bool {
     DRIVER_REACTOR.with(Cell::get) == Some(NonNull::from(reactor))
 }
 
+/// The runtime the calling thread is in the seat of, if it is in one.
+///
+/// Nothing, too, once this thread's `DRIVING` local is gone, even where the thread still holds the
+/// seat: a destructor can reach [`Driving::enter`] after `DRIVING` has been torn down, and takes
+/// the seat with nowhere left here to record it.
+pub(super) fn driven() -> Option<Arc<Inner>> {
+    DRIVING
+        .try_with(|driving| driving.borrow().upgrade())
+        .ok()
+        .flatten()
+}
+
+/// Whether the calling thread is inside a `block_on`, and so has a thread of its own for what it
+/// builds and for the work it hands over.
+///
+/// `false` on a thread whose locals are being destroyed, which is a thread outside `block_on`
+/// unless a `block_on` is what that destruction is running, and the count says so where it is.
+pub(super) fn in_block_on() -> bool {
+    IN_BLOCK_ON
+        .try_with(Cell::get)
+        .is_ok_and(|inside| inside > 0)
+}
+
 /// The runtime a `block_on` is to drive, looked up afresh at each turn of its loop, because the
-/// future it polls may be the very thing that brings the runtime into being.
+/// future it polls may be the very thing that brings the runtime into being. Asked on the
+/// calling thread alone, so a lookup in that thread's own registry is what it is.
 ///
 /// This and what follows it are what a `block_on` is made of, which a Tokio build has no use
 /// for: there `zbus::block_on` is Tokio's own, and only a helper ever takes the seat.
 #[cfg(any(test, not(feature = "tokio")))]
-pub(super) type Resolve = Arc<dyn Fn() -> Option<Arc<Inner>> + Send + Sync>;
+pub(super) type Resolve<'a> = &'a dyn Fn() -> Option<Arc<Inner>>;
 
 /// Runs `future` to completion on the calling thread, running the runtime `resolve` names
 /// alongside it whenever the seat is free.
@@ -62,7 +86,7 @@ pub(super) type Resolve = Arc<dyn Fn() -> Option<Arc<Inner>> + Send + Sync>;
 /// Panics when called from a thread that is in the seat already, which is a call from inside a
 /// task the runtime is running: such a call could only wait for the thread it is on.
 #[cfg(any(test, not(feature = "tokio")))]
-pub(super) fn block_on<F>(resolve: Resolve, future: F) -> F::Output
+pub(super) fn block_on<F>(resolve: Resolve<'_>, future: F) -> F::Output
 where
     F: Future,
 {
@@ -71,11 +95,11 @@ where
     // held — a task, a registration, a timer — is gone before the seat is given up, so only
     // work that outlives this call is handed on to a helper.
     let mut leaving = Leaving {
-        resolve: &resolve,
+        resolve,
         driving: None,
     };
 
-    drive(&resolve, &mut leaving.driving, future)
+    drive(resolve, &mut leaving.driving, future)
 }
 
 /// What a `block_on` leaves as it goes: the seat it took, where it took one, and the work it was
@@ -86,7 +110,7 @@ where
 /// and what drives that connection is decided here.
 #[cfg(any(test, not(feature = "tokio")))]
 struct Leaving<'a> {
-    resolve: &'a Resolve,
+    resolve: Resolve<'a>,
     /// The seat this call took, where it took one, given up as this is dropped.
     driving: Option<Driving>,
 }
@@ -95,10 +119,11 @@ struct Leaving<'a> {
 impl Drop for Leaving<'_> {
     /// Gives the seat up and hands on what the call leaves behind.
     ///
-    /// A thread inside `block_on` asks for no helper, on the promise that it takes the seat on
-    /// the next turn of its loop and runs the work itself. A thread that leaves without ever
-    /// having taken the seat has no next turn to keep that promise on, so what its last poll
-    /// handed over is handed on here; one that had the seat did as much where it gave it up.
+    /// A thread inside `block_on` asks for no helper for its own runtime, on the promise that it
+    /// takes the seat on the next turn of its loop and runs the work itself. A thread that leaves
+    /// without ever having taken the seat has no next turn to keep that promise on, so what its
+    /// last poll handed over is handed on here; one that had the seat did as much where it gave
+    /// it up.
     ///
     /// The thread is taken out of the list of those waiting for the seat either way: where it
     /// had the seat, freeing it empties that list; where it had not, it is taken out here.
@@ -130,7 +155,11 @@ impl Drop for Leaving<'_> {
 /// decides whether to leave, which it does under this very lock. A thread inside `block_on`
 /// takes the seat on the next turn of its loop and finds the work then.
 pub(super) fn ensure_helper(inner: &Arc<Inner>) {
-    if IN_BLOCK_ON.with(Cell::get) > 0 {
+    // A thread inside `block_on` on its own runtime asks for no helper: it takes the seat on the
+    // next turn of its loop and runs the work itself. Work handed to another thread's runtime
+    // gets a helper as from any thread outside `block_on`, because this thread will never sit in
+    // that seat.
+    if in_block_on() && Inner::is_own(inner) {
         return;
     }
     let mut seat = lock(&inner.seat);
@@ -204,6 +233,9 @@ impl Seat {
         };
         self.holder = Holder::Nobody { parked_helper };
         DRIVER_REACTOR.with(|reactor| reactor.set(None));
+        // Gone already on a thread whose locals are being destroyed, which [`Driving::take`]
+        // leaves nothing in for that very reason.
+        let _ = DRIVING.try_with(|driving| *driving.borrow_mut() = Weak::new());
         for (_, thread) in self.waiting.drain() {
             thread.unpark();
         }
@@ -261,7 +293,7 @@ enum Driver {
 /// The future is this call's own, and is dropped where it returns, before the caller gives the
 /// seat up.
 #[cfg(any(test, not(feature = "tokio")))]
-fn drive<F>(resolve: &Resolve, driving: &mut Option<Driving>, future: F) -> F::Output
+fn drive<F>(resolve: Resolve<'_>, driving: &mut Option<Driving>, future: F) -> F::Output
 where
     F: Future,
 {
@@ -269,16 +301,22 @@ where
     let signal = Arc::new(Signal {
         thread: thread::current(),
         woken: AtomicBool::new(false),
-        resolve: resolve.clone(),
         runtime: Mutex::new(Weak::new()),
     });
     let waker = Waker::from(signal.clone());
     let mut cx = Context::from_waker(&waker);
-    let take_seat = || resolve().and_then(|inner| Driving::take(inner, Driver::BlockOn));
+    let take_seat = |driving: &mut Option<Driving>| {
+        *driving = resolve().and_then(|inner| Driving::take(inner, Driver::BlockOn));
+        // Set before the round that follows, so that a wake arriving during its wait finds the
+        // runtime whose wait to break.
+        if let Some(driving) = driving {
+            *lock(&signal.runtime) = Arc::downgrade(&driving.inner);
+        }
+    };
     let mut failed_waits = 0u32;
     loop {
         if driving.is_none() {
-            *driving = take_seat();
+            take_seat(driving);
         }
         // Lowered before the poll, so that a wake during it is seen by the round or the park
         // that follows, and with a swap, so that the poll sees what the wakes before it were
@@ -291,7 +329,7 @@ where
         // and a thread inside `block_on` asks for no helper: where nobody else is in the seat,
         // the work that poll left behind is this thread's to run.
         if driving.is_none() {
-            *driving = take_seat();
+            take_seat(driving);
         }
         match &*driving {
             Some(driving) => driving.round(&signal.woken, &mut failed_waits),
@@ -433,6 +471,12 @@ impl Driving {
     /// [`Driving::take`] under the seat lock, or the spawn of the helper thread.
     fn enter(inner: Arc<Inner>, who: Driver) -> Self {
         DRIVER_REACTOR.with(|reactor| reactor.set(Some(NonNull::from(&inner.reactor))));
+        // Written down where there is still somewhere to write it: a thread whose locals are
+        // being destroyed reaches here from the destructor of one of them, and the order those
+        // run in is not zbus's to choose. Nothing built on a thread on its way out looks this up
+        // anyway — [`driven`] comes back empty there, and the lookup falls through to the
+        // registry, which names this very runtime — so the seat is held all the same.
+        let _ = DRIVING.try_with(|driving| *driving.borrow_mut() = Arc::downgrade(&inner));
 
         Self {
             inner,
@@ -558,8 +602,8 @@ struct Signal {
     /// turn, and with it the end of the reactor wait before it, so that the `notify` the wake
     /// makes cannot take the wake-up that wait took out for one still to come.
     woken: AtomicBool,
-    resolve: Resolve,
-    /// The runtime a wake reaches: found through `resolve` the first time, kept after.
+    /// The runtime the thread is in the seat of, set by that thread as it takes the seat: a wake
+    /// may come from any thread, and only the driving thread knows which runtime's wait it is in.
     runtime: Mutex<Weak<Inner>>,
 }
 
@@ -572,27 +616,11 @@ impl Wake for Signal {
     /// Marks the future woken and rouses its thread, wherever that thread is: parked, or in the
     /// seat inside the reactor's wait, which is what the notification ends. A wake from the
     /// thread itself writes no notification, because that thread looks at the flag before its
-    /// next wait.
+    /// next wait; a wake of a thread in no seat needs none, because that thread is parked.
     fn wake_by_ref(self: &Arc<Self>) {
         self.woken.swap(true, Ordering::AcqRel);
         self.thread.unpark();
-        // The runtime is looked up through the registry once, then kept: a wake is on the hot
-        // path of every reply, and the registry's lock is the whole process's.
-        let inner = {
-            let mut runtime = lock(&self.runtime);
-            match runtime.upgrade() {
-                Some(inner) => Some(inner),
-                None => {
-                    let inner = (self.resolve)();
-                    if let Some(inner) = &inner {
-                        *runtime = Arc::downgrade(inner);
-                    }
-
-                    inner
-                }
-            }
-        };
-        if let Some(inner) = inner {
+        if let Some(inner) = lock(&self.runtime).upgrade() {
             inner.reactor.notify();
         }
     }
@@ -631,6 +659,10 @@ thread_local! {
     /// The reactor of the runtime this thread is in the seat of, and nothing on a thread that
     /// is in no seat at all.
     static DRIVER_REACTOR: Cell<Option<NonNull<Reactor>>> = const { Cell::new(None) };
+
+    /// The runtime this thread is in the seat of, for whatever is built on this thread while it
+    /// is: a task run by a helper thread builds its connections on the runtime the helper runs.
+    static DRIVING: RefCell<Weak<Inner>> = const { RefCell::new(Weak::new()) };
 
     /// How many `block_on` calls this thread is inside of, in the seat or waiting for it. A
     /// count rather than a flag, so that one call returning does not unmark the call it was

@@ -3,6 +3,7 @@
 //! reactor on its own thread, and the hand-over between the two.
 
 use std::{
+    cell::RefCell,
     future::{pending, poll_fn},
     io::Write,
     mem::MaybeUninit,
@@ -609,10 +610,10 @@ fn work_left_behind_by_block_on_goes_to_a_helper() {
 #[timeout(15000)]
 fn work_left_by_a_block_on_that_took_no_seat_goes_to_a_helper() {
     let runtime = runtime();
-    let resolve = resolve_on_the_second_ask(&runtime);
+    let (resolve, _own) = resolve_on_the_second_ask(&runtime);
     let mut task = None;
 
-    driver::block_on(resolve, async {
+    driver::block_on(&*resolve, async {
         task = Some(runtime.spawn("a task that never finishes", pending::<()>()));
     });
 
@@ -630,11 +631,11 @@ fn work_left_by_a_block_on_that_took_no_seat_goes_to_a_helper() {
 #[timeout(15000)]
 fn work_left_by_a_block_on_that_panicked_without_the_seat_goes_to_a_helper() {
     let runtime = runtime();
-    let resolve = resolve_on_the_second_ask(&runtime);
+    let (resolve, _own) = resolve_on_the_second_ask(&runtime);
     let mut task = None;
 
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        driver::block_on(resolve, async {
+        driver::block_on(&*resolve, async {
             task = Some(runtime.spawn("a task that never finishes", pending::<()>()));
             panic!("a future that panics once it has spawned");
         });
@@ -852,19 +853,212 @@ fn a_shared_runtime_goes_with_its_last_handle() {
     drop(next);
 }
 
+#[cfg(not(feature = "tokio"))]
+#[test]
+#[timeout(15000)]
+fn each_thread_inside_block_on_has_a_runtime_of_its_own() {
+    // `Builtin::new` on a thread that is in no seat goes to that thread's own runtime. The two
+    // handles are held across the comparison, so that the second runtime cannot land on the
+    // address the first has given up.
+    let on_this_thread = super::block_on(async { Builtin::new().unwrap() });
+    let on_another = thread::spawn(|| super::block_on(async { Builtin::new().unwrap() }))
+        .join()
+        .unwrap();
+
+    assert!(!Arc::ptr_eq(on_this_thread.inner(), on_another.inner()));
+    // And the same thread gets the same runtime back for as long as it is alive.
+    let again = super::block_on(async { Builtin::new().unwrap() });
+    assert!(Arc::ptr_eq(again.inner(), on_this_thread.inner()));
+}
+
+#[test]
+#[timeout(15000)]
+fn connections_built_under_another_executor_share_one_runtime() {
+    // Built on threads that are inside no `block_on` and in no seat, as a connection some other
+    // executor polls is: one runtime serves them all, and one helper runs it. The handles are
+    // held across the comparison, so that the second cannot land on an address the first gave
+    // up.
+    let here = Builtin::new().unwrap();
+    let there = thread::spawn(|| Builtin::new().unwrap()).join().unwrap();
+
+    assert!(Arc::ptr_eq(here.inner(), there.inner()));
+}
+
+#[test]
+#[timeout(15000)]
+fn a_connection_built_on_a_helper_thread_joins_the_runtime_the_helper_runs() {
+    // A runtime in no registry, run by a helper because nobody is inside `block_on` on it.
+    let runtime = runtime();
+    // An address rather than a handle, a raw pointer being no more sendable than it is telling.
+    let expected = Arc::as_ptr(runtime.inner()) as usize;
+
+    let built_on = runtime.spawn("a task that builds a handle", async {
+        Arc::as_ptr(Builtin::new().unwrap().inner()) as usize
+    });
+
+    assert_eq!(block_on(built_on).unwrap(), expected);
+}
+
+#[test]
+#[timeout(15000)]
+fn a_spawn_from_inside_another_threads_block_on_starts_a_helper() {
+    // A runtime in no registry, so that it is nobody's own; the thread below is inside
+    // `block_on` with nothing of its own to drive.
+    let runtime = runtime();
+    let ran = Arc::new(AtomicBool::new(false));
+    // Kept in a place of its own rather than handed out as the future's output: a task handle is
+    // a future itself, and an async block that yields one reads as though it were to be awaited.
+    let mut task = None;
+    {
+        let ran = ran.clone();
+        driver::block_on(&|| None, async {
+            task = Some(
+                runtime.spawn("a task of another thread's runtime", async move {
+                    ran.store(true, Ordering::Release);
+                }),
+            );
+        });
+    }
+
+    // Nobody but a helper can run it: the thread that spawned it drives no runtime of this one.
+    block_on(task.unwrap()).unwrap();
+    assert!(ran.load(Ordering::Acquire));
+}
+
+/// A connection built as its thread ends is run rather than a panic.
+///
+/// `Builtin::new` looks a thread's own runtime up in two thread-locals, and a connection built
+/// from the drop of another thread-local value — a connection stashed in one, say — finds them
+/// gone. A thread past running anything of its own is one no `block_on` is inside of, so what
+/// it gets is the runtime the process shares, and a helper runs its work.
+///
+/// The value below is touched before the locals `Builtin::new` reaches, so that its drop runs
+/// after theirs: thread-local destructors run in reverse order of registration.
+#[test]
+#[timeout(15000)]
+fn a_connection_built_as_a_thread_ends_is_run_by_a_helper() {
+    struct BuildsAsItGoes(Option<Arc<Event>>);
+
+    impl Drop for BuildsAsItGoes {
+        fn drop(&mut self) {
+            let Some(ran) = self.0.take() else {
+                return;
+            };
+            Builtin::new()
+                .unwrap()
+                .spawn("a task spawned as a thread ends", async move {
+                    ran.notify(1);
+                })
+                .detach();
+        }
+    }
+
+    thread_local! {
+        static BUILDS_AS_IT_GOES: RefCell<BuildsAsItGoes> =
+            const { RefCell::new(BuildsAsItGoes(None)) };
+    }
+
+    let ran = Arc::new(Event::new());
+    // Taken before the thread starts, so that the notification cannot be missed.
+    let notified = ran.listen();
+    let thread = thread::spawn(move || {
+        BUILDS_AS_IT_GOES.with(|builds| builds.borrow_mut().0 = Some(ran));
+        // Which is what brings the locals `Builtin::new` reaches into being on this thread.
+        drop(Builtin::new().unwrap());
+    });
+
+    assert!(thread.join().is_ok());
+    block_on(notified);
+}
+
+/// A `block_on` as its thread ends runs rather than takes the process down with it.
+///
+/// A connection drained from the drop of a thread-local value — `zbus::block_on(conn.close())`,
+/// say — reaches the registry the call resolves in, and finds it gone. A panic there is not an
+/// unwind but an abort, so the lookup has to come back empty: the call then takes no seat and
+/// polls and parks, and whatever its future leaves behind goes to a helper.
+///
+/// The future also builds a handle, for the same lookup made from inside the call.
+#[cfg(not(feature = "tokio"))]
+#[test]
+#[timeout(15000)]
+fn block_on_as_a_thread_ends_does_not_abort() {
+    struct BlocksAsItGoes;
+
+    impl Drop for BlocksAsItGoes {
+        fn drop(&mut self) {
+            super::block_on(async { drop(Builtin::new().unwrap()) });
+        }
+    }
+
+    thread_local! {
+        static BLOCKS_AS_IT_GOES: BlocksAsItGoes = const { BlocksAsItGoes };
+    }
+
+    let thread = thread::spawn(|| {
+        BLOCKS_AS_IT_GOES.with(|_| ());
+        // Which is what brings the locals a `block_on` reaches into being on this thread, the
+        // thread's own registry among them: a thread that never had one has nothing to lose.
+        super::block_on(async { drop(Builtin::new().unwrap()) });
+    });
+
+    assert!(thread.join().is_ok());
+}
+
+/// A `block_on` that takes the seat as its thread ends runs rather than aborts.
+///
+/// Thread-local destructors run in reverse order of registration, and a `block_on` registers the
+/// locals it uses as it goes: the thread's own registry on the lookup it makes before its first
+/// poll, and the record of the seat it holds on the lookup made from inside that poll. A value
+/// the poll brings into being in between is therefore destroyed after the seat record and before
+/// the registry. A `block_on` from that value's destructor — draining a connection stashed there,
+/// say — finds a live runtime in the registry and takes the seat, with no place left to write
+/// down that it has: a panic there is not an unwind but an abort.
+#[cfg(not(feature = "tokio"))]
+#[test]
+#[timeout(15000)]
+fn a_block_on_taking_the_seat_as_a_thread_ends_does_not_abort() {
+    /// Keeps a runtime alive past the thread that built it, and drives it once more as it goes.
+    struct DrivesAsItGoes(Option<Builtin>);
+
+    impl Drop for DrivesAsItGoes {
+        fn drop(&mut self) {
+            super::block_on(async { drop(Builtin::new().unwrap()) });
+        }
+    }
+
+    thread_local! {
+        static DRIVES_AS_IT_GOES: RefCell<DrivesAsItGoes> =
+            const { RefCell::new(DrivesAsItGoes(None)) };
+    }
+
+    let thread = thread::spawn(|| {
+        super::block_on(async {
+            // Touched before the runtime is built, so that this value is destroyed after the
+            // local the lookup inside `Builtin::new` brings into being. The handle it keeps is
+            // what the registry's weak reference still resolves to as the thread ends.
+            DRIVES_AS_IT_GOES.with(|drives| drives.borrow_mut().0 = Some(Builtin::new().unwrap()));
+        });
+    });
+
+    assert!(thread.join().is_ok());
+}
+
 /// A runtime of this test's own, with nothing to do and no thread until it is given something.
 fn runtime() -> Builtin {
     Builtin::from_inner(Inner::new().unwrap())
 }
 
-/// A `block_on` on `runtime`, resolving to that runtime and no other.
+/// A `block_on` on `runtime`, resolving to that runtime and no other, with that runtime the
+/// calling thread's own for as long as the call lasts.
 fn drive<F>(runtime: &Builtin, future: F) -> F::Output
 where
     F: Future,
 {
+    let _own = own_for_the_call(runtime.inner());
     let inner = runtime.inner().clone();
 
-    driver::block_on(Arc::new(move || Some(inner.clone())), future)
+    driver::block_on(&move || Some(inner.clone()), future)
 }
 
 /// A task of `runtime`'s that never finishes, spawned from outside `block_on` and waited for
@@ -908,21 +1102,29 @@ fn the_parked_helper_announced(runtime: &Builtin) -> (EventListener, thread::Joi
     (announced, watcher)
 }
 
-/// A resolver that finds no runtime the first time it is asked and `runtime` every time after.
+/// A resolver that finds no runtime the first time it is asked and `runtime` every time after,
+/// beside a guard that makes `runtime` the calling thread's own for as long as it lives.
 ///
 /// Which is what a `block_on` whose very first poll builds the connection comes to: it polls
-/// without the seat, and the work that poll leaves has nobody to run it.
-fn resolve_on_the_second_ask(runtime: &Builtin) -> driver::Resolve {
+/// without the seat, and the work that poll leaves has nobody to run it. The connection is
+/// built on the calling thread, so the runtime is that thread's own from the poll onwards and
+/// the spawn that poll makes asks for no helper.
+fn resolve_on_the_second_ask(
+    runtime: &Builtin,
+) -> (Box<dyn Fn() -> Option<Arc<Inner>>>, impl Drop) {
     let inner = runtime.inner().clone();
     let looked = AtomicBool::new(false);
+    let own = own_for_the_call(runtime.inner());
 
-    Arc::new(move || {
+    let resolve = Box::new(move || {
         if looked.swap(true, Ordering::AcqRel) {
             return Some(inner.clone());
         }
 
         None
-    })
+    });
+
+    (resolve, own)
 }
 
 /// How many threads are down as waiting for `runtime`'s seat.

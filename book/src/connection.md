@@ -86,19 +86,24 @@ Tokio's locks stand in instead.
 
 ### Built-in backends
 
-With the `builtin-runtime` cargo feature (a default feature), a connection runs on the runtime
-zbus brings along, one for the whole process and depending on no runtime crate at all. The thread
-that drives it is the one inside `zbus::block_on`: between two polls of the future handed to it,
-that thread runs every built-in connection's tasks, sockets and timers, so a program that awaits
-its work through `zbus::block_on` is a single thread. The one runtime serves every built-in
-connection in the process, so a task of one connection that runs long delays the others' I/O
-until it yields. Only where a connection has work and no thread is inside `zbus::block_on` — it
-is polled from some other executor, or a call returned with the connection alive — does zbus
-start a helper thread, which leaves once nothing is left to run. If the `tokio` feature is also
-enabled and a Tokio runtime is current on the thread that builds the connection, it runs on
-Tokio instead. With only `tokio` enabled, a connection always runs on the Tokio runtime that is
-current when it is built; building one from a thread with no such runtime fails with
-`Error::Unsupported`.
+With the `builtin-runtime` cargo feature (a default feature), a connection runs on the runtime zbus
+brings along, one per thread that runs `zbus::block_on`, depending on no runtime crate at all. The
+thread that drives it is the one inside `zbus::block_on`: between two polls of the future handed to
+it, that thread runs the tasks, sockets and timers of every built-in connection built in it — apart
+from a handful of blocking system calls (a DNS lookup, a nonce-file read, a peer-credential lookup)
+that use a short-lived worker thread of their own instead. Two threads that each call
+`zbus::block_on` drive their own connections, in parallel. A thread's runtime serves every
+connection built inside its `zbus::block_on` calls, so a task of one connection that runs long
+delays the others' I/O until it yields, and a connection used from another thread is still driven by
+the thread that built it. A connection built on a thread that is in no `zbus::block_on` at the time
+— one that some other executor polls — has no thread of its own to look to, and goes instead on a
+single runtime the whole process shares with every other such connection. Only where a connection
+has work and no thread is inside `zbus::block_on` — it is polled from some other executor, or a call
+returned with the connection alive — does zbus start a helper thread, which leaves once nothing is
+left to run. If the `tokio` feature is also enabled and a Tokio runtime is current on the thread
+that builds the connection, it runs on Tokio instead. With only `tokio` enabled, a connection always
+runs on the Tokio runtime that is current when it is built; building one from a thread with no such
+runtime fails with `Error::Unsupported`.
 
 A build with neither feature depends on no `tokio` crate, and on nothing `builtin-runtime` owns:
 zbus's own locks build on `event-listener`, not on anything either feature pulls in, so this

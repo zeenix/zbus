@@ -30,12 +30,15 @@ impl<T, E> ResultAdapter for Result<T, E> {
 
 /// Runs a future to completion on the calling thread, and zbus's runtime with it.
 ///
-/// This is for a program that has no async runtime of its own. Put the async code in one call to
-/// this function; the call blocks the thread until the future completes. In between polls of the
-/// future, the calling thread also runs the tasks, sockets and timers of every connection on
-/// zbus's built-in runtime, so such a program stays a single thread. If the call returns while a
-/// connection is still alive, a helper thread takes over that connection's work until the next
-/// call, or until the connection is gone.
+/// This is for a program that has no async runtime of its own. Put the async code in one
+/// call to this function; the call blocks the thread until the future completes. In
+/// between polls of the future, the calling thread also runs the scheduler and the I/O
+/// reactor of every connection built in it, and two threads that each call this drive
+/// their own connections, in parallel. A handful of blocking system calls — a DNS lookup,
+/// a nonce-file read, a peer-credential lookup — run on a short-lived worker thread of
+/// their own instead, so they never hold up the calling thread. If the call returns while
+/// a connection is still alive, a helper thread takes over that connection's work until
+/// the next call, or until the connection is gone.
 ///
 /// Because the connections' work runs on the calling thread in between polls, the future must
 /// not block that thread waiting for it. A synchronous wait for a reply, or a busy loop until a

@@ -7,13 +7,18 @@
 //! timer, from the first poll of it onwards, and blocking work goes to a thread of its own, as
 //! the trait's default has it.
 //!
-//! There is one runtime in a process, shared by every connection built without one of its own,
-//! for as long as any of them or a thread running it is alive: one channel for breaking a wait
-//! from another thread — a pipe on unix and a socket pair on Windows, two descriptors either
-//! way — and no thread until there is work with nobody to run it.
+//! A thread that runs `block_on` has a runtime of its own, shared by every connection it builds
+//! from inside such a call and alive for as long as any of them or a thread running it is: one
+//! channel for breaking a wait from another thread — a pipe on unix and a socket pair on Windows,
+//! two descriptors either way — and no thread until there is work with nobody to run it. Two
+//! threads that each call `block_on` drive their own connections, in parallel; a connection used
+//! from a thread other than the one that built it is driven by the latter, and each wake of the
+//! former's future crosses between the two. A connection built on a thread that is inside no
+//! `block_on` and in no seat — one that some other executor polls — has no thread to look to, and
+//! goes on a runtime the whole process shares, which a helper thread runs.
 //!
-//! The thread in the seat is the one inside [`block_on`](crate::block_on), where a program has
-//! one: it runs the tasks and waits on the reactor between two polls of its own future. Where
+//! The thread in a runtime's seat is the one inside [`block_on`](crate::block_on), where a program
+//! has one: it runs the tasks and waits on the reactor between two polls of its own future. Where
 //! none has — the connection is polled from some other executor, or work is left once
 //! `block_on` has returned — a helper thread takes the seat, and leaves in the round it finds
 //! nothing left to run, watch or time. A `block_on` that arrives while the helper is in the seat
@@ -61,12 +66,13 @@ pub(crate) struct Builtin {
 }
 
 impl Builtin {
-    /// A handle on the process's runtime, brought into being here if none is alive.
+    /// A handle on the runtime for what this thread builds, brought into being here if none is
+    /// alive.
     ///
     /// What can fail is the reactor: it opens the channel a wait is broken through.
     pub(crate) fn new() -> io::Result<Self> {
         Ok(Self {
-            inner: Inner::shared()?,
+            inner: Inner::current()?,
         })
     }
 
@@ -137,14 +143,17 @@ impl traits::Runtime for Builtin {
     }
 }
 
-/// Runs `future` to completion on the calling thread, running the process's runtime alongside
+/// Runs `future` to completion on the calling thread, running that thread's runtime alongside
 /// it: see [`driver::block_on`].
 #[cfg(not(feature = "tokio"))]
 pub(crate) fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    driver::block_on(Arc::new(|| lock(&SHARED).upgrade()), future)
+    driver::block_on(
+        &|| OWN.try_with(|own| lock(own).upgrade()).ok().flatten(),
+        future,
+    )
 }
 
 /// A timer on a built-in runtime, which keeps a thread on it for as long as it has a deadline.
@@ -211,9 +220,33 @@ pub(super) struct Inner {
 }
 
 impl Inner {
-    /// The process's runtime, made here if none is alive.
-    fn shared() -> io::Result<Arc<Self>> {
-        Self::shared_in(&SHARED)
+    /// The runtime for what the calling thread builds, made here if none is alive: the one it is
+    /// in the seat of, where it is in one; its own, where it is inside a `block_on` and so has a
+    /// thread to run what it builds; and the process's otherwise.
+    ///
+    /// Once this thread's `OWN` local is gone, there is no registry left to hold what it builds:
+    /// inside a `block_on`, that goes on a runtime in no registry, which a helper thread runs;
+    /// outside one, it still goes on the process's shared registry as before.
+    fn current() -> io::Result<Arc<Self>> {
+        if let Some(inner) = driver::driven() {
+            return Ok(inner);
+        }
+        if !driver::in_block_on() {
+            return Self::shared_in(&SHARED);
+        }
+        match OWN.try_with(Self::shared_in) {
+            Ok(inner) => inner,
+            Err(_) => Self::new(),
+        }
+    }
+
+    /// Whether `inner` is the calling thread's own runtime, the one its `block_on` drives.
+    ///
+    /// Nothing is a thread's own once its locals are gone, so work handed over then gets a
+    /// helper, as work handed to any runtime the caller does not drive does.
+    pub(super) fn is_own(inner: &Arc<Self>) -> bool {
+        OWN.try_with(|own| std::ptr::eq(lock(own).as_ptr(), Arc::as_ptr(inner)))
+            .unwrap_or(false)
     }
 
     /// The runtime `registry` names, made here if none is alive.
@@ -273,10 +306,42 @@ impl Inner {
     }
 }
 
-/// The runtime alive in this process, if one is: the one every [`Builtin`] handle is on.
+/// Makes `inner` the calling thread's own runtime until the value handed back is dropped, which
+/// puts back whatever was there before, whether the call returns or unwinds.
 ///
-/// A `Weak`, so that the runtime and the two descriptors its reactor holds go once the last
-/// handle and any thread running it are gone, and the next handle brings a fresh one.
+/// For a test that drives a runtime of its own making: the runtime a `block_on` resolves to is
+/// always the one its thread builds on, so a spawn from inside such a call asks for no helper,
+/// and a test that drives a runtime nobody's registry names would be told otherwise.
+#[cfg(test)]
+pub(super) fn own_for_the_call(inner: &Arc<Inner>) -> impl Drop {
+    struct Restore(Weak<Inner>);
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            OWN.with(|own| *lock(own) = std::mem::take(&mut self.0));
+        }
+    }
+
+    OWN.with(|own| Restore(std::mem::replace(&mut *lock(own), Arc::downgrade(inner))))
+}
+
+thread_local! {
+    /// This thread's runtime, if one is alive: the one a `block_on` on this thread drives, and
+    /// the one a connection built inside such a call goes on.
+    ///
+    /// A `Weak`, so that the runtime and the two descriptors its reactor holds go once the last
+    /// handle and any thread running it are gone, and the next handle brings a fresh one. A
+    /// thread that ends with connections alive leaves them to the helper thread that took them
+    /// over when its last `block_on` returned.
+    static OWN: Mutex<Weak<Inner>> = const { Mutex::new(Weak::new()) };
+}
+
+/// The runtime for connections built on a thread that is inside no `block_on` and in no seat:
+/// ones some other executor polls, wherever in the process they are built.
+///
+/// Such a connection has no thread of its own to look to, so a helper runs it, and one runtime
+/// for all of them is one helper and one pair of descriptors rather than a set per thread. A
+/// `Weak`, for the same reason [`OWN`] is.
 static SHARED: Mutex<Weak<Inner>> = Mutex::new(Weak::new());
 
 /// The value behind a lock, taken whether or not a panic poisoned it.

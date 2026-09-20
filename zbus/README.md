@@ -129,26 +129,19 @@ size of your binary.
 
 ## Compatibility with async runtimes
 
-zbus is runtime-agnostic. By default (the `builtin-runtime` feature), a connection runs on the
-runtime zbus brings along, with no runtime dependency of its own: one runtime for the whole
-process, run by the thread inside `zbus::block_on`, and, only where a connection has work and no
-thread is inside `zbus::block_on`, by a helper thread that leaves once nothing is left to run. With
-`tokio` instead, it runs on your Tokio runtime, with no extra thread. For any other runtime, hand
-an implementation of [`runtime::traits::Runtime`] to
-[`connection::Builder::runtime`], which then supplies everything a connection needs, sockets
-included — except a handful of calls with no async form (a couple of transport lookups, a
-peer-credential group lookup, waiting on a helper process), which go through the trait's
-`spawn_blocking` and default to a thread of their own unless the runtime overrides it. The wait on
-a `unixexec:` helper is the long one: it starts when the connection lets go of the pipe it reads
-the helper's output from — normally as the connection ends — and lasts until the helper is gone,
-which a helper that keeps reading its still-open input delays until the last clone of the
-connection lets go of the other pipe too. That is a cost at teardown rather than for the life of
-the connection, and a runtime that serves `unixexec:` addresses should still override
-`spawn_blocking` rather than park a thread there for it.
+zbus is runtime-agnostic. A program with no async runtime of its own drives it with
+`zbus::block_on`; see [the FAQ][bw]. A program built on Tokio turns on the `tokio` feature, and a
+connection built while a Tokio runtime is current runs on it, with no extra thread of zbus's own.
+Any other executor can use the default `builtin-runtime` backend as it is, with no integration
+needed: a connection built outside a `zbus::block_on` call is simply run by that backend's own
+helper thread. [`connection::Builder::runtime`] is there for an application that wants to hand a
+connection a runtime of its own instead — any implementation of [`runtime::traits::Runtime`], which
+documents the full contract, including the handful of calls with no async form that go through its
+`spawn_blocking` — not something every other executor needs.
 
-zbus's async locks are its own, built on `event-listener` rather than supplied by the runtime, so
-a build on a runtime of your own needs no lock feature and pulls in no lock crate for them. On a
-Tokio build, Tokio's locks stand in instead, so that build carries no second lock implementation.
+zbus's async locks are its own; a build on the built-in or an external runtime needs no lock feature
+and pulls in no lock crate for them. A Tokio build uses Tokio's locks instead, so that build carries
+no second lock implementation.
 
 `zbus::block_on` over a runtime of your own only works while that runtime's loop runs on another
 thread. A call made from the loop's own thread deadlocks: it waits on a connection that only makes

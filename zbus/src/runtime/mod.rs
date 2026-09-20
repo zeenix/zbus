@@ -1,14 +1,14 @@
 //! Integration with the async runtime that drives a connection.
 //!
 //! By default, a connection runs on the runtime zbus brings along (the `builtin-runtime`
-//! feature, on by default): one runtime per process, run by the thread inside
-//! [`block_on`](crate::block_on) and by a helper thread only where no thread is inside it, with
-//! no runtime dependency of its own. A connection built inside a Tokio runtime runs on it
-//! instead (the `tokio` feature). Any other runtime reaches a connection
-//! through an implementation of [`traits::Runtime`], handed to [`Builder::runtime`]. The async
-//! locks a connection holds are not part of that trait: they are zbus's own, built on
-//! `event-listener`, except on a Tokio build, where Tokio's locks stand in so that build does not
-//! carry a second lock implementation.
+//! feature, on by default): one runtime per thread that runs [`block_on`](crate::block_on),
+//! driven by that thread, and by a helper thread only for work left with no thread inside
+//! `block_on`, with no runtime dependency of its own. A connection built inside a Tokio runtime
+//! runs on it instead (the `tokio` feature). Any other runtime reaches a connection through an
+//! implementation of [`traits::Runtime`], handed to [`Builder::runtime`]. The async locks a
+//! connection holds are not part of that trait: they are zbus's own, built on `event-listener`,
+//! except on a Tokio build, where Tokio's locks stand in so that build does not carry a second
+//! lock implementation.
 //! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
