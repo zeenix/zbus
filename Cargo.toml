@@ -5,7 +5,6 @@ members = [
     "zbus_macros",
     "zbus_xml",
     "zbus_xmlgen",
-    "test_fixtures/blocking_api",
     "test_fixtures/renamed_zbus",
     "test_fixtures/service_only",
     "test_fixtures/zbus_only",

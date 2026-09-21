@@ -38,6 +38,10 @@ Everything else — connections, messages, proxies, the object server — is the
 interact with D-Bus from Rust. It takes care of the establishment of a connection, the creation,
 sending and receiving of different kind of D-Bus messages (method calls, signals etc) for you.
 
+The API is async. A program with no async runtime of its own drives it with [`zbus::block_on`],
+which runs a future to completion on the calling thread; the
+[FAQ](faq.md#how-do-i-use-zbus-from-synchronous-code) shows how.
+
 [zbus]: https://github.com/z-galaxy/zbus
 [Rust]: https://www.rust-lang.org/
 [D-Bus]: https://dbus.freedesktop.org/
@@ -46,6 +50,7 @@ sending and receiving of different kind of D-Bus messages (method calls, signals
 [API]: https://docs.rs/zbus/latest/zbus/wire/index.html
 [GVariant]: https://developer.gnome.org/documentation/specifications/gvariant-specification-1.0.html
 [zgvariant]: https://crates.io/crates/zgvariant
+[`zbus::block_on`]: https://docs.rs/zbus/latest/zbus/fn.block_on.html
 
 [^outdated]: D-Bus is ~15y old, unfortunately many documents out there are
     sometime aging or misleading.

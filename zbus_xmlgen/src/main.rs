@@ -9,11 +9,7 @@ use std::{
 
 use clap::Parser;
 use snakecase::ascii::to_snakecase;
-use zbus::{
-    ObjectPath,
-    blocking::{Connection, connection, fdo::IntrospectableProxy},
-    names::BusName,
-};
+use zbus::{Connection, ObjectPath, connection, fdo::IntrospectableProxy, names::BusName};
 use zbus_xml::{Interface, Node, Warning};
 
 use zbus_xmlgen::CodeGenerator;
@@ -27,26 +23,33 @@ enum OutputTarget {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    zbus::block_on(run())
+}
+
+async fn run() -> Result<(), Box<dyn Error>> {
     let args = cli::Args::parse();
 
     let DBusInfo(node, service, path, input_src) = match args.command {
         cli::Command::System {
             service,
             object_path,
-        } => DBusInfo::new(Connection::system()?, service, object_path)?,
+        } => DBusInfo::new(Connection::system().await?, service, object_path).await?,
         cli::Command::Session {
             service,
             object_path,
-        } => DBusInfo::new(Connection::session()?, service, object_path)?,
+        } => DBusInfo::new(Connection::session().await?, service, object_path).await?,
         cli::Command::Address {
             address,
             service,
             object_path,
-        } => DBusInfo::new(
-            connection::Builder::address(&*address).build()?,
-            service,
-            object_path,
-        )?,
+        } => {
+            DBusInfo::new(
+                connection::Builder::address(&*address).build().await?,
+                service,
+                object_path,
+            )
+            .await?
+        }
         cli::Command::File { path } => {
             let input_src = path.file_name().unwrap().to_string_lossy().to_string();
             let f = File::open(path)?;
@@ -134,7 +137,7 @@ struct DBusInfo<'a>(
 );
 
 impl DBusInfo<'_> {
-    fn new(
+    async fn new(
         connection: Connection,
         service: String,
         object_path: String,
@@ -148,8 +151,10 @@ impl DBusInfo<'_> {
             .destination(service.clone())
             .path(path.clone())
             .build()
+            .await
             .unwrap()
-            .introspect()?;
+            .introspect()
+            .await?;
 
         let (node, warnings) = Node::from_reader_with_warnings(xml.as_bytes())?;
         report_warnings(&warnings);

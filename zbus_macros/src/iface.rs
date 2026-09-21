@@ -35,9 +35,6 @@ def_attrs! {
                 default_path str,
                 default_service str,
                 async_name str,
-                blocking_name str,
-                gen_async bool,
-                gen_blocking bool,
                 visibility str
             }
         }
@@ -57,8 +54,9 @@ def_attrs! {
             // TODO: Find a way to share code with proxy module.
             pub ProxyMethodAttributes("proxy") {
                 object str,
+                proxy_type_name str,
+                // Accepted as another name for `proxy_type_name`.
                 async_object str,
-                blocking_object str,
                 object_vec none,
                 no_reply none,
                 no_autostart none,
@@ -1621,11 +1619,18 @@ impl Proxy {
             if let Some(object) = attrs.object {
                 proxy_method_attrs.extend(quote! { object = #object, });
             }
-            if let Some(async_object) = attrs.async_object {
-                proxy_method_attrs.extend(quote! { async_object = #async_object, });
-            }
-            if let Some(blocking_object) = attrs.blocking_object {
-                proxy_method_attrs.extend(quote! { blocking_object = #blocking_object, });
+            match (attrs.proxy_type_name, attrs.async_object) {
+                (Some(_), Some(_)) => {
+                    return Err(Error::new(
+                        method_info.ident.span(),
+                        "`proxy_type_name` and `async_object` name the same thing; use \
+                         `proxy_type_name`",
+                    ));
+                }
+                (Some(name), None) | (None, Some(name)) => {
+                    proxy_method_attrs.extend(quote! { proxy_type_name = #name, });
+                }
+                (None, None) => {}
             }
             if attrs.object_vec {
                 proxy_method_attrs.extend(quote! { object_vec, });
@@ -1656,17 +1661,7 @@ impl Proxy {
 
     fn r#gen(&self) -> syn::Result<TokenStream> {
         let attrs = &self.attrs;
-        let (
-            assume_defaults,
-            default_path,
-            default_service,
-            async_name,
-            blocking_name,
-            gen_async,
-            gen_blocking,
-            ty,
-            methods,
-        ) = (
+        let (assume_defaults, default_path, default_service, async_name, ty, methods) = (
             attrs
                 .assume_defaults
                 .map(|value| quote! { assume_defaults = #value, }),
@@ -1682,14 +1677,6 @@ impl Proxy {
                 .async_name
                 .as_ref()
                 .map(|value| quote! { async_name = #value, }),
-            attrs
-                .blocking_name
-                .as_ref()
-                .map(|value| quote! { blocking_name = #value, }),
-            attrs.gen_async.map(|value| quote! { gen_async = #value, }),
-            attrs
-                .gen_blocking
-                .map(|value| quote! { gen_blocking = #value, }),
             &self.ty,
             &self.methods,
         );
@@ -1718,9 +1705,6 @@ impl Proxy {
                     #default_path
                     #default_service
                     #async_name
-                    #blocking_name
-                    #gen_async
-                    #gen_blocking
                 )]
                 #vis trait #ty {
                     #methods

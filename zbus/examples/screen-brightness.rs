@@ -6,8 +6,12 @@
 // the brightness by 5%. Pass '-' for decreasing it by 5%.
 
 fn main() {
+    zbus::block_on(run());
+}
+
+async fn run() {
     tracing_subscriber::fmt::init();
-    let connection = zbus::blocking::Connection::session().unwrap();
+    let connection = zbus::Connection::session().await.unwrap();
 
     let method = match std::env::args().nth(1) {
         Some(s) => {
@@ -30,6 +34,7 @@ fn main() {
             method,
             &(),
         )
+        .await
         .unwrap();
 
     let (percent, _) = reply.body().deserialize::<(i32, &str)>().unwrap();

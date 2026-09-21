@@ -90,10 +90,8 @@ Instead, we want to wrap this `Notify` D-Bus method in a Rust function. Let's se
 
 ## Trait-derived proxy call
 
-A trait declaration `T` with a `proxy` attribute will have a derived `TProxy` and
-`TProxyBlocking` (see [chapter on "blocking"][cob] for more information on that) implemented thanks
-to procedural macros. The trait methods will have respective `impl` methods wrapping the D-Bus
-calls:
+A trait declaration `T` with a `proxy` attribute will have a derived `TProxy` implemented thanks to
+procedural macros. The trait methods will have respective `impl` methods wrapping the D-Bus calls:
 
 ```rust,no_run
 use std::collections::HashMap;
@@ -139,9 +137,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
-A `TProxy` and `TProxyBlocking` has a few associated methods, such as `new(connection)`, using the
-default associated service name and object path, and an associated builder if you need to specify
-something different.
+A `TProxy` has a few associated methods, such as `new(connection)`, using the default associated
+service name and object path, and an associated builder if you need to specify something
+different.
 
 This should help to avoid the kind of mistakes we saw earlier. It's also a bit easier to use, thanks
 to Rust type inference. This makes it also possible to have higher-level types, they fit more
@@ -150,8 +148,7 @@ helpers.
 
 > **Note**
 >
-> For simple transient cases like the one above, you may find the [blocking API][cob] very
-> convenient to use.
+> For a program without an async runtime of its own, see [the FAQ][cob].
 
 ### Signals
 
@@ -604,7 +601,7 @@ There you have it, a Rust-friendly binding for your D-Bus service!
 [developer-friendly tool]: https://crates.io/crates/zbus_xmlgen
 [`gdbus-codegen`]: https://docs.gtk.org/gio/migrating-gdbus.html#generating-code-and-docs
 [`pkg-config`]: https://www.freedesktop.org/wiki/Software/pkg-config/
-[cob]: blocking.html
+[cob]: faq.html#how-do-i-use-zbus-from-synchronous-code
 [`Stream`]: https://docs.rs/futures/4/futures/stream/trait.Stream.html
 
 [^busctl]: `busctl` is part of [`systemd`](https://systemd.io/).
