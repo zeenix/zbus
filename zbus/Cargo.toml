@@ -256,7 +256,7 @@ harness = false
 [[example]]
 name = "screen-brightness"
 path = "examples/screen-brightness.rs"
-required-features = ["blocking-api"]
+required-features = ["proxy"]
 
 [[example]]
 name = "watch-systemd-jobs"

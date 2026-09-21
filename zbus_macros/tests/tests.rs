@@ -430,6 +430,10 @@ mod signal_from_message {
 
 #[test]
 fn test_proxy_object_list() {
+    zbus::block_on(proxy_object_list());
+}
+
+async fn proxy_object_list() {
     #[derive(Clone)]
     struct ObjectList {
         paths: [zbus::ObjectPath<'static>; 2],
@@ -462,26 +466,28 @@ fn test_proxy_object_list() {
         ],
     };
 
-    fn check_return(list: Vec<ObjectListProxyBlocking<'_>>) {
-        for (correct, returned) in OBJECT_LIST.paths.iter().zip(list.into_iter()) {
+    fn check_return(list: Vec<ObjectListProxy<'_>>) {
+        for (correct, returned) in OBJECT_LIST.paths.iter().zip(list) {
             assert!(returned.inner().path() == correct);
         }
     }
 
-    let connection = zbus::blocking::connection::Builder::session()
+    let connection = zbus::connection::Builder::session()
         .serve_at(OBJECT_LIST.paths[1].as_ref(), OBJECT_LIST.clone())
         .build()
+        .await
         .unwrap();
     let destination = connection.unique_name().unwrap().clone();
 
-    let proxy = ObjectListProxyBlocking::builder(&connection)
+    let proxy = ObjectListProxy::builder(&connection)
         .path(OBJECT_LIST.paths[1].as_ref())
         .destination(&destination)
         .build()
+        .await
         .unwrap();
 
-    check_return(proxy.get_test_objects().unwrap());
-    check_return(proxy.objects().unwrap());
+    check_return(proxy.get_test_objects().await.unwrap());
+    check_return(proxy.objects().await.unwrap());
 }
 
 // This crate has no `zvariant` dependency, so the path `signature!` expands to has to resolve

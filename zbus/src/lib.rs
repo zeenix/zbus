@@ -46,8 +46,6 @@ mod doctests {
     doc_comment::doctest!("../../book/src/introduction.md");
     #[cfg(all(feature = "proxy", feature = "service"))]
     doc_comment::doctest!("../../book/src/service.md");
-    #[cfg(all(feature = "blocking-api", feature = "proxy", feature = "service"))]
-    doc_comment::doctest!("../../book/src/blocking.md");
     #[cfg(all(feature = "proxy", feature = "service"))]
     doc_comment::doctest!("../../book/src/upgrading-to-6.md");
     #[cfg(all(feature = "proxy", feature = "service"))]
