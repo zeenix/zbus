@@ -1471,7 +1471,6 @@ mod tests {
     /// call to add the match rule never resolved and resulted in a deadlock.
     async fn test_signal_stream_deadlock() -> Result<()> {
         #[proxy(
-            gen_blocking = false,
             default_path = "/org/zbus/Test",
             default_service = "org.zbus.Test.MR501",
             interface = "org.zbus.Test"

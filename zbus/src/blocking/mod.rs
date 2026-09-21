@@ -42,6 +42,3 @@ pub use object_server::ObjectServer;
 pub mod proxy;
 #[cfg(feature = "proxy")]
 pub use proxy::Proxy;
-
-#[cfg(feature = "proxy")]
-pub mod fdo;
