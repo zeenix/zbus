@@ -4,7 +4,7 @@ use endi::NATIVE_ENDIAN;
 use zbus::{
     DeserializeDict, Dict, OwnedObjectPath, SerializeDict, Str, Type, Value,
     as_value::{Serialize, optional},
-    wire::{serialized::Context, to_bytes},
+    wire::{LE, serialized::Context, to_bytes},
 };
 
 #[test]
@@ -77,7 +77,8 @@ fn dict_value() {
     // Dict<u32, u8>
     let mut map: HashMap<u32, u8> = HashMap::new();
     map.insert(1, 2);
-    let encoded = to_bytes(ctxt, &map).unwrap();
+    // The byte order is explicit since the encoding is compared against hardcoded bytes.
+    let encoded = to_bytes(Context::new(LE, 0), &map).unwrap();
     assert_eq!(
         encoded.bytes(),
         [
