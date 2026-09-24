@@ -4,16 +4,22 @@
 //! a bus and everything goes through the runtime's readiness path, which an in-process channel
 //! would bypass.
 //!
-//! Each id times its operations inside one `zbus::block_on`, the shape of a program that does all
-//! of its work inside one call, on a pair built beforehand in a `block_on` of its own. The timing
-//! goes through Criterion's async bencher, whose loop runs inside one `block_on`, because
-//! CodSpeed's instrumentation skips `iter_custom`. `build-and-shutdown` and
-//! `build-and-peer-credentials` need a fresh pair for each operation and, with no untimed async
-//! setup to build it in, time its build as well: read them against `build-and-drop`.
+//! Each id times its operation inside one `zbus::block_on`, the shape of a program that does all
+//! of its work inside one call. For most ids the pair is built beforehand, in a `block_on` of its
+//! own, so only the operation runs inside the timed `block_on`. `graceful-shutdown` and
+//! `peer-credentials` need a fresh pair for each operation instead: they build that pair, untimed,
+//! inside the timed `block_on` itself, through `iter_custom`, and sum the per-iteration durations
+//! of the operation alone. CodSpeed's walltime mode measures that; its instrumentation mode skips
+//! `iter_custom` and would ignore these two ids.
 
 #[cfg(unix)]
 mod unix {
-    use std::{future::Future, hint::black_box, os::unix::net::UnixStream, time::Duration};
+    use std::{
+        future::Future,
+        hint::black_box,
+        os::unix::net::UnixStream,
+        time::{Duration, Instant},
+    };
 
     use criterion::{Criterion, Throughput, async_executor::AsyncExecutor, criterion_group};
     use futures_util::{StreamExt, lock::Mutex};
@@ -39,10 +45,19 @@ mod unix {
             b.to_async(ZbusExecutor)
                 .iter(|| async { drop(black_box(pair().await)) });
         });
-        group.bench_function("build-and-shutdown", |b| {
-            b.to_async(ZbusExecutor).iter(|| async {
-                let (server, client) = pair().await;
-                futures_util::join!(server.graceful_shutdown(), client.graceful_shutdown());
+        group.bench_function("graceful-shutdown", |b| {
+            b.iter_custom(|iters| {
+                zbus::block_on(async move {
+                    let mut total = Duration::ZERO;
+                    for _ in 0..iters {
+                        let (server, client) = pair().await;
+                        let started = Instant::now();
+                        futures_util::join!(server.graceful_shutdown(), client.graceful_shutdown());
+                        total += started.elapsed();
+                    }
+
+                    total
+                })
             });
         });
         group.finish();
@@ -119,10 +134,19 @@ mod unix {
         // and the blocking hook behind it.
         let mut group = c.benchmark_group("blocking-hook");
         group.sample_size(20);
-        group.bench_function("build-and-peer-credentials", |b| {
-            b.to_async(ZbusExecutor).iter(|| async {
-                let (_server, client) = pair().await;
-                black_box(client.peer_creds().await.unwrap().clone());
+        group.bench_function("peer-credentials", |b| {
+            b.iter_custom(|iters| {
+                zbus::block_on(async move {
+                    let mut total = Duration::ZERO;
+                    for _ in 0..iters {
+                        let (_server, client) = pair().await;
+                        let started = Instant::now();
+                        black_box(client.peer_creds().await.unwrap().clone());
+                        total += started.elapsed();
+                    }
+
+                    total
+                })
             });
         });
         group.finish();
