@@ -112,17 +112,20 @@ impl Inner {
                 guarded: Mutex::new(Guarded {
                     state: CellState::Idle {
                         future: Box::pin(future),
-                        queued: false,
+                        queued: true,
                     },
                     join_waker: None,
                 }),
             });
+            // Queued directly here, under the same lock that registers the cell in `live`,
+            // rather than through a wake: the cell is reachable by nobody else yet, so it is
+            // safe to know without asking that it is idle and not already queued.
             state.live.insert(id, cell.clone());
+            state.ready.push_back(cell.clone());
 
             cell
         };
-        // Queued through a wake, so that a task reaches the queue by one path only.
-        cell.wake_by_ref();
+        (self.scheduler.notify)();
 
         JoinHandle {
             cell,
