@@ -41,7 +41,7 @@ use tokio_rt::Tokio;
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
 
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
 
 use erased::ErasedRuntime;
 
@@ -117,21 +117,28 @@ impl Runtime {
     }
 
     /// Spawns a task onto the runtime, under the diagnostic name `name`.
+    ///
+    /// `name` takes a `Cow` rather than a `&str` so that a caller that already owns a `String`
+    /// (formatted for the occasion, say) can hand it over instead of paying for another copy of
+    /// it; a literal stays borrowed and costs nothing extra.
     pub(crate) fn spawn<T>(
         &self,
-        name: &str,
+        name: impl Into<Cow<'static, str>>,
         future: impl Future<Output = T> + Send + 'static,
     ) -> Task<T>
     where
         T: Send + 'static,
     {
+        let name = name.into();
         match self {
+            // The built-in backend takes the `Cow` itself rather than going through
+            // `traits::Runtime`, whose `spawn` is public API and takes `&str`.
             #[cfg(feature = "builtin-runtime")]
-            Self::Builtin(runtime) => Task::Builtin(traits::Runtime::spawn(runtime, name, future)),
+            Self::Builtin(runtime) => Task::Builtin(runtime.spawn_named(name, future)),
             #[cfg(feature = "tokio")]
-            Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, name, future)),
+            Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, &name, future)),
             Self::External(runtime) => {
-                Task::External(traits::Runtime::spawn(runtime, name, future))
+                Task::External(traits::Runtime::spawn(runtime, &name, future))
             }
         }
     }

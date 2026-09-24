@@ -4,6 +4,7 @@ use enumflags2::BitFlags;
 use event_listener::{Event, EventListener};
 use futures_lite::StreamExt;
 use std::{
+    borrow::Cow,
     collections::HashMap,
     future::Future,
     io,
@@ -773,7 +774,7 @@ impl Connection {
                 let task_name = format!("monitor_name_acquired{{name={well_known_name}}}");
                 let task_name_span = info_span!("monitor_name_acquired", name = %well_known_name);
                 let task = self.runtime().spawn(
-                    &task_name,
+                    task_name,
                     async move {
                         loop {
                             let signal = acquired_stream.next().await;
@@ -787,7 +788,7 @@ impl Connection {
                                         let mut names = inner.registered_names.lock().await;
                                         if let Some(status) = names.get_mut(&well_known_name) {
                                             let task = name_lost_fut.map(|fut| {
-                                                inner.runtime.spawn(&lost_task_name, fut)
+                                                inner.runtime.spawn(lost_task_name, fut)
                                             });
                                             *status = NameStatus::Owner(task);
 
@@ -812,7 +813,7 @@ impl Connection {
                 NameStatus::Queued(task)
             }
             RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner => {
-                let task = name_lost_fut.map(|fut| self.runtime().spawn(&lost_task_name, fut));
+                let task = name_lost_fut.map(|fut| self.runtime().spawn(lost_task_name, fut));
 
                 NameStatus::Owner(task)
             }
@@ -932,7 +933,7 @@ impl Connection {
     #[doc(hidden)]
     pub fn spawn<T>(
         &self,
-        name: &str,
+        name: impl Into<Cow<'static, str>>,
         future: impl Future<Output = T> + Send + 'static,
     ) -> impl traits::TaskHandle<T>
     where
@@ -1161,7 +1162,7 @@ impl Connection {
             let _ = conn.remove_match(rule).await;
         }
         .instrument(trace_span!("{}", task_name));
-        self.inner.runtime.spawn(&task_name, remove_match).detach()
+        self.inner.runtime.spawn(task_name, remove_match).detach()
     }
 
     /// The method_timeout (if any). See [Builder::method_timeout] for details.

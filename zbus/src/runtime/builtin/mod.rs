@@ -43,6 +43,7 @@ mod reactor;
 mod scheduler;
 
 use std::{
+    borrow::Cow,
     fmt,
     future::Future,
     io,
@@ -94,6 +95,29 @@ impl Builtin {
         lock(&self.inner.seat).helper_running()
     }
 
+    /// Queues `future` under the diagnostic name `name` and hands back the task that joins or
+    /// cancels it.
+    ///
+    /// An inherent method rather than part of [`traits::Runtime`], whose `spawn` is public API
+    /// and takes `&str`: this one takes the `Cow` the crate-internal [`super::Runtime::spawn`]
+    /// already built, rather than making every caller pay for a fresh copy of a name it already
+    /// owns.
+    pub(super) fn spawn_named<T>(
+        &self,
+        name: Cow<'static, str>,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        let task = Task(self.inner.spawn(name, future));
+        // Asked for once the task is on the scheduler's queue, so that a helper starting here
+        // finds it there.
+        self.inner.ensure_progress();
+
+        task
+    }
+
     /// Whether the helper thread is parked for want of the seat.
     #[cfg(test)]
     pub(super) fn helper_parked(&self) -> bool {
@@ -134,12 +158,9 @@ impl traits::Runtime for Builtin {
     where
         T: Send + 'static,
     {
-        let task = Task(self.inner.spawn(name, future));
-        // Asked for once the task is on the scheduler's queue, so that a helper starting here
-        // finds it there.
-        self.inner.ensure_progress();
-
-        task
+        // A copy of its own: this signature is fixed by `traits::Runtime` and hands out only a
+        // borrow, while a task's cell keeps its name for as long as it lives.
+        self.spawn_named(name.to_owned().into(), future)
     }
 }
 

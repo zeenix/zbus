@@ -31,6 +31,7 @@
 
 use std::{
     any::Any,
+    borrow::Cow,
     collections::{HashMap, VecDeque},
     fmt,
     future::Future,
@@ -95,7 +96,7 @@ impl Inner {
     /// panicking task logs, and the handle's [`Debug`](fmt::Debug).
     pub(super) fn spawn<T>(
         self: &Arc<Self>,
-        name: &str,
+        name: impl Into<Cow<'static, str>>,
         future: impl Future<Output = T> + Send + 'static,
     ) -> JoinHandle<T>
     where
@@ -478,7 +479,7 @@ where
 /// need to know about it beyond that.
 struct TaskCell<T> {
     id: u64,
-    name: Box<str>,
+    name: Cow<'static, str>,
     runtime: Weak<Inner>,
     /// What the task is up to, and the waker of whoever is joining it, behind the one lock that
     /// guards both.
