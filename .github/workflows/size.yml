@@ -1,0 +1,24 @@
+name: Binary size
+
+on:
+  pull_request:
+
+jobs:
+  size:
+    name: GeoClue2 fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: moonrepo/setup-rust@v1
+        with:
+          channel: stable
+      - name: Install a session bus
+        run: sudo apt-get update && sudo apt-get install -y dbus
+      - name: Fetch the base commit
+        run: git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+      - name: Build, measure and compare the fixtures
+        shell: bash
+        run: |
+          echo "## GeoClue2 fixture sizes (\`size\` profile, stripped)" >> "$GITHUB_STEP_SUMMARY"
+          CI/binary-size.sh "${{ github.event.pull_request.base.sha }}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
