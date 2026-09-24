@@ -12,6 +12,8 @@ on:
 jobs:
   benchmarks:
     name: Run benchmarks
+    # CodSpeed's macro runners (`runs-on: codspeed-macro`) give steadier walltime numbers than
+    # the standard GitHub runners; switch to one once this project has access to them.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -22,10 +24,10 @@ jobs:
           cache-target: release
           bins: cargo-codspeed
       - name: Build the benchmark target(s)
-        run: cargo codspeed build --features zbus/p2p
+        run: cargo codspeed build -m walltime --features zbus/p2p
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@v5
         with:
-          mode: instrumentation
-          run: cargo codspeed run
+          mode: walltime
+          run: cargo codspeed run -m walltime
           token: ${{ secrets.CODSPEED_TOKEN }} # optional for public repos
