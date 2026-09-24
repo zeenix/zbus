@@ -20,23 +20,24 @@
 //! task ends there, its handle reports the failure, and the thread that polled it carries on
 //! with the next task.
 //!
-//! A cell's lock is always taken before the scheduler's own, never the other way round. Neither
-//! is held while a future is polled or dropped, nor while a waker is woken, because all three
+//! A cell's lock guards both what its task is up to and the waker of whoever is joining it — one
+//! lock for both, so a poll that has just returned settles both from a single consistent view of
+//! the wake, the cancellation and the join that may have arrived while it ran. That lock is
+//! always taken before the scheduler's own, never the other way round, and neither is held while
+//! a future is polled or dropped, nor while a waker of either kind is woken, because all three
 //! run code that may spawn a task, cancel one or wake another on this very scheduler — the
 //! destructor of a future is where a connection hands over the last of its work — and that code
-//! takes the locks that would be held. What a cell is up to is therefore kept under its lock as
-//! one state whose variants carry only the flags that apply to them, rather than in atomics, so
-//! that a poll which has just returned settles what to do next from one consistent view of the
-//! wake and of the cancellation that may have arrived while it ran.
+//! takes the locks that would be held.
 
 use std::{
+    any::Any,
     collections::{HashMap, VecDeque},
     fmt,
     future::Future,
     hash::{BuildHasherDefault, Hasher},
     io, mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
-    pin::{Pin, pin},
+    pin::Pin,
     sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
     task::{Context, Poll, Wake, Waker},
 };
@@ -71,79 +72,7 @@ impl Scheduler {
         let Some(cell) = lock(&self.state).ready.pop_front() else {
             return false;
         };
-        let mut future = {
-            let mut guard = lock(&cell.cell);
-            match mem::replace(
-                &mut *guard,
-                CellState::Running {
-                    woken: false,
-                    cancelled: false,
-                },
-            ) {
-                // The queue entry popped above is spent by this replacement: `Running` carries
-                // no `queued` flag, so a wake that arrives during the poll queues the cell
-                // afresh rather than reusing this entry.
-                CellState::Idle { future, .. } => future,
-                // Nothing to poll: the future is either gone or already out of its cell. A
-                // cancelled cell may still sit in the queue as `Done`, so a stale entry like
-                // that is accepted here rather than treated as a bug.
-                state => {
-                    *guard = state;
-
-                    return true;
-                }
-            }
-        };
-
-        let waker = Waker::from(cell.clone());
-        // Whatever a panic left half-done is in the future, and a task that panicked is marked
-        // `Done`, dropped and forgotten below, so nothing here reads that half-done state and
-        // nothing polls the future again.
-        let polled = catch_unwind(AssertUnwindSafe(|| {
-            future.as_mut().poll(&mut Context::from_waker(&waker))
-        }));
-        let panicked = polled.is_err();
-        let ready = matches!(polled, Ok(Poll::Ready(())));
-
-        // A future that is finished with is taken out of its cell here and dropped below, with
-        // no lock held.
-        let finished = {
-            let mut guard = lock(&cell.cell);
-            let CellState::Running { woken, cancelled } = *guard else {
-                unreachable!("only this call takes a cell out of `Running`");
-            };
-            if ready || panicked || cancelled {
-                *guard = CellState::Done;
-                lock(&self.state).live.remove(&cell.id);
-
-                Some(future)
-            } else {
-                *guard = CellState::Idle {
-                    future,
-                    queued: woken,
-                };
-                if woken {
-                    lock(&self.state).ready.push_back(cell.clone());
-                }
-
-                None
-            }
-        };
-
-        if panicked {
-            cell.joint.fail(io::Error::other("the task panicked"));
-            error!("The task `{}` panicked", cell.name);
-        }
-        // Nothing carries the panic any further, so its payload ends here: once the task is
-        // marked done, taken off the live map and failed, so that a payload whose own destructor
-        // panics cannot leave the task behind with nobody to finish it. That destructor is the
-        // task's code as much as the future is, and is contained the same way.
-        dispose(polled);
-        if let Some(future) = finished {
-            // A destructor is free to panic and free to spawn, so it runs here: caught, and
-            // clear of every lock a spawn of its own would take.
-            dispose(future);
-        }
+        cell.run(self);
 
         true
     }
@@ -172,21 +101,6 @@ impl Inner {
     where
         T: Send + 'static,
     {
-        let joint = Arc::new(Mutex::new(Joint {
-            output: None,
-            waker: None,
-        }));
-        let wrapped = {
-            let joint = joint.clone();
-            async move {
-                // Pinned in place and awaited through that pin, rather than awaited by value:
-                // the output is then stored before the future it came from is dropped, at the
-                // end of this block, so a future whose destructor panics hands its value back
-                // all the same.
-                let mut future = pin!(future);
-                Joint::finish(&joint, Ok(future.as_mut().await));
-            }
-        };
         let cell = {
             let mut state = lock(&self.scheduler.state);
             let id = state.next_id;
@@ -195,10 +109,12 @@ impl Inner {
                 id,
                 name: name.into(),
                 runtime: Arc::downgrade(self),
-                joint: joint.clone(),
-                cell: Mutex::new(CellState::Idle {
-                    future: Box::pin(wrapped),
-                    queued: false,
+                guarded: Mutex::new(Guarded {
+                    state: CellState::Idle {
+                        future: Box::pin(future),
+                        queued: false,
+                    },
+                    join_waker: None,
                 }),
             });
             state.live.insert(id, cell.clone());
@@ -210,7 +126,6 @@ impl Inner {
 
         JoinHandle {
             cell,
-            joint,
             detached: false,
         }
     }
@@ -220,7 +135,7 @@ impl Drop for Scheduler {
     fn drop(&mut self) {
         // A cell outlives the scheduler wherever something holds a waker of it, so every future
         // is taken out here rather than left to go with the last of those wakers.
-        let cells: Vec<Arc<TaskCell>> = {
+        let cells: Vec<Arc<dyn Runnable>> = {
             let state = self.state.get_mut().unwrap_or_else(PoisonError::into_inner);
             state
                 .ready
@@ -228,43 +143,20 @@ impl Drop for Scheduler {
                 .chain(state.live.drain().map(|(_, cell)| cell))
                 .collect()
         };
-        let mut futures = Vec::new();
-        for cell in cells {
-            let state = mem::replace(&mut *lock(&cell.cell), CellState::Done);
-            if let CellState::Idle { future, .. } = state {
-                futures.push(future);
-            }
-            // The task will never produce anything, and whoever waits on its handle is told so
-            // rather than left waiting for a task no thread will ever poll again.
-            cell.joint
-                .fail(io::Error::other("the task's runtime is gone"));
-        }
+        // Every cell is closed — its handle failed, unless it already had output waiting — before
+        // any future is disposed of, with no lock held: a destructor that spawns or joins reaches
+        // a scheduler whose every cell already has its final word.
+        let futures: Vec<Box<dyn Any + Send>> =
+            cells.iter().filter_map(|cell| cell.close()).collect();
         for future in futures {
             dispose(future);
         }
     }
 }
 
-/// Drops `value` with every panic its destructor raises contained.
-///
-/// A task's panic is contained per task: the destructor of its payload, and of that payload's
-/// own payload should it have one, is part of that same task rather than of whoever polls it.
-fn dispose<T>(value: T) {
-    let Err(payload) = catch_unwind(AssertUnwindSafe(move || drop(value))) else {
-        return;
-    };
-    // A payload whose own destructor panics is leaked rather than dropped a third time: the
-    // panic is contained either way, and a chain of destructors that each panic with the next
-    // is not one the scheduler should follow to its end.
-    if let Err(payload) = catch_unwind(AssertUnwindSafe(move || drop(payload))) {
-        mem::forget(payload);
-    }
-}
-
 /// Joins a spawned task, and cancels it when dropped unless [`JoinHandle::detach`] was called.
 pub(super) struct JoinHandle<T> {
-    cell: Arc<TaskCell>,
-    joint: Arc<Mutex<Joint<T>>>,
+    cell: Arc<TaskCell<T>>,
     detached: bool,
 }
 
@@ -279,14 +171,15 @@ impl<T> Future for JoinHandle<T> {
     type Output = io::Result<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut joint = lock(&self.joint);
-        let Some(output) = joint.output.take() else {
-            joint.waker = Some(cx.waker().clone());
+        let mut guard = lock(&self.cell.guarded);
+        if let CellState::Done { output } = &mut guard.state {
+            if let Some(output) = output.take() {
+                return Poll::Ready(output);
+            }
+        }
+        guard.join_waker = Some(cx.waker().clone());
 
-            return Poll::Pending;
-        };
-
-        Poll::Ready(output)
+        Poll::Pending
     }
 }
 
@@ -297,37 +190,43 @@ impl<T> Drop for JoinHandle<T> {
         }
         let runtime = self.cell.runtime.upgrade();
         let scheduler = runtime.as_ref().map(|runtime| &runtime.scheduler);
-        let future = {
-            let mut guard = lock(&self.cell.cell);
-            match mem::replace(&mut *guard, CellState::Done) {
+        let (future, join_waker) = {
+            let mut guard = lock(&self.cell.guarded);
+            match mem::replace(&mut guard.state, CellState::Done { output: None }) {
                 CellState::Idle { future, .. } => {
                     if let Some(scheduler) = &scheduler {
                         lock(&scheduler.state).live.remove(&self.cell.id);
                     }
 
-                    Some(future)
+                    (Some(future), guard.join_waker.take())
                 }
                 // Whoever is polling the task drops the future once that poll returns.
                 CellState::Running { woken, .. } => {
-                    *guard = CellState::Running {
+                    guard.state = CellState::Running {
                         woken,
                         cancelled: true,
                     };
 
-                    None
+                    (None, guard.join_waker.take())
                 }
                 // Finished, or cancelled by an earlier drop: nothing to take back, nobody to
                 // tell.
-                CellState::Done => return,
+                done @ CellState::Done { .. } => {
+                    guard.state = done;
+
+                    return;
+                }
             }
         };
         // On the thread that let the handle go, with no lock held: a destructor that panics
         // here panics where the handle was dropped, and one that spawns is served as any other
         // caller is.
-        let dropped = catch_unwind(AssertUnwindSafe(move || drop(future)));
-        self.cell
-            .joint
-            .fail(io::Error::other("the task was cancelled"));
+        let dropped = future.map(|future| catch_unwind(AssertUnwindSafe(move || drop(future))));
+        if let Some(waker) = join_waker {
+            // Outside the lock: whoever registered it, polling this very handle earlier and
+            // getting `Pending`, may be polled to completion right here.
+            waker.wake();
+        }
         if let Some(scheduler) = scheduler {
             // Even where nothing was queued: a thread waiting with this as its last task learns
             // from it that it can retire.
@@ -336,7 +235,7 @@ impl<T> Drop for JoinHandle<T> {
         // Carried on from here, so that the panic is still the caller's to see while the task it
         // belonged to is closed off either way: the notification above is what lets an idle
         // thread retire, and somebody's destructor panicking is no reason to leave one up.
-        if let Err(payload) = dropped {
+        if let Some(Err(payload)) = dropped {
             resume_unwind(payload);
         }
     }
@@ -352,12 +251,12 @@ impl<T> fmt::Debug for JoinHandle<T> {
 }
 
 struct State {
-    ready: VecDeque<Arc<TaskCell>>,
+    ready: VecDeque<Arc<dyn Runnable>>,
     /// Every cell that holds a future: spawned, and neither finished, cancelled nor panicked.
     ///
     /// Keyed, rather than a list to scan: an object server hands each method call a task of its
     /// own, and a burst of calls would make a scan per completion quadratic.
-    live: HashMap<u64, Arc<TaskCell>, BuildHasherDefault<IdHasher>>,
+    live: HashMap<u64, Arc<dyn Runnable>, BuildHasherDefault<IdHasher>>,
     next_id: u64,
 }
 
@@ -384,17 +283,162 @@ impl Hasher for IdHasher {
     }
 }
 
-/// One task: its future, and what the scheduler and its handle need to know about it.
-struct TaskCell {
-    id: u64,
-    name: Box<str>,
-    runtime: Weak<Inner>,
-    /// The handle's side of the task, reached from here without knowing what the task produces.
-    joint: Arc<dyn Fail>,
-    cell: Mutex<CellState>,
+/// A task, polled without the scheduler knowing what it produces.
+///
+/// The ready queue and the live map hold tasks of every type spawned on the scheduler side by
+/// side, so both reach a task through this rather than through [`TaskCell<T>`] directly.
+trait Runnable: Send + Sync {
+    /// Polls this task, taken off `scheduler`'s ready queue, once.
+    fn run(self: Arc<Self>, scheduler: &Scheduler);
+
+    /// Marks the task done, whatever it was doing, and hands back its future for whoever calls
+    /// this to dispose of.
+    ///
+    /// Used only as the scheduler is dropped: a task already done keeps the output its handle is
+    /// yet to collect, and one that was not is failed instead, having no output left to give.
+    fn close(&self) -> Option<Box<dyn Any + Send>>;
 }
 
-impl Wake for TaskCell {
+impl<T> Runnable for TaskCell<T>
+where
+    T: Send + 'static,
+{
+    fn run(self: Arc<Self>, scheduler: &Scheduler) {
+        let mut future = {
+            let mut guard = lock(&self.guarded);
+            match mem::replace(
+                &mut guard.state,
+                CellState::Running {
+                    woken: false,
+                    cancelled: false,
+                },
+            ) {
+                // The queue entry popped in `Scheduler::run_one` is spent by this replacement:
+                // `Running` carries no `queued` flag, so a wake that arrives during the poll
+                // queues the cell afresh rather than reusing that entry.
+                CellState::Idle { future, .. } => future,
+                // Nothing to poll: the future is either gone or already out of its cell. A
+                // cancelled cell may still sit in the queue as `Done`, so a stale entry like
+                // that is accepted here rather than treated as a bug.
+                state => {
+                    guard.state = state;
+
+                    return;
+                }
+            }
+        };
+
+        let waker = Waker::from(self.clone());
+        let polled = catch_unwind(AssertUnwindSafe(|| {
+            future.as_mut().poll(&mut Context::from_waker(&waker))
+        }));
+        // The value is moved out of `polled` ahead of the future's drop below, so a future whose
+        // destructor panics still hands its value back.
+        let panicked = polled.is_err();
+        let (value, payload) = match polled {
+            Ok(Poll::Ready(value)) => (Some(value), None),
+            Ok(Poll::Pending) => (None, None),
+            Err(payload) => (None, Some(payload)),
+        };
+        let ready = value.is_some();
+
+        // A future that is finished with is taken out of its cell here and dropped below, with
+        // no lock held.
+        let (finished, join_waker) = {
+            let mut guard = lock(&self.guarded);
+            let CellState::Running { woken, cancelled } = guard.state else {
+                unreachable!("only this call takes a cell out of `Running`");
+            };
+            if ready || panicked || cancelled {
+                let output = if panicked {
+                    Some(Err(io::Error::other("the task panicked")))
+                } else {
+                    value.map(Ok)
+                };
+                guard.state = CellState::Done { output };
+                lock(&scheduler.state).live.remove(&self.id);
+
+                (Some(future), guard.join_waker.take())
+            } else {
+                guard.state = CellState::Idle {
+                    future,
+                    queued: woken,
+                };
+                if woken {
+                    lock(&scheduler.state).ready.push_back(self.clone());
+                }
+
+                (None, None)
+            }
+        };
+
+        if let Some(payload) = payload {
+            error!("The task `{}` panicked", self.name);
+            // Nothing carries the panic any further, so its payload ends here: once the task is
+            // marked done and taken off the live map, so that a payload whose own destructor
+            // panics cannot leave the task behind with nobody to finish it. That destructor is
+            // the task's code as much as the future is, and is contained the same way.
+            dispose(payload);
+        }
+        if let Some(future) = finished {
+            // A destructor is free to panic and free to spawn, so it runs here: caught, and
+            // clear of every lock a spawn of its own would take.
+            dispose(future);
+        }
+        if let Some(waker) = join_waker {
+            // Outside every lock: the handle may be polled to completion on this very thread.
+            waker.wake();
+        }
+    }
+
+    fn close(&self) -> Option<Box<dyn Any + Send>> {
+        let (future, join_waker) = {
+            let mut guard = lock(&self.guarded);
+            match mem::replace(
+                &mut guard.state,
+                CellState::Done {
+                    output: Some(Err(io::Error::other("the task's runtime is gone"))),
+                },
+            ) {
+                CellState::Idle { future, .. } => (Some(future), guard.join_waker.take()),
+                CellState::Running { .. } => (None, guard.join_waker.take()),
+                // Already finished, or cancelled: the output already there, or already given
+                // up, is left exactly as it was.
+                done @ CellState::Done { .. } => {
+                    guard.state = done;
+
+                    return None;
+                }
+            }
+        };
+        if let Some(waker) = join_waker {
+            waker.wake();
+        }
+
+        future.map(|future| Box::new(future) as Box<dyn Any + Send>)
+    }
+}
+
+/// Drops `value` with every panic its destructor raises contained.
+///
+/// A task's panic is contained per task: the destructor of its payload, and of that payload's
+/// own payload should it have one, is part of that same task rather than of whoever polls it.
+fn dispose<T>(value: T) {
+    let Err(payload) = catch_unwind(AssertUnwindSafe(move || drop(value))) else {
+        return;
+    };
+    // A payload whose own destructor panics is leaked rather than dropped a third time: the
+    // panic is contained either way, and a chain of destructors that each panic with the next
+    // is not one the scheduler should follow to its end.
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(move || drop(payload))) {
+        mem::forget(payload);
+    }
+}
+
+impl<T> Wake for TaskCell<T>
+where
+    T: Send + 'static,
+{
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
     }
@@ -405,8 +449,8 @@ impl Wake for TaskCell {
             return;
         };
         let scheduler = &runtime.scheduler;
-        let mut guard = lock(&self.cell);
-        match &mut *guard {
+        let mut guard = lock(&self.guarded);
+        match &mut guard.state {
             // The future is out of its cell; the poll it is out for queues the cell again.
             CellState::Running { woken, .. } => {
                 *woken = true;
@@ -414,7 +458,7 @@ impl Wake for TaskCell {
                 return;
             }
             // There is nothing left to poll.
-            CellState::Done => return,
+            CellState::Done { .. } => return,
             CellState::Idle { queued: true, .. } => return,
             CellState::Idle { queued, .. } => *queued = true,
         }
@@ -427,15 +471,34 @@ impl Wake for TaskCell {
     }
 }
 
-/// A spawned future, boxed so that every task has a cell of the same type.
-type BoxFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+/// One task: the cell that holds its future and state, and what the scheduler and its handle
+/// need to know about it beyond that.
+struct TaskCell<T> {
+    id: u64,
+    name: Box<str>,
+    runtime: Weak<Inner>,
+    /// What the task is up to, and the waker of whoever is joining it, behind the one lock that
+    /// guards both.
+    guarded: Mutex<Guarded<T>>,
+}
+
+/// What a cell is up to, and the waker of whoever is joining it.
+struct Guarded<T> {
+    state: CellState<T>,
+    /// Registered by a poll of the [`JoinHandle`] that found no output waiting yet.
+    join_waker: Option<Waker>,
+}
+
+/// A spawned future, boxed so that a cell can hold one without being generic over its concrete
+/// type.
+type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
 /// What a cell holding a task is up to.
-enum CellState {
+enum CellState<T> {
     /// Waiting to be polled, with its future in hand.
     Idle {
         /// The task's future.
-        future: BoxFuture,
+        future: BoxFuture<T>,
         /// Whether the cell sits in the ready queue.
         queued: bool,
     },
@@ -448,57 +511,11 @@ enum CellState {
         cancelled: bool,
     },
     /// Gone: the task finished, was cancelled or panicked.
-    Done,
-}
-
-/// Where a task's output waits for the handle that joins it.
-struct Joint<T> {
-    output: Option<io::Result<T>>,
-    waker: Option<Waker>,
-}
-
-impl<T> Joint<T> {
-    /// Stores `output` and wakes whoever waits for it.
-    fn finish(joint: &Mutex<Self>, output: io::Result<T>) {
-        let waker = {
-            let mut joint = lock(joint);
-            joint.output = Some(output);
-            joint.waker.take()
-        };
-        // Outside the lock: the handle may be polled to completion on this very thread.
-        if let Some(waker) = waker {
-            waker.wake();
-        }
-    }
-}
-
-/// Failing a task without knowing what that task produces.
-///
-/// A cell has the one type whatever its task is, so the way it reaches the output side of that
-/// task is through this.
-trait Fail: Send + Sync {
-    /// Hands `error` to the handle, unless an output is already waiting for it.
-    fn fail(&self, error: io::Error);
-}
-
-impl<T> Fail for Mutex<Joint<T>>
-where
-    T: Send,
-{
-    fn fail(&self, error: io::Error) {
-        let waker = {
-            let mut joint = lock(self);
-            if joint.output.is_some() {
-                return;
-            }
-            joint.output = Some(Err(error));
-            joint.waker.take()
-        };
-        // Outside the lock, as a handle woken here may be polled on this very thread.
-        if let Some(waker) = waker {
-            waker.wake();
-        }
-    }
+    Done {
+        /// The task's output, until the handle that joins it takes it. `None` once taken, or if
+        /// the task was cancelled and so never had one to give.
+        output: Option<io::Result<T>>,
+    },
 }
 
 /// The value behind a lock, taken whether or not a panic poisoned it.
