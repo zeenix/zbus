@@ -270,6 +270,11 @@ impl<'i> CodeGenerator<'i> {
 
         let mut signals = iface.signals().to_vec();
         signals.sort_by(|a, b| a.name().partial_cmp(&b.name()).unwrap());
+
+        // Collect signal method names for collision detection with the implicit property change
+        // receivers.
+        let mut changed_suffix_signals = HashSet::new();
+
         for signal in &signals {
             let args = parse_signal_args(signal.args(), &types);
             let name = to_identifier(&to_snakecase(signal.name().as_str()));
@@ -282,21 +287,53 @@ impl<'i> CodeGenerator<'i> {
                 writeln!(w, "    #[zbus(signal)]")?;
             }
             writeln!(w, "    fn {name}({args}) -> zbus::Result<()>;",)?;
+
+            if name.ends_with("_changed") {
+                changed_suffix_signals.insert(name);
+            }
         }
 
         let mut props = iface.properties().to_vec();
         props.sort_by(|a, b| a.name().partial_cmp(&b.name()).unwrap());
         for p in props {
             let name = to_identifier(&to_snakecase(p.name().as_str()));
-            let fn_attribute = if pascal_case(&name) != p.name().as_str() {
-                format!("    #[zbus(property, name = \"{}\")]", p.name())
+
+            // If an explicit `{prop}_changed` signal exists, it shadows the implicit change
+            // receiver the `#[proxy]` macro would generate for the property, causing duplicate
+            // methods. Mark the property as not emitting a change signal so only the explicit
+            // signal's receiver is generated.
+            let prop_change_receiver_name = format!("{name}_changed");
+            let signal_collision = changed_suffix_signals.contains(&prop_change_receiver_name);
+
+            let (fn_attribute, comment) = if signal_collision {
+                let fn_attribute = if pascal_case(&name) != p.name().as_str() {
+                    format!(
+                        "    #[zbus(property(emits_changed_signal = \"false\"), name = \"{}\")]",
+                        p.name()
+                    )
+                } else {
+                    "    #[zbus(property(emits_changed_signal = \"false\"))]".to_string()
+                };
+                (
+                    fn_attribute,
+                    format!(
+                        "    // Note: changed signal is shadowed by `{}` signal method.\n",
+                        prop_change_receiver_name,
+                    ),
+                )
+            } else if pascal_case(&name) != p.name().as_str() {
+                (
+                    format!("    #[zbus(property, name = \"{}\")]", p.name()),
+                    String::new(),
+                )
             } else {
-                "    #[zbus(property)]".to_string()
+                ("    #[zbus(property)]".to_string(), String::new())
             };
 
             writeln!(w)?;
             writeln!(w, "    /// {} property", p.name())?;
             write_member_docs(w, p.docstring(), &[])?;
+            write!(w, "{comment}")?;
             // Named types satisfy both directions of the property value conversions, owned.
             let named = types.resolve(p.tp_type(), p.ty(), false);
             if p.access().read() {

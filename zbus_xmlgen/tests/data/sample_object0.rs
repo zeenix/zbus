@@ -71,6 +71,10 @@ pub trait SampleInterface0 {
     #[zbus(signal)]
     fn signal_value(&self, value: zbus::Value<'_>) -> zbus::Result<()>;
 
+    /// StateChanged signal
+    #[zbus(signal)]
+    fn state_changed(&self, state: u32, something_else: u32) -> zbus::Result<()>;
+
     /// Bar property
     #[zbus(property)]
     fn bar(&self) -> zbus::Result<u8>;
@@ -97,4 +101,9 @@ pub trait SampleInterface0 {
             std::collections::HashMap<String, zbus::OwnedValue>,
         )>,
     >;
+
+    /// State property
+    // Note: changed signal is shadowed by `state_changed` signal method.
+    #[zbus(property(emits_changed_signal = "false"))]
+    fn state(&self) -> zbus::Result<u32>;
 }
