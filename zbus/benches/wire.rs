@@ -18,7 +18,6 @@ macro_rules! benchmark {
         // Let's try with DBus format first
         let ctxt = Context::new(LE, 0);
         let mut group = $c.benchmark_group("dbus");
-        group.measurement_time(std::time::Duration::from_secs(30));
         group.bench_function(&ser_function_name, |b| {
             b.iter(|| {
                 let encoded = to_bytes(black_box(ctxt), black_box(&$data)).unwrap();
