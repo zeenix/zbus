@@ -12,8 +12,6 @@ fn name_parse(c: &mut Criterion) {
             That_Is_Valid_For_DBus_and_good_For_benchmarks_I_guess";
 
     let mut group = c.benchmark_group("parse_name");
-    group.sample_size(1000);
-
     group.bench_function("well_known", |b| {
         b.iter(|| {
             zbus::names::WellKnownName::try_from(black_box(WELL_KNOWN_NAME)).unwrap();

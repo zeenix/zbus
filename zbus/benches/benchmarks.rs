@@ -17,7 +17,6 @@ fn msg_ser(c: &mut Criterion) {
 
     let mut strings = Vec::new();
     let big_boy = BigBoy::new(&mut strings);
-    g.measurement_time(std::time::Duration::from_secs(30));
     g.bench_function("big", |b| {
         b.iter(|| {
             let msg = big_boy_message(&big_boy);
@@ -39,7 +38,6 @@ fn msg_de(c: &mut Criterion) {
         })
     });
 
-    g.measurement_time(std::time::Duration::from_secs(30));
     let mut strings = Vec::new();
     let big_boy = BigBoy::new(&mut strings);
     let msg = big_boy_message(&big_boy);
@@ -114,8 +112,6 @@ fn address_parse(c: &mut Criterion) {
         on,port=1234,family=ipv4,guid=0123456789ABCDEF0123456789ABCDEF";
 
     let mut group = c.benchmark_group("parse_dbus_address");
-    group.sample_size(1000);
-
     group.bench_function("unix", |b| {
         b.iter(|| {
             zbus::Address::try_from(black_box(UNIX_ADDRESS)).unwrap();
