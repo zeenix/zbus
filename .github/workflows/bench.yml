@@ -9,6 +9,13 @@ on:
   # performance analysis in order to generate initial data.
   workflow_dispatch:
 
+# A push to a pull request makes the report of the run still going for its previous push moot,
+# so that run is cancelled rather than left to use up runner minutes. Every run on main is kept:
+# each is the baseline of the pull requests based on it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   benchmarks:
     name: Run benchmarks
