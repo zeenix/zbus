@@ -28,30 +28,43 @@ impl<T, E> ResultAdapter for Result<T, E> {
     type Err = E;
 }
 
-/// Runs a future to completion on the calling thread.
+/// Runs a future to completion on the calling thread, and zbus's runtime with it.
 ///
-/// This is for a program that has no async runtime of its own. Put the async code in one call to
-/// this function; the call blocks the thread until the future completes. Only the future passed
-/// in runs on this thread; a connection's own tasks and I/O run on threads zbus starts for them.
+/// This is for a program that has no async runtime of its own. Put the async code in one
+/// call to this function; the call blocks the thread until the future completes. In
+/// between polls of the future, the calling thread also runs the scheduler and the I/O
+/// reactor of every connection built in it, and two threads that each call this drive
+/// their own connections, in parallel. A handful of blocking system calls — a DNS lookup,
+/// a nonce-file read, a peer-credential lookup — run on a short-lived worker thread of
+/// their own instead, so they never hold up the calling thread. If the call returns while
+/// a connection is still alive, a helper thread takes over that connection's work until
+/// the next call, or until the connection is gone.
 ///
-/// Do not call this from another runtime's task. It blocks that task's thread until the future
-/// completes, which deadlocks the program if the future needs that thread to make progress.
-#[cfg(all(not(feature = "tokio"), feature = "async-io"))]
+/// Because the connections' work runs on the calling thread in between polls, the future must
+/// not block that thread waiting for it. A synchronous wait for a reply, or a busy loop until a
+/// signal arrives, never finishes.
+///
+/// Do not call this from inside a task zbus is running, such as a method of a served interface
+/// or a future inside another `block_on` call. It panics there, because it would be waiting for
+/// the very thread it is on. Do not call it from another runtime's task either: it blocks that
+/// task's thread until the future completes, which deadlocks the program if the future needs
+/// that thread to make progress.
+#[cfg(all(feature = "builtin-runtime", not(feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    async_io::block_on(future)
+    crate::runtime::builtin::block_on(future)
 }
 
 /// Runs a future to completion on the calling thread.
 ///
-/// In a build with neither `async-io` nor `tokio` enabled, every connection runs on the runtime
-/// given to [`Builder::runtime`]. This call drives no connection itself: it only polls the
-/// future passed in, blocking the calling thread until it is done.
+/// In a build with neither `builtin-runtime` nor `tokio` enabled, every connection runs on the
+/// runtime given to [`Builder::runtime`]. This call drives no connection itself: it only polls
+/// the future passed in, blocking the calling thread until it is done.
 ///
 /// Do not call this from another runtime's task. It blocks that task's thread until the future
 /// completes, which deadlocks the program if the future needs that thread to make progress.
 ///
 /// [`Builder::runtime`]: crate::connection::Builder::runtime
-#[cfg(not(any(feature = "tokio", feature = "async-io")))]
+#[cfg(not(any(feature = "builtin-runtime", feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }

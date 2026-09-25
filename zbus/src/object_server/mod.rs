@@ -49,7 +49,7 @@ pub(crate) use node::Node;
 /// # use std::error::Error;
 /// use zbus::{Connection, interface};
 /// use event_listener::Event;
-/// # use async_io::block_on;
+/// # use zbus::block_on;
 ///
 /// struct Example {
 ///     // Interfaces are owned by the ObjectServer. They can have
@@ -345,7 +345,7 @@ impl ObjectServer {
     /// ```no_run
     /// # use std::error::Error;
     /// # use zbus::{Connection, interface};
-    /// # use async_io::block_on;
+    /// # use zbus::block_on;
     /// #
     /// struct MyIface(u32);
     ///
@@ -500,29 +500,27 @@ impl ObjectServer {
             let runtime = connection.runtime().clone();
             let connection = connection.clone();
             let msg = msg.clone();
-            runtime
-                .spawn(
-                    &task_name,
-                    async move {
-                        let server = connection.object_server();
-                        let hdr = msg.header();
-                        if let Err(e) = server
-                            .dispatch_call_to_iface(iface, &connection, &msg, &hdr)
-                            .await
-                        {
-                            // When not spawning a task, this error is handled by the caller.
-                            debug!("Returning error: {}", e);
-                            if let Err(e) = connection.reply_dbus_error(&hdr, e).await {
-                                debug!(
-                                    "Error dispatching message. Message: {:?}, error: {:?}",
-                                    msg, e
-                                );
-                            }
-                        }
+            let dispatch = async move {
+                let server = connection.object_server();
+                let hdr = msg.header();
+                if let Err(e) = server
+                    .dispatch_call_to_iface(iface, &connection, &msg, &hdr)
+                    .await
+                {
+                    // When not spawning a task, this error is handled by the caller.
+                    debug!("Returning error: {}", e);
+                    if let Err(e) = connection.reply_dbus_error(&hdr, e).await {
+                        debug!(
+                            "Error dispatching message. Message: {:?}, error: {:?}",
+                            msg, e
+                        );
                     }
-                    .instrument(trace_span!("{}", task_name)),
-                )
-                .detach();
+                }
+            }
+            .instrument(trace_span!("{}", task_name));
+            // The span above is built from a borrow of `task_name`; moved in only now that it is
+            // no longer needed, so the runtime is handed the `String` instead of a copy of it.
+            runtime.spawn(task_name, dispatch).detach();
             Ok(())
         } else {
             self.dispatch_call_to_iface(iface, connection, msg, hdr)

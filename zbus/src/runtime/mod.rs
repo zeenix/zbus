@@ -1,11 +1,14 @@
 //! Integration with the async runtime that drives a connection.
 //!
-//! zbus does not ship a runtime of its own. A connection watches its socket, takes its timers,
-//! runs its internal tasks and hands off its blocking work on `async-io` (the default), on Tokio,
-//! or on any implementation of [`traits::Runtime`] handed to [`Builder::runtime`]. Both built-in
-//! backends are implementations of that trait, picked by the `async-io` and `tokio` features. The
-//! async locks a connection holds are not part of that trait: they come from `async-lock` or from
-//! Tokio, whichever of the `async-lock` and `tokio` cargo features is on.
+//! By default, a connection runs on the runtime zbus brings along (the `builtin-runtime`
+//! feature, on by default): one runtime per thread that runs [`block_on`](crate::block_on),
+//! driven by that thread, and by a helper thread only for work left with no thread inside
+//! `block_on`, with no runtime dependency of its own. A connection built inside a Tokio runtime
+//! runs on it instead (the `tokio` feature). Any other runtime reaches a connection through an
+//! implementation of [`traits::Runtime`], handed to [`Builder::runtime`]. The async locks a
+//! connection holds are not part of that trait: they are zbus's own, built on `event-listener`,
+//! except on a Tokio build, where Tokio's locks stand in so that build does not carry a second
+//! lock implementation.
 //! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
@@ -15,13 +18,13 @@ pub mod traits;
 pub(crate) mod io;
 mod io_source;
 pub use io_source::{Interest, IoSource};
-#[cfg(feature = "async-io")]
-mod async_io;
-#[cfg(feature = "async-io")]
-pub(crate) use async_io::AsyncIo;
 mod async_drop;
 pub use async_drop::AsyncDrop;
 mod blocking_thread;
+#[cfg(feature = "builtin-runtime")]
+pub(crate) mod builtin;
+#[cfg(feature = "builtin-runtime")]
+pub(crate) use builtin::Builtin;
 mod erased;
 pub(crate) mod locks;
 mod task;
@@ -33,14 +36,12 @@ mod timeout;
 mod tokio_rt;
 #[cfg(feature = "tokio")]
 use tokio_rt::Tokio;
-#[cfg(any(feature = "async-io", test))]
-mod unblock;
 
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run a program.
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
 
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
 
 use erased::ErasedRuntime;
 
@@ -49,8 +50,8 @@ use crate::Result;
 /// The runtime a connection runs on, chosen once when it is built.
 #[derive(Clone, Debug)]
 pub(crate) enum Runtime {
-    #[cfg(feature = "async-io")]
-    AsyncIo(AsyncIo),
+    #[cfg(feature = "builtin-runtime")]
+    Builtin(Builtin),
     #[cfg(feature = "tokio")]
     Tokio(Tokio),
     /// A runtime handed to the builder, reached through the object-safe mirrors of the traits.
@@ -60,12 +61,13 @@ pub(crate) enum Runtime {
 impl Runtime {
     /// The runtime for a connection built without an explicit one.
     ///
-    /// Tokio when it is compiled in and a runtime is current on this thread, otherwise async-io
-    /// when that is compiled in. This keeps the features additive: enabling `tokio` elsewhere in
-    /// the dependency graph doesn't force every zbus user into a tokio runtime. Two builds have
-    /// no default left and report [`Error::Unsupported`] instead, so that a connection in them
-    /// has to be given a runtime of its own: one with neither backend compiled in, and one with
-    /// only `tokio` called from a thread where no Tokio runtime is current.
+    /// Tokio when it is compiled in and a runtime is current on this thread, otherwise the
+    /// runtime zbus brings along, when that is compiled in. This keeps the features additive:
+    /// enabling `tokio` elsewhere in the dependency graph doesn't force every zbus user into a
+    /// tokio runtime. Two builds have no default left and report [`Error::Unsupported`] instead,
+    /// so that a connection in them has to be given an external runtime: one with neither
+    /// compiled in, and one with only `tokio` called from a thread where no Tokio runtime is
+    /// current.
     ///
     /// [`Error::Unsupported`]: crate::Error::Unsupported
     pub(crate) fn default_for_build() -> Result<Self> {
@@ -73,11 +75,11 @@ impl Runtime {
         if let Some(runtime) = Tokio::current() {
             return Ok(Self::Tokio(runtime));
         }
-        #[cfg(feature = "async-io")]
+        #[cfg(feature = "builtin-runtime")]
         {
-            Ok(Self::AsyncIo(AsyncIo::new()))
+            Ok(Self::Builtin(Builtin::new()?))
         }
-        #[cfg(not(feature = "async-io"))]
+        #[cfg(not(feature = "builtin-runtime"))]
         {
             Err(crate::Error::Unsupported)
         }
@@ -100,9 +102,9 @@ impl Runtime {
     /// returns, so a socket is only ever driven by the runtime the connection was built with.
     pub(crate) fn register_io_source(&self, source: IoSource) -> std::io::Result<io::Registration> {
         match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => {
-                traits::Runtime::register_io_source(runtime, source).map(io::Registration::AsyncIo)
+            #[cfg(feature = "builtin-runtime")]
+            Self::Builtin(runtime) => {
+                traits::Runtime::register_io_source(runtime, source).map(io::Registration::Builtin)
             }
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => {
@@ -115,21 +117,28 @@ impl Runtime {
     }
 
     /// Spawns a task onto the runtime, under the diagnostic name `name`.
+    ///
+    /// `name` takes a `Cow` rather than a `&str` so that a caller that already owns a `String`
+    /// (formatted for the occasion, say) can hand it over instead of paying for another copy of
+    /// it; a literal stays borrowed and costs nothing extra.
     pub(crate) fn spawn<T>(
         &self,
-        name: &str,
+        name: impl Into<Cow<'static, str>>,
         future: impl Future<Output = T> + Send + 'static,
     ) -> Task<T>
     where
         T: Send + 'static,
     {
+        let name = name.into();
         match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => Task::AsyncIo(traits::Runtime::spawn(runtime, name, future)),
+            // The built-in backend takes the `Cow` itself rather than going through
+            // `traits::Runtime`, whose `spawn` is public API and takes `&str`.
+            #[cfg(feature = "builtin-runtime")]
+            Self::Builtin(runtime) => Task::Builtin(runtime.spawn_named(name, future)),
             #[cfg(feature = "tokio")]
-            Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, name, future)),
+            Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, &name, future)),
             Self::External(runtime) => {
-                Task::External(traits::Runtime::spawn(runtime, name, future))
+                Task::External(traits::Runtime::spawn(runtime, &name, future))
             }
         }
     }
@@ -147,8 +156,8 @@ impl Runtime {
         T: Send + 'static,
     {
         match self {
-            #[cfg(feature = "async-io")]
-            Self::AsyncIo(runtime) => traits::Runtime::spawn_blocking(runtime, work),
+            #[cfg(feature = "builtin-runtime")]
+            Self::Builtin(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work),
