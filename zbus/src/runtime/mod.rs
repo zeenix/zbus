@@ -1,6 +1,6 @@
 //! Integration with the async runtime that drives a connection.
 //!
-//! By default, a connection runs on [zruntime] (the `builtin-runtime` feature, on by default):
+//! By default, a connection runs on [zruntime] (the `zruntime` feature, on by default):
 //! one runtime per thread that runs [`block_on`](crate::block_on), driven by that thread, and by
 //! a helper thread only for work left with no thread inside `block_on`. A connection built
 //! inside a Tokio runtime runs on it instead (the `tokio` feature). Any other runtime reaches a
@@ -21,10 +21,10 @@ pub use io_source::{Interest, IoSource};
 mod async_drop;
 pub use async_drop::AsyncDrop;
 mod blocking_thread;
-#[cfg(feature = "builtin-runtime")]
-pub(crate) mod builtin;
-#[cfg(feature = "builtin-runtime")]
-pub(crate) use builtin::Builtin;
+#[cfg(feature = "zruntime")]
+pub(crate) mod zruntime;
+#[cfg(feature = "zruntime")]
+pub(crate) use self::zruntime::ZRuntime;
 mod erased;
 pub(crate) mod locks;
 mod task;
@@ -50,8 +50,8 @@ use crate::Result;
 /// The runtime a connection runs on, chosen once when it is built.
 #[derive(Clone, Debug)]
 pub(crate) enum Runtime {
-    #[cfg(feature = "builtin-runtime")]
-    Builtin(Builtin),
+    #[cfg(feature = "zruntime")]
+    ZRuntime(ZRuntime),
     #[cfg(feature = "tokio")]
     Tokio(Tokio),
     /// A runtime handed to the builder, reached through the object-safe mirrors of the traits.
@@ -75,11 +75,11 @@ impl Runtime {
         if let Some(runtime) = Tokio::current() {
             return Ok(Self::Tokio(runtime));
         }
-        #[cfg(feature = "builtin-runtime")]
+        #[cfg(feature = "zruntime")]
         {
-            Ok(Self::Builtin(Builtin::new()?))
+            Ok(Self::ZRuntime(ZRuntime::new()?))
         }
-        #[cfg(not(feature = "builtin-runtime"))]
+        #[cfg(not(feature = "zruntime"))]
         {
             Err(crate::Error::Unsupported)
         }
@@ -102,9 +102,9 @@ impl Runtime {
     /// returns, so a socket is only ever driven by the runtime the connection was built with.
     pub(crate) fn register_io_source(&self, source: IoSource) -> std::io::Result<io::Registration> {
         match self {
-            #[cfg(feature = "builtin-runtime")]
-            Self::Builtin(runtime) => {
-                traits::Runtime::register_io_source(runtime, source).map(io::Registration::Builtin)
+            #[cfg(feature = "zruntime")]
+            Self::ZRuntime(runtime) => {
+                traits::Runtime::register_io_source(runtime, source).map(io::Registration::ZRuntime)
             }
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => {
@@ -131,10 +131,10 @@ impl Runtime {
     {
         let name = name.into();
         match self {
-            // The built-in backend takes the `Cow` itself rather than going through
+            // The zruntime backend takes the `Cow` itself rather than going through
             // `traits::Runtime`, whose `spawn` is public API and takes `&str`.
-            #[cfg(feature = "builtin-runtime")]
-            Self::Builtin(runtime) => Task::Builtin(runtime.spawn_named(name, future)),
+            #[cfg(feature = "zruntime")]
+            Self::ZRuntime(runtime) => Task::ZRuntime(runtime.spawn_named(name, future)),
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, &name, future)),
             Self::External(runtime) => {
@@ -156,8 +156,8 @@ impl Runtime {
         T: Send + 'static,
     {
         match self {
-            #[cfg(feature = "builtin-runtime")]
-            Self::Builtin(runtime) => traits::Runtime::spawn_blocking(runtime, work),
+            #[cfg(feature = "zruntime")]
+            Self::ZRuntime(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work),

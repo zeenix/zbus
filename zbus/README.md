@@ -27,7 +27,7 @@ zbus = { version = "6", default-features = false }
 That build compiles `zbus::wire` and `zbus::names` and nothing else — no connection, proxy or
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
 `chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
-and enabling any D-Bus feature (`comms`, `builtin-runtime`, `tokio`, `p2p`, `bus-impl`, `vsock`,
+and enabling any D-Bus feature (`comms`, `zruntime`, `tokio`, `p2p`, `bus-impl`, `vsock`,
 `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
 
 zbus logs through [`tracing`], behind the default `tracing` feature; a `default-features =
@@ -132,14 +132,14 @@ size of your binary.
 zbus is runtime-agnostic. A program with no async runtime of its own drives it with
 `zbus::block_on`; see [the FAQ][bw]. A program built on Tokio turns on the `tokio` feature, and a
 connection built while a Tokio runtime is current runs on it, with no extra thread of zbus's own.
-Any other executor can use the default `builtin-runtime` backend as it is, with no integration
+Any other executor can use the default `zruntime` backend as it is, with no integration
 needed: a connection built outside a `zbus::block_on` call is simply run by that backend's own
 helper thread. [`connection::Builder::runtime`] is there for an application that wants to hand a
 connection a runtime of its own instead — any implementation of [`runtime::traits::Runtime`], which
 documents the full contract, including the handful of calls with no async form that go through its
 `spawn_blocking` — not something every other executor needs.
 
-zbus's async locks are its own; a build on the built-in or an external runtime needs no lock feature
+zbus's async locks are its own; a build on zruntime or an external runtime needs no lock feature
 and pulls in no lock crate for them. A Tokio build uses Tokio's locks instead, so that build carries
 no second lock implementation.
 
@@ -150,7 +150,7 @@ progress while the loop it just stopped runs.
 ### Special tokio support
 
 Enabling the `tokio` feature puts a connection on your [`tokio`] runtime instead of the default
-`builtin-runtime` backend, with no thread of zbus's own:
+`zruntime` backend, with no thread of zbus's own:
 
 ```toml
 # Sample Cargo.toml snippet.
@@ -158,10 +158,10 @@ Enabling the `tokio` feature puts a connection on your [`tokio`] runtime instead
 zbus = { version = "6", features = ["tokio"] }
 ```
 
-The `tokio` and `builtin-runtime` features are additive: with both enabled, zbus picks Tokio when a
-Tokio runtime is current on the thread that builds the connection, and `builtin-runtime` otherwise.
-With only `tokio` (no `builtin-runtime`), a connection must be built from a thread running a Tokio
-runtime. To leave the built-in backend out of the build, disable default features and list what you
+The `tokio` and `zruntime` features are additive: with both enabled, zbus picks Tokio when a
+Tokio runtime is current on the thread that builds the connection, and `zruntime` otherwise.
+With only `tokio` (no `zruntime`), a connection must be built from a thread running a Tokio
+runtime. To leave zruntime out of the build, disable default features and list what you
 use instead, e.g. `default-features = false, features = ["tokio", "proxy", "service"]`.
 
 A program with no async runtime of its own drives the API from inside `zbus::block_on`, which
@@ -169,7 +169,7 @@ with the `tokio` feature polls the future on a Tokio runtime of its own, so a co
 inside that call always runs on tokio when that feature is on.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even when
-`builtin-runtime` is also compiled in; see [the corresponding tokio issue on GitHub][tctiog].
+`zruntime` is also compiled in; see [the corresponding tokio issue on GitHub][tctiog].
 
 [zbus]: https://github.com/z-galaxy/zbus\#readme
 [bw]: https://z-galaxy.github.io/zbus/faq.html#how-do-i-use-zbus-from-synchronous-code

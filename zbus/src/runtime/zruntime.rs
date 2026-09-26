@@ -1,4 +1,4 @@
-//! The built-in backend: [zruntime]'s reactor for readiness, its timer, its tasks and the
+//! The zruntime backend: [zruntime]'s reactor for readiness, its timer, its tasks and the
 //! standard hook for blocking work.
 //!
 //! [zruntime]: https://docs.rs/zruntime
@@ -17,9 +17,9 @@ use super::{Interest, IoSource, traits};
 
 /// The runtime zbus brings along by default: a thin wrapper around [`zruntime::Runtime`].
 #[derive(Clone, Debug)]
-pub(crate) struct Builtin(zruntime::Runtime);
+pub(crate) struct ZRuntime(zruntime::Runtime);
 
-impl Builtin {
+impl ZRuntime {
     /// A handle on the runtime for what this thread builds, brought into being here if none is
     /// alive.
     ///
@@ -47,7 +47,7 @@ impl Builtin {
     }
 }
 
-impl traits::Runtime for Builtin {
+impl traits::Runtime for ZRuntime {
     type RegisteredIoSource = Registration;
     type Sleep = zruntime::Sleep;
     type Task<T>
@@ -111,7 +111,7 @@ impl From<Interest> for zruntime::Interest {
     }
 }
 
-/// A task spawned on a built-in runtime, which cancels that task when dropped.
+/// A task spawned on zruntime, which cancels that task when dropped.
 pub(crate) struct Task<T>(zruntime::Task<T>);
 
 impl<T> fmt::Debug for Task<T> {
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     #[timeout(15000)]
     fn a_spawned_task_hands_its_output_back() {
-        let runtime = Builtin::new().expect("a built-in runtime");
+        let runtime = ZRuntime::new().expect("a runtime for this thread");
         let task = runtime.spawn("an answer", async { 42 });
 
         assert_eq!(zruntime::block_on(task).unwrap(), 42);

@@ -8,8 +8,8 @@ publish = false
 description = "Size fixture: a GeoClue2-shaped service enabling only the zbus features it needs"
 
 [features]
-default = ["builtin"]
-builtin = ["zbus/builtin-runtime"]
+default = ["zruntime"]
+zruntime = ["zbus/zruntime"]
 tokio = ["zbus/tokio", "dep:tokio"]
 
 [dependencies]

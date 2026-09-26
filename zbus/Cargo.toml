@@ -14,7 +14,7 @@ readme = "README.md"
 
 [features]
 default = [
-    "builtin-runtime",
+    "zruntime",
     "proxy",
     "service",
     "object-manager",
@@ -61,7 +61,7 @@ comms = [
 # The runtime zbus ships: one runtime per thread that runs `zbus::block_on`, driven by that
 # thread (default).
 # `tokio` adds the Tokio backend, which a connection built inside a Tokio runtime prefers.
-builtin-runtime = ["comms", "dep:zruntime"]
+zruntime = ["comms", "dep:zruntime"]
 tokio = ["comms", "dep:tokio"]
 # Logging through `tracing` (default). With this off, zbus emits no log events or spans, and
 # `tokio`'s own `tracing` feature is not enabled either.
@@ -183,7 +183,7 @@ polling.workspace = true
 # all-features = true
 # because some features (such as vsock) are target-specific
 features = [
-    "builtin-runtime",
+    "zruntime",
     "comms",
     "arrayvec",
     "camino",
@@ -244,4 +244,4 @@ required-features = ["proxy"]
 [[example]]
 name = "watch-systemd-jobs"
 path = "examples/watch-systemd-jobs.rs"
-required-features = ["builtin-runtime", "proxy"]
+required-features = ["zruntime", "proxy"]

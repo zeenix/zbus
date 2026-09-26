@@ -1,12 +1,12 @@
 #!/bin/sh
-# Fails if any crate the builtin runtime does not need shows up as a normal dependency of zbus,
-# in whichever feature set the caller passes through. The builtin runtime builds on zruntime, a
-# task scheduler and poll(2)-based reactor of its own: no build of zbus should link async-io,
-# async-executor, async-task, blocking or their private dependencies as a normal dependency,
-# whether the builtin-runtime feature, the tokio feature, both or neither is on (`-e normal`
-# already excludes dev-dependencies, so the test suite's own use of async-io does not trip
-# this). `event-listener`, which zbus's own async locks build on, and `zruntime` itself are
-# expected in every tree that enables `builtin-runtime`, and neither is on the forbidden list.
+# Fails if any crate zbus's runtimes do not need shows up as a normal dependency of zbus, in
+# whichever feature set the caller passes through. zruntime is a task scheduler and poll(2)-based
+# reactor of its own: no build of zbus should link async-io, async-executor, async-task, blocking
+# or their private dependencies as a normal dependency, whether the zruntime feature, the tokio
+# feature, both or neither is on (`-e normal` already excludes dev-dependencies, so the test
+# suite's own use of async-io does not trip this). `event-listener`, which zbus's own async locks
+# build on, and `zruntime` itself are expected in every tree that enables the `zruntime` feature,
+# and neither is on the forbidden list.
 #
 # Usage: forbidden-deps.sh <label> [cargo tree arguments...]
 #
@@ -32,6 +32,6 @@ trap 'rm -f "$tree_file"' EXIT
 cargo --locked tree -e normal -p zbus "$@" > "$tree_file"
 
 if grep -E "^[^a-zA-Z0-9]*($FORBIDDEN) v" "$tree_file"; then
-    echo "a crate the builtin runtime does not need is in the $label graph" >&2
+    echo "a crate zbus's runtimes do not need is in the $label graph" >&2
     exit 1
 fi
