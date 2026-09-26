@@ -166,7 +166,7 @@ tokio = { workspace = true, features = [
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tempfile.workspace = true
-criterion = { workspace = true, features = ["async"] }
+criterion.workspace = true
 serde_json.workspace = true
 chrono = { workspace = true, features = [
     "serde",
@@ -224,14 +224,9 @@ harness = false
 required-features = ["comms"]
 
 [[bench]]
-name = "concurrent_method_calls"
-harness = false
-required-features = ["p2p", "service"]
-
-[[bench]]
 name = "runtime"
 harness = false
-required-features = ["p2p", "service"]
+required-features = ["p2p"]
 
 [[bench]]
 name = "names"
