@@ -17,11 +17,11 @@ set -eu
 size_limit_percent=${SIZE_LIMIT_PERCENT:-5}
 
 sizes=""
-table="| binary | builtin | tokio |
+table="| binary | zruntime | tokio |
 |---|---|---|"
 for bin in service client; do
     row="| $bin |"
-    for runtime in builtin tokio; do
+    for runtime in zruntime tokio; do
         cargo build --locked --profile size -p "geoclue_${bin}_fixture" \
             --no-default-features --features "$runtime" >/dev/null
         size=$(stat -c %s "target/size/geoclue_${bin}_fixture")
@@ -36,7 +36,7 @@ done
 printf '%s' "$sizes" >target/size/sizes
 
 if [ "${BINARY_SIZE_MEASURE_ONLY:-0}" != 1 ]; then
-    for runtime in builtin tokio; do
+    for runtime in zruntime tokio; do
         # Capture the client's output instead of piping it straight to grep, so that the exit
         # status this loop sees (via `set -e`) is the client's own, not grep's: a client that
         # prints the latitude and then fails would otherwise still pass. The client is retried
@@ -118,11 +118,15 @@ if [ ! -f "$worktree_dir/target/size/sizes" ]; then
     exit 1
 fi
 
+# A base from before the `zruntime` feature was named so records its fixtures under `builtin`.
+# They are the same fixtures, so they are compared as `zruntime`.
+sed -i 's/^\([a-z]*\) builtin /\1 zruntime /' "$worktree_dir/target/size/sizes"
+
 compare_table="| binary | runtime | base | this tree | change |
 |---|---|---|---|---|"
 failures=""
 for bin in service client; do
-    for runtime in builtin tokio; do
+    for runtime in zruntime tokio; do
         base_bytes=$(awk -v b="$bin" -v r="$runtime" '$1 == b && $2 == r { print $3 }' \
             "$worktree_dir/target/size/sizes")
         this_bytes=$(awk -v b="$bin" -v r="$runtime" '$1 == b && $2 == r { print $3 }' \

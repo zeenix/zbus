@@ -61,9 +61,9 @@ where
     Body: Fn(Runtime) -> Fut,
     Fut: Future<Output = ()>,
 {
-    #[cfg(feature = "builtin-runtime")]
-    futures_lite::future::block_on(body(Runtime::Builtin(
-        super::Builtin::new().expect("a runtime of zbus's own"),
+    #[cfg(feature = "zruntime")]
+    futures_lite::future::block_on(body(Runtime::ZRuntime(
+        super::ZRuntime::new().expect("a runtime of zbus's own"),
     )));
 
     futures_lite::future::block_on(body(Runtime::from_external(TestRuntime::new())));

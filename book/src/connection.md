@@ -78,7 +78,7 @@ A connection takes its readiness notifications, timers, spawned tasks and blocki
 runtime, chosen once when it is built. A program with no async runtime of its own drives it with
 `zbus::block_on`; see [the FAQ][cob]. A program built on Tokio turns on the `tokio` feature, and a
 connection built while a Tokio runtime is current runs on it. Any other executor can use the
-built-in backend below as it is, with no integration needed: a connection built outside a
+zruntime backend below as it is, with no integration needed: a connection built outside a
 `zbus::block_on` call is run by that backend's own helper thread. [`Builder::runtime`] is there for
 an application that wants to hand a connection a runtime of its own instead, not something every
 other executor needs. A connection's async locks are zbus's own, except on a Tokio build, where
@@ -86,10 +86,10 @@ Tokio's locks stand in instead.
 
 ### Built-in backends
 
-With the `builtin-runtime` cargo feature (a default feature), a connection runs on the runtime zbus
-brings along, one per thread that runs `zbus::block_on`, depending on no runtime crate at all. The
+With the `zruntime` cargo feature (a default feature), a connection runs on [zruntime], one
+per thread that runs `zbus::block_on`, depending on no general-purpose async executor crate. The
 thread that drives it is the one inside `zbus::block_on`: between two polls of the future handed to
-it, that thread runs the tasks, sockets and timers of every built-in connection built in it — apart
+it, that thread runs the tasks, sockets and timers of every zruntime connection built in it — apart
 from a handful of blocking system calls (a DNS lookup, a nonce-file read, a peer-credential lookup)
 that use a short-lived worker thread of their own instead. Two threads that each call
 `zbus::block_on` drive their own connections, in parallel. A thread's runtime serves every
@@ -105,7 +105,7 @@ that builds the connection, it runs on Tokio instead. With only `tokio` enabled,
 runs on the Tokio runtime that is current when it is built; building one from a thread with no such
 runtime fails with `Error::Unsupported`.
 
-A build with neither feature depends on no `tokio` crate, and on nothing `builtin-runtime` owns:
+A build with neither feature depends on no `tokio` crate, and on nothing `zruntime` owns:
 zbus's own locks build on `event-listener`, not on anything either feature pulls in, so this
 build needs neither an extra feature nor an extra crate for them. Every connection in the build
 needs an explicit runtime, given through [`Builder::runtime`].
@@ -160,6 +160,7 @@ kind is handed over as the socket it wraps, such as `into_std()` for a Tokio str
 [cob]: faq.html#how-do-i-use-zbus-from-synchronous-code
 [`Builder::runtime`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.runtime
 [`traits::Runtime`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html
+[zruntime]: https://docs.rs/zruntime
 [`PollIo::poll_io`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.PollIo.html#tymethod.poll_io
 [`spawn_blocking`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#method.spawn_blocking
 [`Builder::unix_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.unix_stream

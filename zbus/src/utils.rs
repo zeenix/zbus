@@ -28,12 +28,13 @@ impl<T, E> ResultAdapter for Result<T, E> {
     type Err = E;
 }
 
-/// Runs a future to completion on the calling thread, and zbus's runtime with it.
+/// Runs a future to completion on the calling thread, and [zruntime](https://docs.rs/zruntime)
+/// with it.
 ///
 /// This is for a program that has no async runtime of its own. Put the async code in one
 /// call to this function; the call blocks the thread until the future completes. In
-/// between polls of the future, the calling thread also runs the scheduler and the I/O
-/// reactor of every connection built in it, and two threads that each call this drive
+/// between polls of the future, the calling thread also runs zruntime's scheduler and I/O
+/// reactor for every connection built in it, and two threads that each call this drive
 /// their own connections, in parallel. A handful of blocking system calls — a DNS lookup,
 /// a nonce-file read, a peer-credential lookup — run on a short-lived worker thread of
 /// their own instead, so they never hold up the calling thread. If the call returns while
@@ -49,14 +50,14 @@ impl<T, E> ResultAdapter for Result<T, E> {
 /// the very thread it is on. Do not call it from another runtime's task either: it blocks that
 /// task's thread until the future completes, which deadlocks the program if the future needs
 /// that thread to make progress.
-#[cfg(all(feature = "builtin-runtime", not(feature = "tokio")))]
+#[cfg(all(feature = "zruntime", not(feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    crate::runtime::builtin::block_on(future)
+    crate::runtime::zruntime::block_on(future)
 }
 
 /// Runs a future to completion on the calling thread.
 ///
-/// In a build with neither `builtin-runtime` nor `tokio` enabled, every connection runs on the
+/// In a build with neither `zruntime` nor `tokio` enabled, every connection runs on the
 /// runtime given to [`Builder::runtime`]. This call drives no connection itself: it only polls
 /// the future passed in, blocking the calling thread until it is done.
 ///
@@ -64,7 +65,7 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
 /// completes, which deadlocks the program if the future needs that thread to make progress.
 ///
 /// [`Builder::runtime`]: crate::connection::Builder::runtime
-#[cfg(not(any(feature = "builtin-runtime", feature = "tokio")))]
+#[cfg(not(any(feature = "zruntime", feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }

@@ -3,7 +3,7 @@
 #![cfg(all(
     feature = "unixexec",
     not(target_os = "windows"),
-    any(feature = "builtin-runtime", feature = "tokio")
+    any(feature = "zruntime", feature = "tokio")
 ))]
 
 use ntest::timeout;
@@ -67,7 +67,7 @@ async fn test_unixexec_connection() -> Result<()> {
 /// test's own timeout is what bounds the wait for it.
 ///
 /// The wait gives the runtime its turn between two looks rather than spinning the thread,
-/// because zbus's built-in runtime runs on this very thread, between two polls of the future
+/// because zruntime runs on this very thread, between two polls of the future
 /// this is inside of, and the wait for the helper is its work to do.
 #[cfg(target_os = "linux")]
 async fn wait_for_the_helper_to_go() {

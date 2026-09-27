@@ -215,8 +215,8 @@ pub(crate) trait SocketOps: fmt::Debug + Send + Sync + 'static {
 /// The readiness handle for one registered socket: one variant per runtime a connection runs on.
 #[derive(Debug)]
 pub(crate) enum Registration {
-    #[cfg(feature = "builtin-runtime")]
-    Builtin(super::builtin::RegisteredIoSource),
+    #[cfg(feature = "zruntime")]
+    ZRuntime(super::zruntime::Registration),
     #[cfg(feature = "tokio")]
     Tokio(super::tokio_rt::Registration),
     External(Box<dyn ErasedRegistration>),
@@ -240,8 +240,8 @@ impl Registration {
         operation: impl FnMut() -> io::Result<T>,
     ) -> Poll<io::Result<T>> {
         match self {
-            #[cfg(feature = "builtin-runtime")]
-            Self::Builtin(registration) => {
+            #[cfg(feature = "zruntime")]
+            Self::ZRuntime(registration) => {
                 traits::PollIo::poll_io(registration, cx, interest, operation)
             }
             #[cfg(feature = "tokio")]

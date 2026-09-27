@@ -1,5 +1,5 @@
 #![cfg(feature = "comms")]
-#![cfg(all(unix, feature = "p2p", feature = "builtin-runtime"))]
+#![cfg(all(unix, feature = "p2p", feature = "zruntime"))]
 
 use std::os::unix::net::UnixStream;
 

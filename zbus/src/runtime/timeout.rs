@@ -9,8 +9,8 @@ impl Runtime {
     /// Sleeps for `duration` on this runtime's timer.
     pub(crate) async fn sleep(&self, duration: Duration) {
         match self {
-            #[cfg(feature = "builtin-runtime")]
-            Self::Builtin(runtime) => traits::Runtime::sleep(runtime, duration).await,
+            #[cfg(feature = "zruntime")]
+            Self::ZRuntime(runtime) => traits::Runtime::sleep(runtime, duration).await,
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::sleep(runtime, duration).await,
             Self::External(runtime) => traits::Runtime::sleep(runtime, duration).await,
