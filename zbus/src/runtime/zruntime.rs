@@ -15,9 +15,9 @@ use std::{
 
 use super::{Interest, IoSource, traits};
 
-/// The runtime zbus brings along by default: a thin wrapper around [`zruntime::Runtime`].
+/// The runtime zbus brings along by default: a thin wrapper around [`zruntime::SharedRuntime`].
 #[derive(Clone, Debug)]
-pub(crate) struct ZRuntime(zruntime::Runtime);
+pub(crate) struct ZRuntime(zruntime::SharedRuntime);
 
 impl ZRuntime {
     /// A handle on the runtime for what this thread builds, brought into being here if none is
@@ -25,7 +25,7 @@ impl ZRuntime {
     ///
     /// What can fail is the reactor: it opens the channel a wait is broken through.
     pub(crate) fn new() -> io::Result<Self> {
-        Ok(Self(zruntime::Runtime::current()?))
+        Ok(Self(zruntime::SharedRuntime::current()?))
     }
 
     /// Queues `future` under the diagnostic name `name` and hands back the task that joins or
@@ -49,7 +49,7 @@ impl ZRuntime {
 
 impl traits::Runtime for ZRuntime {
     type RegisteredIoSource = Registration;
-    type Sleep = zruntime::Sleep;
+    type Sleep = zruntime::Sleep<zruntime::Shared>;
     type Task<T>
         = Task<T>
     where
@@ -59,7 +59,7 @@ impl traits::Runtime for ZRuntime {
         self.0.register(source).map(Registration)
     }
 
-    fn sleep(&self, duration: Duration) -> zruntime::Sleep {
+    fn sleep(&self, duration: Duration) -> zruntime::Sleep<zruntime::Shared> {
         self.0.sleep(duration)
     }
 
@@ -87,7 +87,7 @@ where
 ///
 /// [zruntime]: https://docs.rs/zruntime
 #[derive(Debug)]
-pub(crate) struct Registration(zruntime::Registration);
+pub(crate) struct Registration(zruntime::Registration<zruntime::Shared>);
 
 impl traits::PollIo for Registration {
     fn poll_io<T>(
@@ -112,7 +112,7 @@ impl From<Interest> for zruntime::Interest {
 }
 
 /// A task spawned on zruntime, which cancels that task when dropped.
-pub(crate) struct Task<T>(zruntime::Task<T>);
+pub(crate) struct Task<T>(zruntime::Task<T, zruntime::Shared>);
 
 impl<T> fmt::Debug for Task<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -2231,7 +2231,7 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/z-galaxy/zruntime?rev=049a6eb16c9221c2739314abf8303385c1beb80f#049a6eb16c9221c2739314abf8303385c1beb80f"
+source = "git+https://github.com/z-galaxy/zruntime?rev=f0bc95658d28c3db5ba15d13404e1f56da254f8f#f0bc95658d28c3db5ba15d13404e1f56da254f8f"
 dependencies = [
  "rustix",
  "tracing",
