@@ -6,9 +6,9 @@
 //! process gains while a connection is alive is a thread the connection asked for.
 //!
 //! [`traits::Runtime::spawn_blocking`] keeps its default, which runs each call on a std thread
-//! that exits with the work. Nothing on the path these tests take reaches it, but a connection
-//! on Linux or Android does have one caller: [`zbus::Connection::peer_creds`] looks the peer's
-//! supplementary groups up through it, and the default would then start one short-lived thread
+//! that exits with the work. On Linux and Android a connection looks its peer's supplementary
+//! groups up through it — [`zbus::Connection::peer_creds`] does, and so does the handshake of a
+//! peer-to-peer server, which `teardown` runs — and the default starts one short-lived thread
 //! per call. A runtime with a pool of its own should override the hook rather than copy this.
 
 use std::{

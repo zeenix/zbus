@@ -5,8 +5,10 @@
 //! one connection carries the whole of it for good. A peer-to-peer pair covers both ways a
 //! connection ends: one side says goodbye, the other simply stops existing.
 //!
-//! What a task produced is the runtime's to release as well, which is what the other test here is
-//! about: such a value is free to reach back into the runtime as it goes.
+//! What a task produced is the runtime's to release as well, which is what the second test here
+//! is about: such a value is free to reach back into the runtime as it goes. The last one is about
+//! blocking work given up on before it is done: the thread doing it runs on, and must not keep the
+//! runtime alive while it does.
 #![cfg(feature = "p2p")]
 
 use std::{
@@ -14,6 +16,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc,
     },
 };
 
@@ -102,6 +105,39 @@ fn a_finished_detached_task_is_released_outside_the_runtimes_list() {
         probe.is_released(),
         "the runtime's state outlived it: something it handed out still holds it",
     );
+}
+
+/// Blocking work whose future is dropped before it is done holds nothing of the runtime.
+///
+/// The future leaves the waker it was polled with for the thread doing the work, and here that is
+/// the waker of [`Runtime::run`] itself, which holds the runtime's state. A connection attempt
+/// cancelled during a blocking lookup, or a wait for a helper process, gives such work up in the
+/// same way, and the work may go on for as long as the process it waits for.
+#[test]
+#[timeout(15000)]
+fn blocking_work_given_up_on_holds_nothing_of_the_runtime() {
+    let runtime = Runtime::new().unwrap();
+    let probe = runtime.probe();
+    let (release, released) = mpsc::channel::<()>();
+    let (report, reported) = mpsc::channel();
+
+    runtime.run(async {
+        let mut work = traits::Runtime::spawn_blocking(&runtime.handle(), move || {
+            released.recv().expect("the test lets the work go on");
+            report.send(()).expect("the test waits for the work");
+        });
+        // The work waits on the channel, so one poll leaves the waker with the thread, and the
+        // future goes at the end of this block with the work still under way.
+        assert!(futures_lite::future::poll_once(&mut work).await.is_none());
+    });
+
+    drop(runtime);
+    assert!(
+        probe.is_released(),
+        "the thread doing the blocking work still holds the runtime's state",
+    );
+    release.send(()).expect("the work waits for the test");
+    reported.recv().expect("the work runs to its end");
 }
 
 /// A value that spawns a task on the runtime as it goes, standing in for the connection values
