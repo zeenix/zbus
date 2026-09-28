@@ -181,7 +181,7 @@ fn main() -> Result<()> {
 
 Everything shown in the other chapters works the same way inside that future, and the program
 depends on zbus alone, plus `futures-util` if it reads signals or property changes from a
-stream. With the default `zruntime` feature, the same thread also runs [zruntime]'s
+stream. With the `default-rt` feature, on by default, the same thread also runs [zruntime]'s
 scheduler and I/O reactor in between polls of the future, and a program that runs `block_on` on
 several threads drives their connections in parallel; with the `tokio` feature, Tokio's runtime
 runs them instead. A handful of blocking system calls — a DNS lookup, a nonce-file read, a
@@ -230,7 +230,7 @@ runtime, so a connection built inside it always uses Tokio. Note that `zbus::blo
 be called from inside a task zbus is running, such as an interface method: it panics there.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even
-when `zruntime` is also compiled in; give it a TCP or `autolaunch:` address instead, or
+when the `default-rt` feature is also on; give it a TCP or `autolaunch:` address instead, or
 build it from a thread with no Tokio runtime current so it picks zruntime. See [the
 corresponding tokio issue on GitHub][tctiog].
 

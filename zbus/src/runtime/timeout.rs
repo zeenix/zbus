@@ -9,7 +9,7 @@ impl Runtime {
     /// Sleeps for `duration` on this runtime's timer.
     pub(crate) async fn sleep(&self, duration: Duration) {
         match self {
-            #[cfg(feature = "zruntime")]
+            #[cfg(feature = "default-rt")]
             Self::ZRuntime(runtime) => traits::Runtime::sleep(runtime, duration).await,
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::sleep(runtime, duration).await,

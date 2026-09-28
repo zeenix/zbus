@@ -3,7 +3,7 @@
 #![cfg(all(
     feature = "unixexec",
     not(target_os = "windows"),
-    any(feature = "zruntime", feature = "tokio")
+    any(feature = "default-rt", feature = "tokio")
 ))]
 
 use ntest::timeout;

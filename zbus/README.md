@@ -27,7 +27,7 @@ zbus = { version = "6", default-features = false }
 That build compiles `zbus::wire` and `zbus::names` and nothing else — no connection, proxy or
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
 `chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
-and enabling any D-Bus feature (`comms`, `zruntime`, `tokio`, `p2p`, `bus-impl`, `vsock`,
+and enabling any D-Bus feature (`comms`, `default-rt`, `tokio`, `p2p`, `bus-impl`, `vsock`,
 `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
 
 zbus logs through [`tracing`], behind the default `tracing` feature; a `default-features =
@@ -158,9 +158,9 @@ Enabling the `tokio` feature puts a connection on your [`tokio`] runtime instead
 zbus = { version = "6", features = ["tokio"] }
 ```
 
-The `tokio` and `zruntime` features are additive: with both enabled, zbus picks Tokio when a
-Tokio runtime is current on the thread that builds the connection, and `zruntime` otherwise.
-With only `tokio` (no `zruntime`), a connection must be built from a thread running a Tokio
+The `tokio` and `default-rt` features are additive: with both enabled, zbus picks Tokio when a
+Tokio runtime is current on the thread that builds the connection, and zruntime otherwise.
+With only `tokio` (no `default-rt`), a connection must be built from a thread running a Tokio
 runtime. To leave the zruntime backend out of the build, disable default features and list what
 you use instead, e.g. `default-features = false, features = ["tokio", "proxy", "service"]`. The
 `zruntime` crate stays in the dependency tree, built with its `event` feature alone for the
@@ -171,7 +171,7 @@ with the `tokio` feature polls the future on a Tokio runtime of its own, so a co
 inside that call always runs on tokio when that feature is on.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even when
-`zruntime` is also compiled in; see [the corresponding tokio issue on GitHub][tctiog].
+the `default-rt` feature is also on; see [the corresponding tokio issue on GitHub][tctiog].
 
 [zbus]: https://github.com/z-galaxy/zbus\#readme
 [bw]: https://z-galaxy.github.io/zbus/faq.html#how-do-i-use-zbus-from-synchronous-code

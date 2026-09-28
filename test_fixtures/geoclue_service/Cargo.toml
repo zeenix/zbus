@@ -9,7 +9,7 @@ description = "Size fixture: a GeoClue2-shaped service enabling only the zbus fe
 
 [features]
 default = ["zruntime"]
-zruntime = ["zbus/zruntime"]
+zruntime = ["zbus/default-rt"]
 tokio = ["zbus/tokio", "dep:tokio"]
 
 [dependencies]

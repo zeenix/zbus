@@ -1,6 +1,6 @@
 //! What a runtime supplies to a connection.
 //!
-//! By default, a connection runs on [zruntime] (the `zruntime` feature, on by default):
+//! By default, a connection runs on [zruntime] (the `default-rt` feature, on by default):
 //! one runtime per thread that runs [`block_on`](crate::block_on), driven by that thread, and by
 //! a helper thread only for work left with no thread inside `block_on`. A connection built inside
 //! a Tokio runtime runs on it instead (the `tokio` feature), and any other runtime reaches a

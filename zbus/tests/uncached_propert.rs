@@ -1,7 +1,7 @@
 #![cfg(all(
     feature = "proxy",
     feature = "service",
-    any(feature = "zruntime", feature = "tokio")
+    any(feature = "default-rt", feature = "tokio")
 ))]
 
 use ntest::timeout;

@@ -35,7 +35,7 @@ jobs:
           cargo --locked check -p zbus --no-default-features --target x86_64-unknown-freebsd
           cargo --locked check -p zbus --no-default-features --target x86_64-unknown-netbsd
           cargo --locked check -p zbus --no-default-features --target aarch64-linux-android
-          # The external-runtime-only build: neither the zruntime nor the tokio feature.
+          # The external-runtime-only build: neither the default-rt nor the tokio feature.
           EXT=proxy,service,object-manager,unixexec,ibus,tracing,p2p
           cargo --locked check -p zbus --no-default-features --features $EXT
           cargo --locked check -p zbus --no-default-features --features $EXT \
@@ -101,22 +101,22 @@ jobs:
           # The proxy and service API can be disabled independently. `--all-targets` covers the
           # tests, examples and benchmarks, whose `required-features` must match what they use.
           cargo --locked clippy -p zbus --no-default-features --all-targets \
-            --features zruntime,p2p
+            --features default-rt,p2p
           cargo --locked clippy -p zbus --no-default-features --all-targets \
-            --features zruntime,p2p,proxy
+            --features default-rt,p2p,proxy
           cargo --locked clippy -p zbus --no-default-features --all-targets \
-            --features zruntime,p2p,service
+            --features default-rt,p2p,service
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features tokio,p2p,proxy
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features tokio,p2p,service
           cargo --locked clippy -p zbus --no-default-features --all-targets \
-            --features zruntime,proxy,service,unixexec
+            --features default-rt,proxy,service,unixexec
           cargo --locked clippy -p zbus --no-default-features --all-targets \
-            --features zruntime,proxy,service,ibus
+            --features default-rt,proxy,service,ibus
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features proxy,service,ibus
-          # The external-runtime-only build: neither the zruntime nor the tokio feature.
+          # The external-runtime-only build: neither the default-rt nor the tokio feature.
           EXT=proxy,service,object-manager,unixexec,ibus,tracing,p2p
           cargo --locked clippy -p zbus --no-default-features --all-targets --features $EXT
           # The service-only fixture has to be built on its own: in a workspace-wide build, the
@@ -195,17 +195,17 @@ jobs:
           # crate documentation when its feature is off.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc -p zbus --no-default-features \
-              --features zruntime,proxy
+              --features default-rt,proxy
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --doc -p zbus --no-default-features \
-              --features zruntime,service
+              --features default-rt,service
       - name: Test tokio support
         if: matrix.suite == 'tokio'
         run: |
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose --tests -p zbus --no-default-features \
               --features tokio,proxy,service -- --skip fdpass_systemd
-          # The doc examples have to build without the default zruntime feature, driven by tokio
+          # The doc examples have to build without the default-rt feature, driven by tokio
           # instead. `-p zbus` is load-bearing: a workspace-wide `--no-default-features` is undone
           # by zbus_xmlgen's default-featured zbus dependency.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
@@ -251,7 +251,7 @@ jobs:
           # that must be rejected too.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test -p zbus --no-default-features \
-              --features zbus_utils/gvariant,zruntime
+              --features zbus_utils/gvariant,default-rt
 
   windows_test:
     runs-on: windows-latest
@@ -364,8 +364,8 @@ jobs:
         run: cargo --locked doc --no-default-features -p zbus
       - name: Check documentation build with the proxy or service API disabled
         run: |
-          cargo --locked doc --no-default-features --features zruntime,proxy -p zbus
-          cargo --locked doc --no-default-features --features zruntime,service -p zbus
+          cargo --locked doc --no-default-features --features default-rt,proxy -p zbus
+          cargo --locked doc --no-default-features --features default-rt,service -p zbus
       - name: Check zbus_xml documentation build
         run: cargo --locked doc --all-features -p zbus_xml
 

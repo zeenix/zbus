@@ -86,7 +86,7 @@ Tokio's locks stand in instead.
 
 ### Built-in backends
 
-With the `zruntime` cargo feature (a default feature), a connection runs on [zruntime], one
+With the `default-rt` cargo feature (a default feature), a connection runs on [zruntime], one
 per thread that runs `zbus::block_on`, depending on no general-purpose async executor crate. The
 thread that drives it is the one inside `zbus::block_on`: between two polls of the future handed to
 it, that thread runs the tasks, sockets and timers of every zruntime connection built in it — apart
