@@ -697,9 +697,9 @@ picked by cargo feature, so this method is for the runtime your application alre
 changes for connections built without `runtime`.
 
 zbus's own async locks are not part of the trait: 5.x takes them from the `async_lock` crate;
-6.0 has no dependency on it at all, building its locks itself, on `event-listener`, except when
-the `tokio` feature is enabled, where Tokio's locks stand in instead. Neither choice needs a
-cargo feature of its own, so a build with `comms` but neither `zruntime` nor `tokio`
+6.0 has no dependency on it at all, building its locks itself, on zruntime's `Event`, except
+when the `tokio` feature is enabled, where Tokio's locks stand in instead. Neither choice needs
+a cargo feature of its own, so a build with `comms` but neither `zruntime` nor `tokio`
 pulls in no lock crate for them.
 
 A runtime may also abort or drop a task it was given, so the connection no longer relies on its

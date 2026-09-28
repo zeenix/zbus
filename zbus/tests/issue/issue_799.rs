@@ -1,7 +1,7 @@
-use event_listener::Event;
 use test_log::test;
 use tracing::instrument;
 use zbus::block_on;
+use zruntime::Event;
 
 use zbus::{Result, runtime::traits::TaskHandle};
 

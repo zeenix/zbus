@@ -6,8 +6,8 @@ use std::{
     task::{Context, Poll},
 };
 
-use event_listener::{Event, EventListener};
 use serde::{Deserialize, Serialize};
+use zruntime::{Event, EventListener};
 
 use crate::{Signature, Type};
 

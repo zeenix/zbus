@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use event_listener::EventListener;
+use zruntime::EventListener;
 
 /// A future that completes on the next activity on a connection.
 ///

@@ -25,7 +25,7 @@ fn issue_813() {
 
     #[derive(Debug)]
     struct Issue813Iface {
-        event: event_listener::Event,
+        event: zruntime::Event,
         call_count: u8,
     }
     #[zbus::interface(interface = "org.zbus.Issue813")]
@@ -48,9 +48,9 @@ fn issue_813() {
         let guid = zbus::Guid::generate();
         let (p0, p1) = UnixStream::pair().unwrap();
 
-        let client_event = event_listener::Event::new();
+        let client_event = zruntime::Event::new();
         let client_listener = client_event.listen();
-        let server_event = event_listener::Event::new();
+        let server_event = zruntime::Event::new();
         let server_listener = server_event.listen();
         let server = async move {
             let _conn = Builder::unix_stream(p0)

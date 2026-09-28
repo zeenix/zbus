@@ -323,7 +323,7 @@ fn a_detached_external_task_runs_to_completion() {
     let (sender, receiver) = std::sync::mpsc::channel();
     // The task only finishes after its handle is gone, so a cancelling `detach` would show up as
     // a receiver that never hears back.
-    let handle_dropped = event_listener::Event::new();
+    let handle_dropped = zruntime::Event::new();
     let listener = handle_dropped.listen();
 
     runtime

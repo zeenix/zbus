@@ -10,7 +10,6 @@ use crate::{
     runtime::{Runtime, Task},
 };
 use enumflags2::{BitFlags, bitflags};
-use event_listener::{Event, EventListener};
 use futures_core::{ready, stream};
 use ordered_stream::{FromFuture, Join, Map, OrderedStream, PollResult, join as join_streams};
 use std::{
@@ -22,6 +21,7 @@ use std::{
     sync::{Arc, OnceLock, RwLock, RwLockReadGuard},
     task::{Context, Poll},
 };
+use zruntime::{Event, EventListener};
 
 mod builder;
 pub use builder::{Builder, CacheProperties};

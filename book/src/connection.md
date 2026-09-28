@@ -105,10 +105,10 @@ that builds the connection, it runs on Tokio instead. With only `tokio` enabled,
 runs on the Tokio runtime that is current when it is built; building one from a thread with no such
 runtime fails with `Error::Unsupported`.
 
-A build with neither feature depends on no `tokio` crate, and on nothing `zruntime` owns:
-zbus's own locks build on `event-listener`, not on anything either feature pulls in, so this
-build needs neither an extra feature nor an extra crate for them. Every connection in the build
-needs an explicit runtime, given through [`Builder::runtime`].
+A build with neither feature depends on no `tokio` crate. It still depends on the `zruntime`
+crate, whose `Event` zbus's own locks and notifications are built on, with its `event` feature
+alone, so none of zruntime's runtime is built. Every connection in the build needs an explicit
+runtime, given through [`Builder::runtime`].
 
 ### Supplying your own runtime
 

@@ -35,7 +35,7 @@ jobs:
           cargo --locked check -p zbus --no-default-features --target x86_64-unknown-freebsd
           cargo --locked check -p zbus --no-default-features --target x86_64-unknown-netbsd
           cargo --locked check -p zbus --no-default-features --target aarch64-linux-android
-          # The external-runtime-only build: no zruntime, no tokio.
+          # The external-runtime-only build: neither the zruntime nor the tokio feature.
           EXT=proxy,service,object-manager,unixexec,ibus,tracing,p2p
           cargo --locked check -p zbus --no-default-features --features $EXT
           cargo --locked check -p zbus --no-default-features --features $EXT \
@@ -116,7 +116,7 @@ jobs:
             --features zruntime,proxy,service,ibus
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features proxy,service,ibus
-          # The external-runtime-only build: no zruntime, no tokio.
+          # The external-runtime-only build: neither the zruntime nor the tokio feature.
           EXT=proxy,service,object-manager,unixexec,ibus,tracing,p2p
           cargo --locked clippy -p zbus --no-default-features --all-targets --features $EXT
           # The service-only fixture has to be built on its own: in a workspace-wide build, the

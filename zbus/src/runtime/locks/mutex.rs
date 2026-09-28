@@ -15,7 +15,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use event_listener::Event;
+use zruntime::Event;
 
 /// A mutual-exclusion lock whose `lock` future waits without blocking the thread.
 pub(crate) struct Mutex<T: ?Sized> {
@@ -23,8 +23,9 @@ pub(crate) struct Mutex<T: ?Sized> {
     ///
     /// Taken with an `Acquire` compare-exchange and given back with a `Release` store, so that a
     /// holder sees what the one before it did to the value. A release between a `lock`'s check
-    /// and its wait is not lost: the event fences both its registration of a listener and its
-    /// notification.
+    /// and its wait is not lost: `lock` takes its listener before its second `try_lock`, as
+    /// `Event` asks of its callers, so the release's `notify` either reaches that listener or
+    /// came before it was taken, and then the second `try_lock` sees the release.
     locked: AtomicBool,
     unlocked: Event,
     value: UnsafeCell<T>,

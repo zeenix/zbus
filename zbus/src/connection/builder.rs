@@ -1,10 +1,10 @@
 use async_broadcast::Receiver as ActiveReceiver;
 use enumflags2::BitFlags;
 #[cfg(feature = "service")]
-use event_listener::Event;
-#[cfg(feature = "service")]
 use std::collections::HashMap;
 use std::{collections::HashSet, mem, vec};
+#[cfg(feature = "service")]
+use zruntime::Event;
 
 // The stream constructors take an owned socket of the platform's own type, whichever runtime the
 // connection ends up on.

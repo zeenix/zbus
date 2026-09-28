@@ -1,7 +1,7 @@
 //! The async locks a connection holds.
 //!
 //! These belong to no particular runtime: any of them can be taken from a future polled
-//! anywhere, so they are zbus's own, on `event-listener`, and Tokio's stand in where the
+//! anywhere, so they are zbus's own, built on zruntime's `Event`, and Tokio's stand in where the
 //! `tokio` feature is on so that a Tokio build pulls in no second implementation. Only the
 //! object server takes readers-writer locks, so those come along with the `service` feature.
 

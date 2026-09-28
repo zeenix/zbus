@@ -21,7 +21,7 @@ use std::{
     sync::{self, PoisonError},
 };
 
-use event_listener::Event;
+use zruntime::Event;
 
 /// A readers-writer lock whose `read` and `write` futures wait without blocking the thread.
 pub(crate) struct RwLock<T: ?Sized> {

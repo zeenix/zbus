@@ -11,8 +11,8 @@
 //! integration tests is a worked example of the whole contract on a single thread.
 //!
 //! The async locks a connection holds are not part of the trait: they are zbus's own, built on
-//! `event-listener`, so a build that runs on zruntime needs no extra feature and
-//! pulls in no lock crate of its own. On a Tokio build, Tokio's locks stand in instead, so that
+//! zruntime's `Event`, so no build needs a feature for them, whichever runtime it runs on, nor
+//! pulls in a lock crate of its own. On a Tokio build, Tokio's locks stand in instead, so that
 //! build does not carry a second lock implementation.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime

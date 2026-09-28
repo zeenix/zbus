@@ -48,7 +48,7 @@ pub(crate) use node::Node;
 /// ```no_run
 /// # use std::error::Error;
 /// use zbus::{Connection, interface};
-/// use event_listener::Event;
+/// use zruntime::Event;
 /// # use zbus::block_on;
 ///
 /// struct Example {

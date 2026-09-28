@@ -6,8 +6,8 @@
 //! inside a Tokio runtime runs on it instead (the `tokio` feature). Any other runtime reaches a
 //! connection through an implementation of [`traits::Runtime`], handed to [`Builder::runtime`].
 //! The async locks a connection holds are not part of that trait: they are zbus's own, built on
-//! `event-listener`, except on a Tokio build, where Tokio's locks stand in so that build does not
-//! carry a second lock implementation.
+//! zruntime's `Event`, except on a Tokio build, where Tokio's locks stand in so that build does
+//! not carry a second lock implementation.
 //! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime

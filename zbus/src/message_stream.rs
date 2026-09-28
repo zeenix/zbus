@@ -6,9 +6,9 @@ use std::{
 };
 
 use async_broadcast::Receiver as ActiveReceiver;
-use event_listener::EventListener;
 use futures_core::stream::{self, FusedStream};
 use ordered_stream::{OrderedStream, PollResult};
+use zruntime::EventListener;
 
 use crate::{
     AsyncDrop, Connection, MatchRule, OwnedMatchRule, Result,

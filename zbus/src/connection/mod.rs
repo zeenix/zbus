@@ -1,7 +1,6 @@
 //! Connection API.
 use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
-use event_listener::{Event, EventListener};
 use futures_lite::StreamExt;
 use std::{
     borrow::Cow,
@@ -14,6 +13,7 @@ use std::{
     },
     time::Duration,
 };
+use zruntime::{Event, EventListener};
 
 #[cfg(feature = "service")]
 use crate::ObjectServer;
@@ -1725,10 +1725,10 @@ mod tests {
 #[cfg(all(test, any(feature = "zruntime", feature = "tokio")))]
 mod p2p_tests {
     use crate::wire::{Endian, NATIVE_ENDIAN};
-    use event_listener::Event;
     use futures_util::TryStreamExt;
     use ntest::timeout;
     use test_log::test;
+    use zruntime::Event;
 
     use super::{Builder, Connection, socket};
     #[cfg(all(unix, feature = "tokio", feature = "zruntime"))]

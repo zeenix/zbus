@@ -161,8 +161,10 @@ zbus = { version = "6", features = ["tokio"] }
 The `tokio` and `zruntime` features are additive: with both enabled, zbus picks Tokio when a
 Tokio runtime is current on the thread that builds the connection, and `zruntime` otherwise.
 With only `tokio` (no `zruntime`), a connection must be built from a thread running a Tokio
-runtime. To leave zruntime out of the build, disable default features and list what you
-use instead, e.g. `default-features = false, features = ["tokio", "proxy", "service"]`.
+runtime. To leave the zruntime backend out of the build, disable default features and list what
+you use instead, e.g. `default-features = false, features = ["tokio", "proxy", "service"]`. The
+`zruntime` crate stays in the dependency tree, built with its `event` feature alone for the
+`Event` zbus's own types build on, so none of its runtime is built.
 
 A program with no async runtime of its own drives the API from inside `zbus::block_on`, which
 with the `tokio` feature polls the future on a Tokio runtime of its own, so a connection built
