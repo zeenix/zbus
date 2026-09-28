@@ -28,7 +28,7 @@ mod signal_emitter;
 pub use signal_emitter::SignalEmitter;
 
 mod dispatch_notifier;
-pub use dispatch_notifier::ResponseDispatchNotifier;
+pub use dispatch_notifier::{ResponseDispatchListener, ResponseDispatchNotifier};
 
 mod node;
 pub(crate) use node::Node;

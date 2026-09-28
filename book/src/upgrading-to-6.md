@@ -797,6 +797,16 @@ zbus 5 until you can.
 [xdg-dbus-proxy#21]: https://github.com/flatpak/xdg-dbus-proxy/issues/21
 [xdg-dbus-proxy#46]: https://github.com/flatpak/xdg-dbus-proxy/issues/46
 
+### Listeners are zbus types
+
+`Connection::monitor_activity` returns a `connection::ActivityListener`, and
+`ResponseDispatchNotifier::new` returns an `object_server::ResponseDispatchListener` along with
+the notifier. Both are zbus types implementing `Future<Output = ()>`; 5.x returned
+`event_listener::EventListener` in both places. Code that awaits the listener keeps working
+unchanged. Code that names the type spells out the new one instead, and code that calls an
+`event_listener::Listener` method on it, such as `wait()`, awaits it instead, for example through
+`zbus::block_on`.
+
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated

@@ -1,5 +1,11 @@
 //! The object server API.
 
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use event_listener::{Event, EventListener};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +16,8 @@ use crate::{Signature, Type};
 /// Sometimes in [`interface`] method implementations we need to do some other work after the
 /// response has been sent off. This wrapper type allows us to do that. Instead of returning your
 /// intended response type directly, wrap it in this type and return it from your method. The
-/// returned `EventListener` from the `new` method will be notified when the response has been sent.
+/// [`ResponseDispatchListener`] returned by the `new` method is notified when the response has
+/// been sent.
 ///
 /// A typical use case is sending off signals after the response has been sent. The easiest way to
 /// do that is to spawn a task from the method that sends the signal but only after being notified
@@ -29,10 +36,10 @@ pub struct ResponseDispatchNotifier<R> {
 }
 
 impl<R> ResponseDispatchNotifier<R> {
-    /// Create a new `NotifyResponse`.
-    pub fn new(response: R) -> (Self, EventListener) {
+    /// A new notifier for `response`, along with the listener it notifies.
+    pub fn new(response: R) -> (Self, ResponseDispatchListener) {
         let event = Event::new();
-        let listener = event.listen();
+        let listener = ResponseDispatchListener(event.listen());
         (
             Self {
                 response,
@@ -87,5 +94,23 @@ impl<T> Drop for ResponseDispatchNotifier<T> {
         if let Some(event) = self.event.take() {
             event.notify(usize::MAX);
         }
+    }
+}
+
+/// A future that completes once a [`ResponseDispatchNotifier`]'s response has been sent off.
+///
+/// It also completes if the notifier is dropped without its response ever being sent, for
+/// example because the connection went away before the object server could send it.
+///
+/// Obtain one from [`ResponseDispatchNotifier::new`].
+#[derive(Debug)]
+#[must_use = "listeners do nothing unless polled"]
+pub struct ResponseDispatchListener(EventListener);
+
+impl Future for ResponseDispatchListener {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.0).poll(cx)
     }
 }

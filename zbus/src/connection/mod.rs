@@ -28,6 +28,9 @@ use crate::{
     runtime::{Runtime, Task, locks::Mutex, traits},
 };
 
+mod activity_listener;
+pub use activity_listener::ActivityListener;
+
 mod builder;
 pub use builder::Builder;
 
@@ -1245,11 +1248,13 @@ impl Connection {
         Builder::system().build().await
     }
 
-    /// Return a listener, notified on various connection activity.
+    /// A listener notified on the next activity on the connection.
     ///
     /// This function is meant for the caller to implement idle or timeout on inactivity.
-    pub fn monitor_activity(&self) -> EventListener {
-        self.inner.socket_status.activity_event.listen()
+    /// [`ActivityListener`] says what counts as activity, and what a notification does and does
+    /// not tell.
+    pub fn monitor_activity(&self) -> ActivityListener {
+        ActivityListener(self.inner.socket_status.activity_event.listen())
     }
 
     /// Returns `true` if the connection has been closed.
