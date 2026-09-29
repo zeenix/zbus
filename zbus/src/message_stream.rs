@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    num::NonZeroUsize,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -82,6 +83,8 @@ impl MessageStream {
     /// # #[cfg(feature = "proxy")]
     /// use zbus::{AsyncDrop, Connection, MatchRule, MessageStream, fdo::NameOwnerChanged};
     /// # #[cfg(feature = "proxy")]
+    /// use std::num::NonZeroUsize;
+    /// # #[cfg(feature = "proxy")]
     /// use futures_util::{TryStreamExt, future::select, future::Either::{Left, Right}, pin_mut};
     ///
     /// # #[cfg(not(feature = "proxy"))]
@@ -101,7 +104,7 @@ impl MessageStream {
     ///     rule,
     ///     &conn,
     ///     // For such a specific match rule, we don't need a big queue.
-    ///     Some(1),
+    ///     Some(NonZeroUsize::new(1).unwrap()),
     /// ).await?;
     ///
     /// let rule_str = "type='signal',sender='org.freedesktop.DBus',\
@@ -155,7 +158,7 @@ impl MessageStream {
     pub async fn for_match_rule<R>(
         rule: R,
         conn: &Connection,
-        max_queued: Option<usize>,
+        max_queued: Option<NonZeroUsize>,
     ) -> Result<Self>
     where
         R: TryInto<OwnedMatchRule>,
@@ -177,18 +180,19 @@ impl MessageStream {
     }
 
     /// The maximum number of messages to queue for this stream.
-    pub fn max_queued(&self) -> usize {
-        self.inner.msg_receiver.capacity()
+    pub fn max_queued(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.inner.msg_receiver.capacity())
+            .expect("async-broadcast capacity is never zero")
     }
 
     /// Set the maximum number of messages to queue for this stream.
     ///
     /// After this call, the capacity is guaranteed to be at least `max_queued`.
-    pub fn set_max_queued(&mut self, max_queued: usize) {
+    pub fn set_max_queued(&mut self, max_queued: NonZeroUsize) {
         if max_queued <= self.max_queued() {
             return;
         }
-        self.inner.msg_receiver.set_capacity(max_queued);
+        self.inner.msg_receiver.set_capacity(max_queued.get());
     }
 
     pub(crate) fn for_subscription_channel(

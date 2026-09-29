@@ -808,6 +808,46 @@ unchanged. Code that names the type spells out the new one instead, and code tha
 `event_listener::Listener` method on it, such as `wait()`, awaits it instead, for example through
 `zbus::block_on`.
 
+### Queue sizes are `NonZeroUsize`
+
+A queue's capacity is a `std::num::NonZeroUsize` where 5.x had a `usize`.
+`connection::Builder::max_queued`, `Connection::set_max_queued` and `MessageStream::set_max_queued`
+take one, `MessageStream::for_match_rule` takes an `Option<NonZeroUsize>` as its last argument, and
+`Connection::max_queued` and `MessageStream::max_queued` return one.
+
+A queue that holds no messages is no queue, and 5.x treated a zero capacity differently from one
+method to the next: `for_match_rule` panicked when it made the channel of a match rule nobody had
+subscribed to yet, `Builder::max_queued` and `Connection::set_max_queued` left the main queue with
+no room, and `MessageStream::set_max_queued` — like `for_match_rule` for a rule that was already
+subscribed to — ignored it without a word. Zero is a type error now, on all of those paths.
+
+Build the value where you used to write the number. `NonZeroUsize::new(64).unwrap()` does for a
+literal, and works in a `const` too, where a zero is a build error rather than a run-time panic. For
+a size that comes from the user, `NonZeroUsize::new(n)` returns an `Option`: handle the `None`, by
+rejecting the input or by falling back to a size of your own. `for_match_rule` still takes an
+`Option`, so the size goes in as `Some(size)`, and `None` still asks for the default. Where a
+getter's result has to be a `usize`, in arithmetic or in a comparison with a plain number, call
+`.get()` on it:
+
+```rust,noplayground
+use std::num::NonZeroUsize;
+use zbus::{Connection, MatchRule, MessageStream};
+
+// Was: const DEFAULT_QUEUED: usize = 128;
+const DEFAULT_QUEUED: NonZeroUsize = NonZeroUsize::new(128).unwrap();
+
+async fn watch(conn: &Connection, rule: MatchRule<'_>, wanted: usize) -> zbus::Result<usize> {
+    // `wanted` comes from the user, so it can be zero, which `new` reports as `None`: fall back.
+    let size = NonZeroUsize::new(wanted).unwrap_or(DEFAULT_QUEUED);
+
+    // Was: MessageStream::for_match_rule(rule, conn, Some(wanted))
+    let stream = MessageStream::for_match_rule(rule, conn, Some(size)).await?;
+
+    // Was: Ok(stream.max_queued())
+    Ok(stream.max_queued().get())
+}
+```
+
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated
