@@ -56,7 +56,6 @@ heapless = { version = "0.9.0", features = ["serde"] }
 camino = "1.1.9"
 enumflags2 = { version = "0.7.9", features = ["serde"] }
 async-io = "2.3.2"
-async-broadcast = "0.7.0"
 async-executor = "1.11.0"
 async-trait = "0.1.80"
 hex = "0.4.3"
@@ -120,10 +119,9 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 # FIXME: Drop `git` and `rev` once zruntime 0.1.0 is on crates.io: `cargo publish` ignores
-# them, but it needs that release to be out. The `git` source also goes back to
-# `https://github.com/z-galaxy/zruntime` once zruntime's `Event` is merged there.
+# them, but it needs that release to be out.
 [workspace.dependencies.zruntime]
 version = "0.1.0"
-git = "https://github.com/zeenix/zruntime"
-rev = "d47459ba1f633fa3147902a5d71eb05c0cf84cac"
+git = "https://github.com/z-galaxy/zruntime"
+rev = "901512105ffe360b60bf3b73f29cbd96829ad108"
 default-features = false

@@ -6,10 +6,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_broadcast::Receiver as ActiveReceiver;
 use futures_core::stream::{self, FusedStream};
 use ordered_stream::{OrderedStream, PollResult};
-use zruntime::EventListener;
+use zruntime::{EventListener, broadcast::Receiver as ActiveReceiver};
 
 use crate::{
     AsyncDrop, Connection, MatchRule, OwnedMatchRule, Result,
@@ -181,8 +180,7 @@ impl MessageStream {
 
     /// The maximum number of messages to queue for this stream.
     pub fn max_queued(&self) -> NonZeroUsize {
-        NonZeroUsize::new(self.inner.msg_receiver.capacity())
-            .expect("async-broadcast capacity is never zero")
+        self.inner.msg_receiver.capacity()
     }
 
     /// Set the maximum number of messages to queue for this stream.
@@ -192,7 +190,7 @@ impl MessageStream {
         if max_queued <= self.max_queued() {
             return;
         }
-        self.inner.msg_receiver.set_capacity(max_queued.get());
+        self.inner.msg_receiver.set_capacity(max_queued);
     }
 
     pub(crate) fn for_subscription_channel(

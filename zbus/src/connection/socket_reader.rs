@@ -94,7 +94,7 @@ impl SocketReader {
                     }
                 }
 
-                if let Err(e) = sender.broadcast_direct(msg.clone()).await {
+                if let Err(e) = sender.broadcast(msg.clone()).await {
                     // An error would be due to either of these:
                     //
                     // 1. the channel is closed.

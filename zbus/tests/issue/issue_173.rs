@@ -1,4 +1,6 @@
-use async_broadcast::{Receiver, broadcast};
+use std::num::NonZeroUsize;
+
+use zruntime::broadcast::{Receiver, channel};
 
 use futures_util::StreamExt;
 use ntest::timeout;
@@ -14,7 +16,7 @@ fn issue_173() {
     //
     // The issue is caused by proxy not keeping track of its destination's owner changes
     // (service restart) and failing to receive signals as a result.
-    let (tx, rx) = broadcast(16);
+    let (tx, rx) = channel(NonZeroUsize::new(16).unwrap());
     let child = std::thread::spawn(move || {
         block_on(async move {
             let conn = zbus::Connection::session().await.unwrap();
@@ -30,12 +32,12 @@ fn issue_173() {
 
             let proxy = ComeAndGoProxy::new(&conn).await.unwrap();
             let mut signals = proxy.receive_the_signal().await.unwrap().take(2);
-            tx.broadcast_direct(()).await.unwrap();
+            tx.broadcast(()).await.unwrap();
 
             // We receive two signals, each time from different unique names. W/o the fix for
             // issue#173, the second iteration hangs.
             while signals.next().await.is_some() {
-                tx.broadcast_direct(()).await.unwrap();
+                tx.broadcast(()).await.unwrap();
             }
         })
     });

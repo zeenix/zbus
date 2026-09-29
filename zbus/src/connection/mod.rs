@@ -1,5 +1,4 @@
 //! Connection API.
-use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
 use futures_lite::StreamExt;
 use std::{
@@ -14,7 +13,10 @@ use std::{
     },
     time::Duration,
 };
-use zruntime::{Event, EventListener};
+use zruntime::{
+    Event, EventListener,
+    broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, channel},
+};
 
 #[cfg(feature = "service")]
 use crate::ObjectServer;
@@ -916,13 +918,12 @@ impl Connection {
 
     /// The capacity of the main (unfiltered) queue.
     pub fn max_queued(&self) -> NonZeroUsize {
-        NonZeroUsize::new(self.inner.msg_receiver.capacity())
-            .expect("async-broadcast capacity is never zero")
+        self.inner.msg_receiver.capacity()
     }
 
     /// Set the capacity of the main (unfiltered) queue.
     pub fn set_max_queued(&mut self, max: NonZeroUsize) {
-        self.inner.msg_receiver.clone().set_capacity(max.get());
+        self.inner.msg_receiver.clone().set_capacity(max);
     }
 
     /// The server's GUID.
@@ -1090,7 +1091,7 @@ impl Connection {
         match subscriptions.entry(rule.clone()) {
             Entry::Vacant(e) => {
                 let max_queued = max_queued.unwrap_or(DEFAULT_MAX_QUEUED);
-                let (sender, mut receiver) = broadcast(max_queued.get());
+                let (sender, mut receiver) = channel(max_queued);
                 receiver.set_await_active(false);
                 if self.is_bus() && msg_type == Type::Signal {
                     self.call_method(
@@ -1115,8 +1116,8 @@ impl Connection {
                 let (num_subscriptions, receiver) = e.get_mut();
                 *num_subscriptions += 1;
                 if let Some(max_queued) = max_queued {
-                    if max_queued.get() > receiver.capacity() {
-                        receiver.set_capacity(max_queued.get());
+                    if max_queued > receiver.capacity() {
+                        receiver.set_capacity(max_queued);
                     }
                 }
 
@@ -1186,7 +1187,7 @@ impl Connection {
 
         macro_rules! create_msg_broadcast_channel {
             ($size:expr) => {{
-                let (msg_sender, msg_receiver) = broadcast($size.get());
+                let (msg_sender, msg_receiver) = channel($size);
                 let mut msg_receiver = msg_receiver.deactivate();
                 msg_receiver.set_await_active(false);
 
