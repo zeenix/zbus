@@ -1,7 +1,6 @@
 //! Connection API.
 use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
-use event_listener::{Event, EventListener};
 use futures_lite::StreamExt;
 use std::{
     borrow::Cow,
@@ -14,6 +13,7 @@ use std::{
     },
     time::Duration,
 };
+use zruntime::{Event, EventListener};
 
 #[cfg(feature = "service")]
 use crate::ObjectServer;
@@ -27,6 +27,9 @@ use crate::{
     names::{BusName, ErrorName, InterfaceName, MemberName, OwnedUniqueName, WellKnownName},
     runtime::{Runtime, Task, locks::Mutex, traits},
 };
+
+mod activity_listener;
+pub use activity_listener::ActivityListener;
 
 mod builder;
 pub use builder::Builder;
@@ -1245,11 +1248,13 @@ impl Connection {
         Builder::system().build().await
     }
 
-    /// Return a listener, notified on various connection activity.
+    /// A listener notified on the next activity on the connection.
     ///
     /// This function is meant for the caller to implement idle or timeout on inactivity.
-    pub fn monitor_activity(&self) -> EventListener {
-        self.inner.socket_status.activity_event.listen()
+    /// [`ActivityListener`] says what counts as activity, and what a notification does and does
+    /// not tell.
+    pub fn monitor_activity(&self) -> ActivityListener {
+        ActivityListener(self.inner.socket_status.activity_event.listen())
     }
 
     /// Returns `true` if the connection has been closed.
@@ -1449,23 +1454,23 @@ enum NameStatus {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(all(feature = "service", any(feature = "zruntime", feature = "tokio")))]
+    #[cfg(all(feature = "service", any(feature = "default-rt", feature = "tokio")))]
     use super::*;
     #[cfg(all(
         feature = "proxy",
         feature = "service",
-        any(feature = "zruntime", feature = "tokio")
+        any(feature = "default-rt", feature = "tokio")
     ))]
     use crate::fdo::DBusProxy;
     use crate::runtime::io::tests::RefusedPort;
-    #[cfg(all(feature = "service", any(feature = "zruntime", feature = "tokio")))]
+    #[cfg(all(feature = "service", any(feature = "default-rt", feature = "tokio")))]
     use ntest::timeout;
-    #[cfg(all(feature = "service", any(feature = "zruntime", feature = "tokio")))]
+    #[cfg(all(feature = "service", any(feature = "default-rt", feature = "tokio")))]
     use std::{pin::pin, time::Duration};
     #[cfg(all(
         feature = "proxy",
         feature = "service",
-        any(feature = "zruntime", feature = "tokio")
+        any(feature = "default-rt", feature = "tokio")
     ))]
     use test_log::test;
 
@@ -1574,7 +1579,7 @@ mod tests {
     #[cfg(all(
         feature = "proxy",
         feature = "service",
-        any(feature = "zruntime", feature = "tokio")
+        any(feature = "default-rt", feature = "tokio")
     ))]
     #[test]
     #[timeout(15000)]
@@ -1587,7 +1592,7 @@ mod tests {
     #[cfg(all(
         feature = "proxy",
         feature = "service",
-        any(feature = "zruntime", feature = "tokio")
+        any(feature = "default-rt", feature = "tokio")
     ))]
     async fn test_disconnect_on_drop() {
         #[derive(Default)]
@@ -1622,7 +1627,7 @@ mod tests {
         assert!(!name_has_owner);
     }
 
-    #[cfg(all(feature = "service", any(feature = "zruntime", feature = "tokio")))]
+    #[cfg(all(feature = "service", any(feature = "default-rt", feature = "tokio")))]
     #[tokio::test(start_paused = true)]
     #[timeout(15000)]
     async fn test_graceful_shutdown() {
@@ -1717,16 +1722,16 @@ mod tests {
 
 // Every pipe here is a real socket, which only a backend can create.
 #[cfg(feature = "p2p")]
-#[cfg(all(test, any(feature = "zruntime", feature = "tokio")))]
+#[cfg(all(test, any(feature = "default-rt", feature = "tokio")))]
 mod p2p_tests {
     use crate::wire::{Endian, NATIVE_ENDIAN};
-    use event_listener::Event;
     use futures_util::TryStreamExt;
     use ntest::timeout;
     use test_log::test;
+    use zruntime::Event;
 
     use super::{Builder, Connection, socket};
-    #[cfg(all(unix, feature = "tokio", feature = "zruntime"))]
+    #[cfg(all(unix, feature = "tokio", feature = "default-rt"))]
     use crate::runtime::Runtime;
     use crate::{Guid, Message, MessageStream, Result, conn::AuthMechanism};
 
@@ -1883,7 +1888,7 @@ mod p2p_tests {
     // `crate::utils::block_on` would establish one on this build and so send the builder to the
     // Tokio arm instead. The guard on the spawned task is that runtime's own timer, so the task
     // and the timer are both under test here.
-    #[cfg(all(unix, feature = "tokio", feature = "zruntime"))]
+    #[cfg(all(unix, feature = "tokio", feature = "default-rt"))]
     #[test]
     #[timeout(15000)]
     fn unix_p2p_zruntime_backend() {

@@ -67,7 +67,6 @@ futures-lite = { version = "2.6.0", default-features = false, features = [
     "std",
 ] }
 
-event-listener = "5.3.0"
 xdg-home = "1.1.0"
 tracing = "0.1.40"
 async-task = "4.7.1"
@@ -121,10 +120,10 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 # FIXME: Drop `git` and `rev` once zruntime 0.1.0 is on crates.io: `cargo publish` ignores
-# them, but it needs that release to be out.
+# them, but it needs that release to be out. The `git` source also goes back to
+# `https://github.com/z-galaxy/zruntime` once zruntime's `Event` is merged there.
 [workspace.dependencies.zruntime]
 version = "0.1.0"
-git = "https://github.com/z-galaxy/zruntime"
-rev = "f0bc95658d28c3db5ba15d13404e1f56da254f8f"
+git = "https://github.com/zeenix/zruntime"
+rev = "d47459ba1f633fa3147902a5d71eb05c0cf84cac"
 default-features = false
-features = ["helper"]

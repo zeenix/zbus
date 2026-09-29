@@ -181,7 +181,7 @@ fn main() -> Result<()> {
 
 Everything shown in the other chapters works the same way inside that future, and the program
 depends on zbus alone, plus `futures-util` if it reads signals or property changes from a
-stream. With the default `zruntime` feature, the same thread also runs [zruntime]'s
+stream. With the `default-rt` feature, on by default, the same thread also runs [zruntime]'s
 scheduler and I/O reactor in between polls of the future, and a program that runs `block_on` on
 several threads drives their connections in parallel; with the `tokio` feature, Tokio's runtime
 runs them instead. A handful of blocking system calls — a DNS lookup, a nonce-file read, a
@@ -217,9 +217,11 @@ zbus = { version = "6", features = ["tokio"] }
 With both features enabled, the backend is chosen once per connection, when it is built: Tokio when
 a Tokio runtime is current on the thread that builds it, [zruntime] otherwise. This keeps the
 features additive, so an application that relies on zruntime keeps working even when
-another crate in the workspace enables zbus's `tokio` feature. To leave zruntime out of
-the build, disable default features and list what you use instead, e.g.
-`default-features = false, features = ["tokio", "proxy", "service"]`.
+another crate in the workspace enables zbus's `tokio` feature. To leave the zruntime backend out
+of the build, disable default features and list what you use instead, e.g.
+`default-features = false, features = ["tokio", "proxy", "service"]`. The `zruntime` crate stays
+in the dependency tree, built with its `event` feature alone for the `Event` zbus's own types
+build on, so none of its runtime is built.
 
 This per-connection selection only matters for a program that has an async runtime of its own. A
 program without one uses `zbus::block_on` instead. Without the `tokio` feature, that call and the
@@ -228,7 +230,7 @@ runtime, so a connection built inside it always uses Tokio. Note that `zbus::blo
 be called from inside a task zbus is running, such as an interface method: it panics there.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even
-when `zruntime` is also compiled in; give it a TCP or `autolaunch:` address instead, or
+when the `default-rt` feature is also on; give it a TCP or `autolaunch:` address instead, or
 build it from a thread with no Tokio runtime current so it picks zruntime. See [the
 corresponding tokio issue on GitHub][tctiog].
 

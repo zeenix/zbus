@@ -61,7 +61,7 @@ where
     Body: Fn(Runtime) -> Fut,
     Fut: Future<Output = ()>,
 {
-    #[cfg(feature = "zruntime")]
+    #[cfg(feature = "default-rt")]
     futures_lite::future::block_on(body(Runtime::ZRuntime(
         super::ZRuntime::new().expect("a runtime of zbus's own"),
     )));

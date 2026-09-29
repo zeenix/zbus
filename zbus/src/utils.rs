@@ -50,14 +50,14 @@ impl<T, E> ResultAdapter for Result<T, E> {
 /// the very thread it is on. Do not call it from another runtime's task either: it blocks that
 /// task's thread until the future completes, which deadlocks the program if the future needs
 /// that thread to make progress.
-#[cfg(all(feature = "zruntime", not(feature = "tokio")))]
+#[cfg(all(feature = "default-rt", not(feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     crate::runtime::zruntime::block_on(future)
 }
 
 /// Runs a future to completion on the calling thread.
 ///
-/// In a build with neither `zruntime` nor `tokio` enabled, every connection runs on the
+/// In a build with neither `default-rt` nor `tokio` enabled, every connection runs on the
 /// runtime given to [`Builder::runtime`]. This call drives no connection itself: it only polls
 /// the future passed in, blocking the calling thread until it is done.
 ///
@@ -65,7 +65,7 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
 /// completes, which deadlocks the program if the future needs that thread to make progress.
 ///
 /// [`Builder::runtime`]: crate::connection::Builder::runtime
-#[cfg(not(any(feature = "zruntime", feature = "tokio")))]
+#[cfg(not(any(feature = "default-rt", feature = "tokio")))]
 pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     futures_lite::future::block_on(future)
 }

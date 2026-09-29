@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use event_listener::Event;
+use zruntime::Event;
 
 use crate::{
     Message, OwnedMatchRule,

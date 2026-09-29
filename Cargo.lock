@@ -2046,7 +2046,6 @@ dependencies = [
  "doc-comment",
  "endi",
  "enumflags2",
- "event-listener",
  "futures-core",
  "futures-lite",
  "futures-util",
@@ -2231,7 +2230,7 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/z-galaxy/zruntime?rev=f0bc95658d28c3db5ba15d13404e1f56da254f8f#f0bc95658d28c3db5ba15d13404e1f56da254f8f"
+source = "git+https://github.com/zeenix/zruntime?rev=d47459ba1f633fa3147902a5d71eb05c0cf84cac#d47459ba1f633fa3147902a5d71eb05c0cf84cac"
 dependencies = [
  "rustix",
  "tracing",

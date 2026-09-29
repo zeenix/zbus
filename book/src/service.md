@@ -204,13 +204,14 @@ org.zbus.MyGreeter1                 interface -         -             -
 
 `ObjectServer` supports various method attributes to declare properties or signals.
 
-This is a more complete example, demonstrating some of its usages. It also shows a way to
-synchronize with the interface handlers from outside, thanks to the `event_listener` crate
-(this is just one of the many ways).
+This is a more complete example, demonstrating some of its usages. It also shows one of the many
+ways to synchronize with the interface handlers from outside: an `Event` from the `zruntime`
+crate, where zbus's default runtime comes from. An `Event` needs no runtime of its own, so it
+works under Tokio as it does here; add `zruntime` to your own `Cargo.toml` to use it.
 
 ```rust,no_run
 use zbus::{object_server::SignalEmitter, connection::Builder, interface, fdo, Result};
-use event_listener::{Event, Listener};
+use zruntime::Event;
 
 struct Greeter {
     name: String,
@@ -261,7 +262,7 @@ impl Greeter {
 async fn main() -> Result<()> {
     let greeter = Greeter {
         name: "GreeterName".to_string(),
-        done: event_listener::Event::new(),
+        done: Event::new(),
     };
     let done_listener = greeter.done.listen();
     let connection = Builder::session()
@@ -270,7 +271,7 @@ async fn main() -> Result<()> {
         .build()
         .await?;
 
-    done_listener.wait();
+    done_listener.await;
 
     // Let's emit the signal again, just for the fun of it.
     connection

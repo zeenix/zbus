@@ -1,4 +1,3 @@
-use event_listener::Event;
 use futures_util::{StreamExt, TryStreamExt};
 use std::convert::TryInto;
 use tracing::{debug, instrument};
@@ -8,6 +7,7 @@ use zbus::{
     Connection, DBusError, Error, Message, MessageStream, Value, fdo::PropertiesProxy, message,
     proxy::CacheProperties,
 };
+use zruntime::Event;
 
 use super::{
     helpers::{check_hash_map, check_ipv4_address, check_ipv4_address_hashmap},

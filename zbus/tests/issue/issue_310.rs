@@ -41,7 +41,7 @@ async fn issue_310() {
         .build()
         .await
         .unwrap();
-    let event = Arc::new(event_listener::Event::new());
+    let event = Arc::new(zruntime::Event::new());
     let conn_clone = connection.clone();
     let event_clone = event.clone();
     tokio::spawn(async move {

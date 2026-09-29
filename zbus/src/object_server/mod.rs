@@ -28,7 +28,7 @@ mod signal_emitter;
 pub use signal_emitter::SignalEmitter;
 
 mod dispatch_notifier;
-pub use dispatch_notifier::ResponseDispatchNotifier;
+pub use dispatch_notifier::{ResponseDispatchListener, ResponseDispatchNotifier};
 
 mod node;
 pub(crate) use node::Node;
@@ -48,7 +48,7 @@ pub(crate) use node::Node;
 /// ```no_run
 /// # use std::error::Error;
 /// use zbus::{Connection, interface};
-/// use event_listener::Event;
+/// use zruntime::Event;
 /// # use zbus::block_on;
 ///
 /// struct Example {

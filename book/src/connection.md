@@ -86,7 +86,7 @@ Tokio's locks stand in instead.
 
 ### Built-in backends
 
-With the `zruntime` cargo feature (a default feature), a connection runs on [zruntime], one
+With the `default-rt` cargo feature (a default feature), a connection runs on [zruntime], one
 per thread that runs `zbus::block_on`, depending on no general-purpose async executor crate. The
 thread that drives it is the one inside `zbus::block_on`: between two polls of the future handed to
 it, that thread runs the tasks, sockets and timers of every zruntime connection built in it — apart
@@ -105,10 +105,10 @@ that builds the connection, it runs on Tokio instead. With only `tokio` enabled,
 runs on the Tokio runtime that is current when it is built; building one from a thread with no such
 runtime fails with `Error::Unsupported`.
 
-A build with neither feature depends on no `tokio` crate, and on nothing `zruntime` owns:
-zbus's own locks build on `event-listener`, not on anything either feature pulls in, so this
-build needs neither an extra feature nor an extra crate for them. Every connection in the build
-needs an explicit runtime, given through [`Builder::runtime`].
+A build with neither feature depends on no `tokio` crate. It still depends on the `zruntime`
+crate, whose `Event` zbus's own locks and notifications are built on, with its `event` feature
+alone, so none of zruntime's runtime is built. Every connection in the build needs an explicit
+runtime, given through [`Builder::runtime`].
 
 ### Supplying your own runtime
 

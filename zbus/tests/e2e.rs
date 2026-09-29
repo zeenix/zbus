@@ -1,7 +1,7 @@
 #![cfg(all(
     feature = "proxy",
     feature = "service",
-    any(feature = "zruntime", feature = "tokio")
+    any(feature = "default-rt", feature = "tokio")
 ))]
 #![allow(clippy::disallowed_names)]
 
@@ -41,7 +41,7 @@ fn iface_and_proxy_unix_p2p() {
 
 #[instrument]
 async fn iface_and_proxy_(#[allow(unused)] p2p: bool) {
-    let event = event_listener::Event::new();
+    let event = zruntime::Event::new();
     #[cfg(feature = "p2p")]
     let guid = zbus::Guid::generate();
 

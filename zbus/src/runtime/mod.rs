@@ -1,13 +1,13 @@
 //! Integration with the async runtime that drives a connection.
 //!
-//! By default, a connection runs on [zruntime] (the `zruntime` feature, on by default):
+//! By default, a connection runs on [zruntime] (the `default-rt` feature, on by default):
 //! one runtime per thread that runs [`block_on`](crate::block_on), driven by that thread, and by
 //! a helper thread only for work left with no thread inside `block_on`. A connection built
 //! inside a Tokio runtime runs on it instead (the `tokio` feature). Any other runtime reaches a
 //! connection through an implementation of [`traits::Runtime`], handed to [`Builder::runtime`].
 //! The async locks a connection holds are not part of that trait: they are zbus's own, built on
-//! `event-listener`, except on a Tokio build, where Tokio's locks stand in so that build does not
-//! carry a second lock implementation.
+//! zruntime's `Event`, except on a Tokio build, where Tokio's locks stand in so that build does
+//! not carry a second lock implementation.
 //! [`AsyncDrop`] is the async counterpart of [`Drop`] that zbus's own types implement.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
@@ -21,9 +21,9 @@ pub use io_source::{Interest, IoSource};
 mod async_drop;
 pub use async_drop::AsyncDrop;
 mod blocking_thread;
-#[cfg(feature = "zruntime")]
+#[cfg(feature = "default-rt")]
 pub(crate) mod zruntime;
-#[cfg(feature = "zruntime")]
+#[cfg(feature = "default-rt")]
 pub(crate) use self::zruntime::ZRuntime;
 mod erased;
 pub(crate) mod locks;
@@ -50,7 +50,7 @@ use crate::Result;
 /// The runtime a connection runs on, chosen once when it is built.
 #[derive(Clone, Debug)]
 pub(crate) enum Runtime {
-    #[cfg(feature = "zruntime")]
+    #[cfg(feature = "default-rt")]
     ZRuntime(ZRuntime),
     #[cfg(feature = "tokio")]
     Tokio(Tokio),
@@ -61,13 +61,13 @@ pub(crate) enum Runtime {
 impl Runtime {
     /// The runtime for a connection built without an explicit one.
     ///
-    /// Tokio when it is compiled in and a runtime is current on this thread, otherwise
-    /// [zruntime](https://docs.rs/zruntime), when that is compiled in. This keeps the features
-    /// additive: enabling `tokio` elsewhere in the dependency graph doesn't force every zbus user
-    /// into a tokio runtime. Two builds have no default left and report [`Error::Unsupported`]
-    /// instead, so that a connection in them has to be given an external runtime: one with
-    /// neither compiled in, and one with only `tokio` called from a thread where no Tokio
-    /// runtime is current.
+    /// Tokio when the `tokio` feature is on and a runtime is current on this thread, otherwise
+    /// [zruntime](https://docs.rs/zruntime), when the `default-rt` feature is on. This keeps the
+    /// features additive: enabling `tokio` elsewhere in the dependency graph doesn't force every
+    /// zbus user into a tokio runtime. Two builds have no default left and report
+    /// [`Error::Unsupported`] instead, so that a connection in them has to be given an external
+    /// runtime: one with neither feature on, and one with only `tokio` called from a thread where
+    /// no Tokio runtime is current.
     ///
     /// [`Error::Unsupported`]: crate::Error::Unsupported
     pub(crate) fn default_for_build() -> Result<Self> {
@@ -75,11 +75,11 @@ impl Runtime {
         if let Some(runtime) = Tokio::current() {
             return Ok(Self::Tokio(runtime));
         }
-        #[cfg(feature = "zruntime")]
+        #[cfg(feature = "default-rt")]
         {
             Ok(Self::ZRuntime(ZRuntime::new()?))
         }
-        #[cfg(not(feature = "zruntime"))]
+        #[cfg(not(feature = "default-rt"))]
         {
             Err(crate::Error::Unsupported)
         }
@@ -102,7 +102,7 @@ impl Runtime {
     /// returns, so a socket is only ever driven by the runtime the connection was built with.
     pub(crate) fn register_io_source(&self, source: IoSource) -> std::io::Result<io::Registration> {
         match self {
-            #[cfg(feature = "zruntime")]
+            #[cfg(feature = "default-rt")]
             Self::ZRuntime(runtime) => {
                 traits::Runtime::register_io_source(runtime, source).map(io::Registration::ZRuntime)
             }
@@ -133,7 +133,7 @@ impl Runtime {
         match self {
             // The zruntime backend takes the `Cow` itself rather than going through
             // `traits::Runtime`, whose `spawn` is public API and takes `&str`.
-            #[cfg(feature = "zruntime")]
+            #[cfg(feature = "default-rt")]
             Self::ZRuntime(runtime) => Task::ZRuntime(runtime.spawn_named(name, future)),
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => Task::Tokio(traits::Runtime::spawn(runtime, &name, future)),
@@ -156,7 +156,7 @@ impl Runtime {
         T: Send + 'static,
     {
         match self {
-            #[cfg(feature = "zruntime")]
+            #[cfg(feature = "default-rt")]
             Self::ZRuntime(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work),

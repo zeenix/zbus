@@ -1,10 +1,10 @@
 use async_broadcast::Receiver as ActiveReceiver;
 use enumflags2::BitFlags;
 #[cfg(feature = "service")]
-use event_listener::Event;
-#[cfg(feature = "service")]
 use std::collections::HashMap;
 use std::{collections::HashSet, mem, vec};
+#[cfg(feature = "service")]
+use zruntime::Event;
 
 // The stream constructors take an owned socket of the platform's own type, whichever runtime the
 // connection ends up on.
@@ -494,9 +494,9 @@ impl<'a> Builder<'a> {
     ///
     /// Without this, the connection runs on the backend zbus is compiled with: Tokio when the
     /// `tokio` feature is on and a Tokio runtime is current on this thread, otherwise
-    /// [zruntime](https://docs.rs/zruntime) (the `zruntime` feature). Where that leaves no
+    /// [zruntime](https://docs.rs/zruntime) (the `default-rt` feature). Where that leaves no
     /// backend, [`Builder::build`] reports [`Error::Unsupported`] unless a runtime is set here: in
-    /// a build with neither feature, and in a `tokio` build without `zruntime` on a thread
+    /// a build with neither feature, and in a `tokio` build without `default-rt` on a thread
     /// where no Tokio runtime is current.
     pub fn runtime(mut self, runtime: impl traits::Runtime) -> Self {
         self.runtime = Some(Runtime::from_external(runtime));
@@ -846,7 +846,7 @@ mod tests {
     use test_log::test;
 
     use super::{Address, Builder};
-    #[cfg(any(feature = "zruntime", feature = "tokio"))]
+    #[cfg(any(feature = "default-rt", feature = "tokio"))]
     use crate::Error;
     use crate::{names::WellKnownName, utils::block_on};
 
@@ -864,7 +864,7 @@ mod tests {
     }
 
     // The build gets as far as connecting, which needs a backend.
-    #[cfg(any(feature = "zruntime", feature = "tokio"))]
+    #[cfg(any(feature = "default-rt", feature = "tokio"))]
     #[test]
     fn typed_values() {
         // No `Result` anywhere before `build`.
