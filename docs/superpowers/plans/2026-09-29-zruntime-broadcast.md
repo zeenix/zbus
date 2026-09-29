@@ -156,5 +156,102 @@ Public items: `channel`, `Sender`, `Receiver`, `InactiveReceiver`, `Send`, `Recv
 
 - async-broadcast upstream: a final release pointing users to `zruntime::broadcast`, or
   deprecation, once zruntime 0.1.0 is on crates.io.
-- Notifying the channel's events after letting go of its mutex (Decision 7).
-- zbus's `max_queued` taking `NonZeroUsize` before 6.0 (Decision 9).
+
+## Report
+
+### Commits
+
+zruntime (`zeenix/zruntime`, `claude/modest-euler-w8gk5w`), merged as z-galaxy/zruntime#6 in
+`9015121`:
+
+- `1f18218` ✨ Add a broadcast channel, moved from async-broadcast
+- `31207bf` ✅ Benchmark the broadcast channel
+
+zbus (`zeenix/zbus`, `claude/modest-euler-w8gk5w`), with zruntime pinned to z-galaxy/zruntime at
+`9015121`:
+
+- `88fdd44` 📝 Add the plan for moving async-broadcast into zruntime
+- `5992e5a` 💥 zb: Take and give queue sizes as NonZeroUsize
+- `6cd2a64` ➖ zb: Move to zruntime's broadcast channel
+
+### Deviations from the plan
+
+- **Decision 6 was wrong in its premise.** `T::clone` is not the only user code run under the
+  channel's lock: async-broadcast also drops messages under it (in `Receiver::drop` and in
+  `set_capacity` shrinking the queue), and a panicking drop there left the waiter counts or
+  `head_pos` inconsistent. The port drops them after letting go of the lock instead, which also
+  removes a deadlock for a `Drop` that comes back to the channel; the lock stays poison-tolerant.
+  The PR review then found the wakers `Event::notify` wakes running under the lock in the middle
+  of bookkeeping too: a panicking one left a receiver counted that never came to be, or one
+  counted still that was dropped. The events moved beside the lock, and every operation finishes
+  its bookkeeping and lets go of the lock before it notifies, so `T::clone` is the only user code
+  run under it. That also settles Decision 7: nothing is notified under the channel's lock.
+- **Decision 8:** at the maintainer's request, the notice moved from the head of
+  `src/broadcast.rs` into zruntime's `LICENSE`, covering the module, its tests and its benchmark,
+  and names Stjepan Glavina and Zeeshan Ali Khan beside Yoshua Wuyts, keeping async-broadcast's
+  year.
+- **Decision 4:** `Send<'_, T>` needs an explicit `impl<T> Unpin` to be `Unpin` for every `T`
+  (it holds the message by value); it pins nothing, so the impl is sound. `Recv` and `Receiver`
+  are `Unpin` by auto traits.
+- **Decision 9:** at the maintainer's request, zbus's public queue sizes are `NonZeroUsize` too
+  (`5992e5a`, before the port, with an entry in the 6.0 upgrade guide), so a zero is a type error
+  on every path. Before, it panicked only
+  where a match rule's channel was made; `Connection::set_max_queued(0)` left the main queue with
+  no room, and `MessageStream::set_max_queued(0)` or a zero for a match rule already subscribed
+  to was ignored.
+- **Scope, on #75:** async-broadcast's futures were not `!Unpin` because of their listener:
+  event-listener 5's `EventListener` is a `Pin<Box<_>>`, `Unpin` at the cost of an allocation per
+  `listen`. Only their `PhantomPinned` field, kept for a switch to event-listener's stack
+  listeners that never came, made them `!Unpin`. zruntime's listener is `Unpin` without a box of
+  its own: it holds an `Arc` of its event's list and a key into the list's slab, whose slots are
+  reused.
+- Beyond the plan: a sender that succeeds lets go of its listener before notifying the next one;
+  the `set_await_active` doc examples, which dropped their inactive receiver and so passed for
+  the wrong reason, keep it alive; doc titles became noun phrases; the `overflow` test no longer
+  relies on a sleep; wake-path tests with flag-setting wakers cover the counting `notify(1)`
+  chain, a woken listener passing its notification on when dropped, and `close`.
+- From the PR review, beyond the plan: a waiting sender is woken whenever the channel changes in a
+  way that can let it through or make it fail (a sender's `new_receiver` giving the channel its
+  first active receiver, the capacity growing, overflow mode turned on, `await_active` turned off,
+  the last active receiver going away with `await_active` off), where async-broadcast woke it
+  only for freed room and an activated inactive receiver; `FusedStream::is_terminated` looks at
+  what this receiver has left rather than at the whole queue; the receive errors' docs say that a
+  capacity reduction drops messages too.
+
+### Verification
+
+- zruntime: nightly fmt, clippy (all targets, all features), `runtime`, `event` and `broadcast`
+  each checked alone, `cargo test --all-features` (174 unit tests, 56 doc tests and 6
+  more),
+  `cargo test --no-default-features --features broadcast`, docs with `-D warnings`, the benchmark
+  build, and all-features checks for Windows and macOS. The broadcast tests passed 20 runs in a
+  row.
+- zbus: `dbus-run-session -- cargo test --all-features --no-fail-fast`: 550 passed and 5 failed,
+  the same 5 as on the untouched base (`vsock_connect`, `vsock_p2p`,
+  `a_bus_connection_over_a_helper_process`, `unixexec_connection_async`, `fdpass_systemd`, all
+  needing what this container lacks). `-p zbus --no-default-features --features tokio,comms`:
+  234 passed, `fdpass_systemd` failed as on the base. Every clippy line of CI's clippy job for
+  the host, macOS and Windows targets, nightly fmt, and `cargo doc` with `-D warnings`.
+- `cargo tree -i {event-listener,event-listener-strategy,async-broadcast} --all-features -e
+  normal` matches no package.
+
+### Reviews
+
+An Opus review compared the port with async-broadcast line by line and found its channel logic
+unchanged apart from what the decisions name, and no lost wake-up. Its findings (the drops under
+the lock, the notification held by a completed send, the misleading `set_await_active` docs, the
+timing-dependent tests, doc style) were fixed before zruntime's commit.
+
+The PR review (z-galaxy/zruntime#6, z-galaxy/zbus#1988) found the missing wake-up for a sender's
+`new_receiver`, `is_terminated` looking at the whole queue, the wakers run under the lock and
+their unwinding hazard, the receive errors' docs, and the missing upgrade-guide entry. All were
+fixed in the commits above; the advisor reviewed the approach, and suggested fixing the rest of
+the missed wake-ups along with the one the review found.
+
+## Follow-ups (from the review)
+
+- `Event::notify` always takes the event's mutex, where event-listener skips it with an atomic
+  check when nobody listens: one uncontended lock more per send and per message popped. The new
+  benchmark can measure it against async-broadcast's.
+- `Event`'s notification stops waking at the first waker that panics.
+- The broadcast module's poison-tolerant `lock` duplicates `event.rs`'s.
