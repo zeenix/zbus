@@ -240,3 +240,116 @@ zruntime gets two commits, each of which passes CI on its own:
   `lock/rwlock.rs`).
 - zbus's Tokio switch can go once zruntime's locks are fair.
 - zbus's zruntime source goes back to `z-galaxy/zruntime` once this change is merged there.
+
+## Report
+
+### Commits
+
+zruntime (`zeenix/zruntime`, `claude/jolly-goodall-ym5xsy`, on `upstream/main` at `9015121`),
+merged as z-galaxy/zruntime#7 in `c1c44e6`:
+
+- `f69d8a3` ✨ Add an async Mutex and RwLock, moved from zbus
+- `f410394` ✅ Test and benchmark through the lock module
+- `9fba3a5` 👷 Run the tests that need no runtime under Miri
+
+zbus (`zeenix/zbus`, `claude/jolly-goodall-ym5xsy`, on `upstream/main` at `45dab2fa`), with
+zruntime pinned to z-galaxy/zruntime at `c1c44e6`:
+
+- `d530cb90` 📝 Add the plan for moving the async locks into zruntime
+- `6195c062` ♻️ zb: Take the async locks from zruntime
+- this report
+
+### Deviations from the plan
+
+- **Decision 2's bounds:** three `unsafe impl Send` (for `Mutex`, `MutexGuard` and `RwLock`) went,
+  as the auto traits give them with the same bounds; the seven others stay. The compile-time doc
+  tests pin all ten bounds, and a probe comparing zbus's old types with zruntime's for eight kinds
+  of value, `dyn` ones included, found all 40 results the same. The `SAFETY` comments that said the
+  value is reachable "through a guard alone" now also account for `get_mut` and `into_inner`. Also
+  beyond the moved code: `where T: ?Sized` on the struct definitions, and messages on the guards'
+  `#[must_use]`.
+- **Decision 5's premise was partly wrong:** the removed come-back test's `notify_additional(1)`
+  also exercised the pass-on wake in `EventListener::drop`. A mutation waking under the lock there
+  was caught 49/100 by the old test and 8/100 by the moved one, so the event tests gained a
+  deterministic test for it: a waker woken by a notification that a dropped listener passes on,
+  coming back into the event from its wake. Nested come-back wakes (depth 3 in the old test) are
+  no longer covered; every depth runs the same code.
+- **Tests beyond the plan, from the reviews:** the single-threaded tests take locks through a
+  `ready` helper that panics on `Pending`, so a lost wake-up fails them instead of hanging them;
+  three handoff tests pin the listen-then-recheck, with one release alone able to let the waiter
+  in and that release coming a little later each round (which took detection of the three
+  missing-recheck mutations from 10/12, 9/12 and 0/12 to 12/12 each); two tests pin that a
+  writer's release and a cancelled writer wake every reader; the threaded tests start their
+  threads together; two more `compile_fail` blocks, and positive checks with std's `MutexGuard`
+  (`Sync` but not `Send`).
+- **Holding a lock across a yield:** the threaded tests first yielded inside their critical
+  sections, to widen the race window. With every core shared with a busy loop, each round then
+  handed the thread away with the lock held, and the six threaded lock tests took about 15 s
+  against their 15 s timeouts, one run failing. They spin briefly instead (`linger`): 1.0 to 1.7 s
+  under that load for the nine threaded tests of both modules, about 4 s at a tenth of the CPU, and
+  no loss of detection (a mutex admitting everyone and a readers-writer lock letting readers past a
+  writer each still fail them, 3/3).
+- **Docs beyond the plan:** starvation is admitted on both sides of write preference and under
+  contention; `try_write`, a cancelled `write` and `try_read` against a `write` being polled are
+  worded to what the code does; repetition between the module and type docs is trimmed. zruntime's
+  `AGENTS.md` said the crate has no `unsafe impl`, and the event tests' header that the library has
+  no `unsafe` of its own: the module made both false (the second was already false on Windows), and
+  both now say where it is.
+- **zruntime's second commit** is `✅` rather than `♻️`, like the repository's other benchmark
+  commits, which release-plz files under testing. futures-util's `std` feature was only there for
+  its lock, so the dev-dependency asks for `alloc` alone.
+- **A Miri job in zruntime's CI**, at the maintainer's request: it runs what needs no runtime
+  (`Event`, the locks and the broadcast channel, doc tests included) in about a minute. The
+  runtime's tests are left out, since it polls with `ppoll`, which Miri cannot run.
+- **zbus docs beyond the plan's list:** `zbus/src/runtime/traits.rs`, `book/src/faq.md` and the
+  README's Tokio passage said the same things; the lists of the zruntime features a build has left
+  out `tracing`, which zbus's `tracing` turns on; the upgrade guide calls the old crate
+  `async-lock`, its name.
+
+### Verification
+
+- zruntime, each commit alone: nightly fmt; clippy (`--all-targets --all-features`,
+  `-D warnings`); `runtime`, `event`, `broadcast` and `lock` each checked alone;
+  `cargo test --all-features`; docs with `-D warnings`; and the benchmark build CI runs at that
+  commit.
+- zruntime at the tip: 202 unit, 72 doc and 16 `compile_fail` tests with all features; 33 unit and
+  3 doc with `event` alone; 61, 19 and 10 with `lock` alone. Clippy is clean with each feature alone
+  and, with all of them, on the five other targets. 1.87.0 builds everything and passes the lock
+  suite. Miri passes the `lock` build's 61 unit and 29 doc tests. The six threaded lock tests
+  passed 50 runs in a row. The benchmarks build with `helper,broadcast,lock`, and with
+  `helper,broadcast` they build without the two that need the locks.
+- zbus, against a snapshot of the module, the suites of CI: `all-features` 550 passed, `default`
+  1, `zruntime` 510, `tokio` 265, `tokio-zruntime` 361, `external` 226, `wire` 163, 237, 163 and
+  233, with only the failures this container always has: `vsock_connect`, `vsock_p2p`,
+  `a_bus_connection_over_a_helper_process`, `unixexec_connection_async`, and `fdpass_systemd` where
+  CI does not skip it. Also every host clippy line of CI, nightly fmt, the Windows and macOS checks,
+  1.87.0, both doc builds, and `CI/forbidden-deps.sh` for the default, Tokio-only and external-only
+  builds. At the final pins, `all-features`, `zruntime`, `tokio`, `external`, the clippy lines and
+  forbidden-deps again, with the same results.
+
+### Reviews
+
+- The advisor reviewed this plan before any code, adding the suites of Task 7, the commit
+  boundaries, Decision 4's wording, the stale `book/src/connection.md` line and the Miri and
+  stress checks, and at the end suggested measuring the threaded tests on a busy machine, which
+  found the yield above.
+- An Opus review of the module found no soundness bug and no lost wake-up. It found tests that
+  hung instead of failing, the listen-then-recheck and waking every reader barely tested, the
+  `SAFETY` comments' wording, doc inaccuracies and repetition, and the false `AGENTS.md` claim; all
+  fixed.
+- An Opus review of the tests-and-benchmarks commit found the lost coverage of the pass-on wake,
+  the threads' staggered start and the commit message's gaps; all fixed.
+- An Opus review of the zbus port found the missing `tracing` and two doc nits; fixed.
+- A final Fable review of both PRs found them ready to merge; of its three nits, one more feature
+  list presented as complete was fixed, and the other two are follow-ups below.
+
+## Follow-ups (from the reviews)
+
+- A `RwLockWriteGuard::downgrade` needs `where T: Sync` on the method: the write guard is `Send`
+  where `T` is `Send` only because it cannot become a read guard. Likewise, a Tokio-style
+  `MutexGuard::mutex()` accessor would need the guard's `Sync` to require `T: Send`.
+- `Display` for the guards.
+- `RwLock::write` takes the state's mutex three times on its uncontended path (counting itself
+  waiting, taking the lock, and uncounting itself); one pass could do all three.
+- A write guard's release wakes every reader held back even while other writers wait, which then
+  find the lock taken and wait again; it could wake them only once no writer waits.
