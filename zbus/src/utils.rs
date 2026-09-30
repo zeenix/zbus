@@ -93,7 +93,7 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
                 .enable_io()
                 .enable_time()
                 .build()
-                .expect("launch of single-threaded tokio runtime")
+                .expect("launch of tokio runtime")
         })
         .block_on(future)
 }
