@@ -48,6 +48,7 @@ comms = [
     # Without `dep:zruntime`, Cargo would also make `zruntime` a feature of zbus.
     "dep:zruntime",
     "zruntime/broadcast",
+    "zruntime/lock",
     "dep:async-trait",
     "dep:async-recursion",
     "dep:rustix",
@@ -105,8 +106,10 @@ async-trait = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 winnow.workspace = true
 
-# `comms` builds zbus's own notifications, locks and broadcast channels on zruntime's `event` and
-# `broadcast` features alone; the `default-rt` feature turns zruntime's runtime on as well.
+# zbus's notifications are built on zruntime's `Event`, and its async locks and broadcast channels
+# come from zruntime, through its `event`, `lock` and `broadcast` features; the `default-rt`
+# feature turns zruntime's runtime on as well, and `tracing` its logging. A Tokio build uses
+# Tokio's locks instead.
 zruntime = { workspace = true, optional = true }
 
 # Wire-format impls and async-runtime backends.

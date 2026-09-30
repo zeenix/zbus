@@ -81,8 +81,8 @@ connection built while a Tokio runtime is current runs on it. Any other executor
 zruntime backend below as it is, with no integration needed: a connection built outside a
 `zbus::block_on` call is run by that backend's own helper thread. [`Builder::runtime`] is there for
 an application that wants to hand a connection a runtime of its own instead, not something every
-other executor needs. A connection's async locks are zbus's own, except on a Tokio build, where
-Tokio's locks stand in instead.
+other executor needs. A connection's async locks come from zruntime whichever runtime it runs on,
+except on a Tokio build, which uses Tokio's locks instead.
 
 ### Built-in backends
 
@@ -106,8 +106,8 @@ runs on the Tokio runtime that is current when it is built; building one from a 
 runtime fails with `Error::Unsupported`.
 
 A build with neither feature depends on no `tokio` crate. It still depends on the `zruntime`
-crate, whose `Event` zbus's own locks and notifications are built on, with its `event` feature
-alone, so none of zruntime's runtime is built. Every connection in the build needs an explicit
+crate, whose `Event`, async locks and broadcast channels zbus uses, but not with its `runtime`
+feature, so none of zruntime's runtime is built. Every connection in the build needs an explicit
 runtime, given through [`Builder::runtime`].
 
 ### Supplying your own runtime

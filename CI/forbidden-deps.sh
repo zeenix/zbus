@@ -4,11 +4,12 @@
 # reactor of its own: no build of zbus should link async-io, async-executor, async-task, blocking
 # or their private dependencies as a normal dependency, whether the default-rt feature, the tokio
 # feature, both or neither is on (`-e normal` already excludes dev-dependencies, so the test
-# suite's own use of async-io does not trip this). zbus builds its notifications, and its own
-# async locks where Tokio's do not stand in, on zruntime's `Event`, so every tree with the
-# `comms` feature has the `zruntime` crate in it, with its `event` feature always and its `runtime`
-# and `helper` features only where zbus's `default-rt` feature is on; it is expected there rather
-# than being on the forbidden list.
+# suite's own use of async-io does not trip this). zbus builds its notifications on zruntime's
+# `Event`, and gets its async locks (where Tokio's do not stand in) and broadcast channels from
+# zruntime too, so every tree with the `comms` feature has the `zruntime` crate in it, with its
+# `event`, `lock` and `broadcast` features always, its `runtime` and `helper` features only where
+# zbus's `default-rt` feature is on and its `tracing` feature only where zbus's `tracing` is; it
+# is expected there rather than being on the forbidden list.
 #
 # Usage: forbidden-deps.sh <label> [cargo tree arguments...]
 #

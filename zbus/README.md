@@ -139,9 +139,8 @@ connection a runtime of its own instead — any implementation of [`runtime::tra
 documents the full contract, including the handful of calls with no async form that go through its
 `spawn_blocking` — not something every other executor needs.
 
-zbus's async locks are its own; a build on zruntime or an external runtime needs no lock feature
-and pulls in no lock crate for them. A Tokio build uses Tokio's locks instead, so that build carries
-no second lock implementation.
+zbus's async locks come from zruntime; a build on zruntime or an external runtime needs no lock
+feature and pulls in no lock crate for them. A Tokio build uses Tokio's locks instead.
 
 `zbus::block_on` over a runtime of your own only works while that runtime's loop runs on another
 thread. A call made from the loop's own thread deadlocks: it waits on a connection that only makes
@@ -163,8 +162,8 @@ Tokio runtime is current on the thread that builds the connection, and zruntime 
 With only `tokio` (no `default-rt`), a connection must be built from a thread running a Tokio
 runtime. To leave the zruntime backend out of the build, disable default features and list what
 you use instead, e.g. `default-features = false, features = ["tokio", "proxy", "service"]`. The
-`zruntime` crate stays in the dependency tree, built with its `event` feature alone for the
-`Event` zbus's own types build on, so none of its runtime is built.
+`zruntime` crate stays in the dependency tree for the `Event` and broadcast channels zbus's own
+types build on, but none of its runtime is built.
 
 A program with no async runtime of its own drives the API from inside `zbus::block_on`, which
 with the `tokio` feature polls the future on a Tokio runtime of its own, so a connection built
