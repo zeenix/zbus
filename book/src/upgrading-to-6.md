@@ -697,11 +697,10 @@ run while the runtime runs them. The two built-in backends are implementations o
 picked by cargo feature, so this method is for the runtime your application already has. Nothing
 changes for connections built without `runtime`.
 
-zbus's own async locks are not part of the trait: 5.x takes them from the `async_lock` crate;
-6.0 has no dependency on it at all, building its locks itself, on zruntime's `Event`, except
-when the `tokio` feature is enabled, where Tokio's locks stand in instead. Neither choice needs
-a cargo feature of its own, so a build with `comms` but neither `default-rt` nor `tokio`
-pulls in no lock crate for them.
+zbus's async locks are not part of the trait: 5.x takes them from the `async-lock` crate; 6.0 has
+no dependency on it at all and takes them from zruntime, which it depends on anyway, or from Tokio
+when the `tokio` feature is enabled. Neither choice needs a cargo feature of its own, so a build
+with `comms` but neither `default-rt` nor `tokio` pulls in no lock crate for them.
 
 A runtime may also abort or drop a task it was given, so the connection no longer relies on its
 socket-reader task running to its end: however that task stops, `Connection::closed()` resolves,

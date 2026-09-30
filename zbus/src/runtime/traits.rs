@@ -10,10 +10,9 @@
 //! backends are implementations of these traits, and the polling-based runtime in zbus's
 //! integration tests is a worked example of the whole contract on a single thread.
 //!
-//! The async locks a connection holds are not part of the trait: they are zbus's own, built on
-//! zruntime's `Event`, so no build needs a feature for them, whichever runtime it runs on, nor
-//! pulls in a lock crate of its own. On a Tokio build, Tokio's locks stand in instead, so that
-//! build does not carry a second lock implementation.
+//! The async locks a connection holds are not part of the trait: they come from zruntime, so no
+//! build needs a feature for them, whichever runtime it runs on, nor pulls in a lock crate of its
+//! own. A Tokio build uses Tokio's locks instead.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
 //! [zruntime]: https://docs.rs/zruntime

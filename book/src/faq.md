@@ -220,8 +220,8 @@ features additive, so an application that relies on zruntime keeps working even 
 another crate in the workspace enables zbus's `tokio` feature. To leave the zruntime backend out
 of the build, disable default features and list what you use instead, e.g.
 `default-features = false, features = ["tokio", "proxy", "service"]`. The `zruntime` crate stays
-in the dependency tree, built with its `event` feature alone for the `Event` zbus's own types
-build on, so none of its runtime is built.
+in the dependency tree for the `Event` and broadcast channels zbus's own types build on, but none
+of its runtime is built.
 
 This per-connection selection only matters for a program that has an async runtime of its own. A
 program without one uses `zbus::block_on` instead. Without the `tokio` feature, that call and the
