@@ -1,16 +1,16 @@
 use std::{
     collections::HashMap,
     io::{self, ErrorKind},
-    num::NonZeroU32,
+    num::{NonZeroU32, NonZeroUsize},
     pin::Pin,
     sync::{Arc, Mutex as SyncMutex},
     task::{Context, Poll},
 };
 
-use async_broadcast::{Receiver, Sender, broadcast};
 use futures_core::Future;
 use futures_lite::Stream;
 use ordered_stream::OrderedFuture;
+use zruntime::broadcast::{Receiver, Sender, channel};
 
 use crate::{Error, Message, Result, message::Sequence};
 
@@ -23,7 +23,7 @@ impl PendingMethodCalls {
     pub fn register_call(&self, serial: NonZeroU32) -> PendingMethodCall {
         use std::collections::hash_map::Entry;
 
-        let (reply_sender, reply_receiver) = broadcast(1);
+        let (reply_sender, reply_receiver) = channel(NonZeroUsize::MIN);
         let closed_error = {
             let mut state = self.inner.lock().unwrap();
             if let Some(error) = &state.closed_error {

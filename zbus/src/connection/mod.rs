@@ -1,5 +1,4 @@
 //! Connection API.
-use async_broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, broadcast};
 use enumflags2::BitFlags;
 use futures_lite::StreamExt;
 use std::{
@@ -7,13 +6,17 @@ use std::{
     collections::HashMap,
     future::Future,
     io,
+    num::NonZeroUsize,
     sync::{
         Arc, OnceLock, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
-use zruntime::{Event, EventListener};
+use zruntime::{
+    Event, EventListener,
+    broadcast::{InactiveReceiver, Receiver, Sender as Broadcaster, channel},
+};
 
 #[cfg(feature = "service")]
 use crate::ObjectServer;
@@ -47,7 +50,7 @@ pub(crate) mod handshake;
 pub use handshake::AuthMechanism;
 use handshake::Authenticated;
 
-const DEFAULT_MAX_QUEUED: usize = 64;
+const DEFAULT_MAX_QUEUED: NonZeroUsize = NonZeroUsize::new(64).unwrap();
 
 /// Inner state shared by Connection and WeakConnection
 #[derive(Debug)]
@@ -914,12 +917,12 @@ impl Connection {
     }
 
     /// The capacity of the main (unfiltered) queue.
-    pub fn max_queued(&self) -> usize {
+    pub fn max_queued(&self) -> NonZeroUsize {
         self.inner.msg_receiver.capacity()
     }
 
     /// Set the capacity of the main (unfiltered) queue.
-    pub fn set_max_queued(&mut self, max: usize) {
+    pub fn set_max_queued(&mut self, max: NonZeroUsize) {
         self.inner.msg_receiver.clone().set_capacity(max);
     }
 
@@ -1071,7 +1074,7 @@ impl Connection {
     pub(crate) async fn add_match(
         &self,
         rule: OwnedMatchRule,
-        max_queued: Option<usize>,
+        max_queued: Option<NonZeroUsize>,
     ) -> Result<Receiver<Result<Message>>> {
         use std::collections::hash_map::Entry;
 
@@ -1088,7 +1091,7 @@ impl Connection {
         match subscriptions.entry(rule.clone()) {
             Entry::Vacant(e) => {
                 let max_queued = max_queued.unwrap_or(DEFAULT_MAX_QUEUED);
-                let (sender, mut receiver) = broadcast(max_queued);
+                let (sender, mut receiver) = channel(max_queued);
                 receiver.set_await_active(false);
                 if self.is_bus() && msg_type == Type::Signal {
                     self.call_method(
@@ -1184,7 +1187,7 @@ impl Connection {
 
         macro_rules! create_msg_broadcast_channel {
             ($size:expr) => {{
-                let (msg_sender, msg_receiver) = broadcast($size);
+                let (msg_sender, msg_receiver) = channel($size);
                 let mut msg_receiver = msg_receiver.deactivate();
                 msg_receiver.set_await_active(false);
 

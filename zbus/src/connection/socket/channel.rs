@@ -1,6 +1,8 @@
 use std::io;
 
-use async_broadcast::{Receiver, Sender, broadcast};
+use std::num::NonZeroUsize;
+
+use zruntime::broadcast::{Receiver, Sender, channel};
 
 use crate::{Message, conn::AuthMechanism, fdo::ConnectionCredentials};
 
@@ -22,8 +24,8 @@ impl Channel {
     /// Use [`crate::connection::Builder::authenticated_socket`] to create `Connection` instances
     /// from each channel.
     pub fn pair() -> (Self, Self) {
-        let (tx1, rx1) = broadcast(CHANNEL_CAPACITY);
-        let (tx2, rx2) = broadcast(CHANNEL_CAPACITY);
+        let (tx1, rx1) = channel(CHANNEL_CAPACITY);
+        let (tx2, rx2) = channel(CHANNEL_CAPACITY);
 
         (
             Self {
@@ -93,7 +95,7 @@ pub struct Writer(Sender<Message>);
 impl super::WriteHalf for Writer {
     async fn send_message(&mut self, msg: &Message) -> crate::Result<()> {
         self.0
-            .broadcast_direct(msg.clone())
+            .broadcast(msg.clone())
             .await
             .map_err(|e| {
                 crate::Error::InputOutput(io::Error::new(io::ErrorKind::BrokenPipe, e).into())
@@ -141,4 +143,4 @@ async fn self_credentials() -> io::Result<ConnectionCredentials> {
     Ok(creds)
 }
 
-const CHANNEL_CAPACITY: usize = 32;
+const CHANNEL_CAPACITY: NonZeroUsize = NonZeroUsize::new(32).unwrap();

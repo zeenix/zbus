@@ -16,6 +16,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt,
     future::Future,
+    num::NonZeroUsize,
     ops::Deref,
     pin::Pin,
     sync::{Arc, OnceLock, RwLock, RwLockReadGuard},
@@ -566,7 +567,7 @@ impl<'a> ProxyInner<'a> {
     }
 }
 
-const MAX_NAME_OWNER_CHANGED_SIGNALS_QUEUED: usize = 8;
+const MAX_NAME_OWNER_CHANGED_SIGNALS_QUEUED: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
 impl<'a> Proxy<'a> {
     /// Create a new `Proxy` for the given destination/path/interface.
@@ -1488,7 +1489,10 @@ mod tests {
             .build()
             .await?;
 
-        let client_conn = connection::Builder::session().max_queued(1).build().await?;
+        let client_conn = connection::Builder::session()
+            .max_queued(NonZeroUsize::new(1).unwrap())
+            .build()
+            .await?;
 
         let test_proxy = TestProxy::new(&client_conn).await?;
         let test_prop_proxy = PropertiesProxy::builder(&client_conn)

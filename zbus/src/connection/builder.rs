@@ -1,10 +1,10 @@
-use async_broadcast::Receiver as ActiveReceiver;
 use enumflags2::BitFlags;
 #[cfg(feature = "service")]
 use std::collections::HashMap;
-use std::{collections::HashSet, mem, vec};
+use std::{collections::HashSet, mem, num::NonZeroUsize, vec};
 #[cfg(feature = "service")]
 use zruntime::Event;
+use zruntime::broadcast::Receiver as ActiveReceiver;
 
 // The stream constructors take an owned socket of the platform's own type, whichever runtime the
 // connection ends up on.
@@ -39,11 +39,10 @@ use crate::{
 };
 
 use super::{
+    DEFAULT_MAX_QUEUED,
     handshake::{AuthMechanism, Authenticated},
     socket::{BoxedSplit, ReadHalf, Split, WriteHalf},
 };
-
-const DEFAULT_MAX_QUEUED: usize = 64;
 
 #[derive(Debug)]
 enum Target {
@@ -89,7 +88,7 @@ type Interfaces<'a> = HashMap<ObjectPath<'a>, HashMap<InterfaceName<'static>, Ar
 pub struct Builder<'a> {
     // `None` only when a constructor recorded an error instead of working out a target.
     target: Option<Target>,
-    max_queued: Option<usize>,
+    max_queued: Option<NonZeroUsize>,
     // This is only set for p2p server case or pre-authenticated sockets.
     guid: Option<Guid<'a>>,
     #[cfg(feature = "p2p")]
@@ -341,16 +340,17 @@ impl<'a> Builder<'a> {
     /// # Example
     ///
     /// ```
-    /// # use std::error::Error;
+    /// # use std::{error::Error, num::NonZeroUsize};
     /// # use zbus::connection::Builder;
     /// # use zbus::block_on;
     /// #
     /// # block_on(async {
+    /// let max_queued = NonZeroUsize::new(30).unwrap();
     /// let conn = Builder::session()
-    ///     .max_queued(30)
+    ///     .max_queued(max_queued)
     ///     .build()
     ///     .await?;
-    /// assert_eq!(conn.max_queued(), 30);
+    /// assert_eq!(conn.max_queued(), max_queued);
     ///
     /// #     Ok::<(), zbus::Error>(())
     /// # }).unwrap();
@@ -358,7 +358,7 @@ impl<'a> Builder<'a> {
     /// // Do something useful with `conn`..
     /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
     /// ```
-    pub fn max_queued(mut self, max: usize) -> Self {
+    pub fn max_queued(mut self, max: NonZeroUsize) -> Self {
         self.max_queued = Some(max);
 
         self

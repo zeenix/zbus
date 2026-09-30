@@ -92,18 +92,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-broadcast"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532"
-dependencies = [
- "event-listener",
- "event-listener-strategy",
- "futures-core",
- "pin-project-lite",
-]
-
-[[package]]
 name = "async-executor"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -507,26 +495,6 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys",
-]
-
-[[package]]
-name = "event-listener"
-version = "5.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
-dependencies = [
- "parking",
- "pin-project-lite",
-]
-
-[[package]]
-name = "event-listener-strategy"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
-dependencies = [
- "event-listener",
- "pin-project-lite",
 ]
 
 [[package]]
@@ -2034,7 +2002,6 @@ name = "zbus"
 version = "6.0.0"
 dependencies = [
  "arrayvec",
- "async-broadcast",
  "async-executor",
  "async-io",
  "async-recursion",
@@ -2230,8 +2197,9 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/zeenix/zruntime?rev=d47459ba1f633fa3147902a5d71eb05c0cf84cac#d47459ba1f633fa3147902a5d71eb05c0cf84cac"
+source = "git+https://github.com/z-galaxy/zruntime?rev=901512105ffe360b60bf3b73f29cbd96829ad108#901512105ffe360b60bf3b73f29cbd96829ad108"
 dependencies = [
+ "futures-core",
  "rustix",
  "tracing",
  "windows-sys",
