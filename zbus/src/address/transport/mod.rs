@@ -71,7 +71,6 @@ pub enum Transport {
 }
 
 impl Transport {
-    #[cfg_attr(any(unix, windows), async_recursion::async_recursion)]
     pub(super) async fn connect(self, address: Address, runtime: &Runtime) -> Result<Stream> {
         match self {
             Transport::Unix(unix) => unix.connect(&address, runtime).await.map(Stream::Unix),
@@ -95,22 +94,28 @@ impl Transport {
                 // Reading the address takes a named Win32 mutex with an unbounded wait, so this
                 // runs off the calling task rather than risking it blocking on another process.
                 None => {
-                    runtime
-                        .spawn_blocking(autolaunch_bus_address)
-                        .await?
-                        .connect(runtime)
-                        .await
+                    let address = runtime.spawn_blocking(autolaunch_bus_address).await?;
+                    // Boxed, as the future of an `async fn` that calls itself would otherwise
+                    // hold itself.
+                    Box::pin(address.connect(runtime)).await
                 }
             },
 
             #[cfg(target_os = "macos")]
             Transport::Launchd(launchd) => {
                 let transport = launchd.bus_address(runtime).await?;
-                transport.connect(address, runtime).await
+                // Boxed, as the future of an `async fn` that calls itself would otherwise hold
+                // itself.
+                Box::pin(transport.connect(address, runtime)).await
             }
 
             #[cfg(all(unix, feature = "ibus"))]
-            Transport::Ibus(ibus) => ibus.bus_address(runtime).await?.connect(runtime).await,
+            Transport::Ibus(ibus) => {
+                let address = ibus.bus_address(runtime).await?;
+                // Boxed, as the future of an `async fn` that calls itself would otherwise hold
+                // itself.
+                Box::pin(address.connect(runtime)).await
+            }
         }
     }
 

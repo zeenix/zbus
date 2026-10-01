@@ -124,17 +124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-recursion"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "async-task"
 version = "4.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2004,7 +1993,6 @@ dependencies = [
  "arrayvec",
  "async-executor",
  "async-io",
- "async-recursion",
  "async-task",
  "async-trait",
  "camino",
@@ -2197,7 +2185,7 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/z-galaxy/zruntime?rev=c1c44e67cea14165691679489e51053aafe82894#c1c44e67cea14165691679489e51053aafe82894"
+source = "git+https://github.com/z-galaxy/zruntime?rev=38851561c8f52aeef3ea5ef397d6c1e89764be94#38851561c8f52aeef3ea5ef397d6c1e89764be94"
 dependencies = [
  "futures-core",
  "rustix",

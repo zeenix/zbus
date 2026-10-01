@@ -334,7 +334,7 @@ enum Enum<'s> {
 
 let e = Enum::Variant3 {
     f1: 42,
-    f2: i64::max_value(),
+    f2: i64::MAX,
     f3: "hello",
 };
 let ctxt = Context::new(LE, 0);

@@ -54,7 +54,6 @@ impl Address {
         &self.transport
     }
 
-    #[cfg_attr(any(target_os = "macos", windows), async_recursion::async_recursion)]
     pub(crate) async fn connect(self, runtime: &Runtime) -> Result<Stream> {
         // FIXME: Avoid the unconditional clone of the whole `Address`.
         let address = self.clone();

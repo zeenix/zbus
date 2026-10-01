@@ -37,7 +37,7 @@ use crate::Fd;
 /// use zbus::{Value, wire::{LE, serialized::Context, to_bytes}};
 ///
 /// // Create a Value from an i16
-/// let v = Value::new(i16::max_value());
+/// let v = Value::new(i16::MAX);
 ///
 /// // Encode it
 /// let ctxt = Context::new(LE, 0);
@@ -47,7 +47,7 @@ use crate::Fd;
 /// let v: Value = encoding.deserialize().unwrap().0;
 ///
 /// // Check everything is as expected
-/// assert_eq!(i16::try_from(&v).unwrap(), i16::max_value());
+/// assert_eq!(i16::try_from(&v).unwrap(), i16::MAX);
 /// ```
 ///
 /// Now let's try a more complicated example:
@@ -57,7 +57,7 @@ use crate::Fd;
 /// use zbus::{Str, Structure, Value};
 ///
 /// // Create a Value from a tuple this time
-/// let v = Value::new((i16::max_value(), "hello", true));
+/// let v = Value::new((i16::MAX, "hello", true));
 ///
 /// // Same drill as previous example
 /// let ctxt = Context::new(LE, 0);
@@ -68,7 +68,7 @@ use crate::Fd;
 /// let s = Structure::try_from(v).unwrap();
 /// assert_eq!(
 ///     <(i16, Str, bool)>::try_from(s).unwrap(),
-///     (i16::max_value(), Str::from("hello"), true),
+///     (i16::MAX, Str::from("hello"), true),
 /// );
 /// ```
 ///
