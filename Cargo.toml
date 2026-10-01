@@ -123,5 +123,5 @@ windows-sys = { version = "0.61", features = [
 [workspace.dependencies.zruntime]
 version = "0.1.0"
 git = "https://github.com/z-galaxy/zruntime"
-rev = "c1c44e67cea14165691679489e51053aafe82894"
+rev = "a6492505068f11ad53e5b721e68cc04b037cbb85"
 default-features = false
