@@ -467,7 +467,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 /// assert_eq!(Struct::SIGNATURE, "(qxs)");
 /// let s = Struct {
 ///     field1: 42,
-///     field2: i64::max_value(),
+///     field2: i64::MAX,
 ///     field3: "hello",
 /// };
 /// let ctxt = Context::new(LE, 0);
@@ -558,7 +558,7 @@ pub fn derive_dbus_error(input: TokenStream) -> TokenStream {
 /// assert_eq!(Struct::SIGNATURE, "a{sv}");
 /// let s = Struct {
 ///     field1: 42,
-///     field2: i64::max_value(),
+///     field2: i64::MAX,
 ///     field3: "hello".to_string(),
 /// };
 /// let ctxt = Context::new(LE, 0);
