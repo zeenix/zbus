@@ -50,7 +50,6 @@ comms = [
     "zruntime/broadcast",
     "zruntime/lock",
     "dep:async-trait",
-    "dep:async-recursion",
     "dep:rustix",
     "dep:libc",
     "dep:windows-sys",
@@ -141,11 +140,6 @@ uds_windows = { workspace = true, optional = true }
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, optional = true }
 libc = { workspace = true, optional = true }
-async-recursion = { workspace = true, optional = true }
-
-[target.'cfg(windows)'.dependencies.async-recursion]
-workspace = true
-optional = true
 
 [dev-dependencies]
 zbus_xml.workspace = true
