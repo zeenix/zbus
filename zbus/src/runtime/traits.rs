@@ -25,7 +25,7 @@ use std::{
     time::Duration,
 };
 
-use super::{Interest, IoSource, blocking_thread};
+use super::{Interest, IoSource};
 
 /// An async runtime, as seen by a connection.
 pub trait Runtime: Send + Sync + 'static {
@@ -119,7 +119,7 @@ pub trait Runtime: Send + Sync + 'static {
     where
         T: Send + 'static,
     {
-        blocking_thread::run(work)
+        Box::pin(zruntime::unblock(work))
     }
 }
 

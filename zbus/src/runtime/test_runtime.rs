@@ -18,7 +18,7 @@ use std::{
 use async_executor::Executor;
 use async_io::{Async, Timer};
 
-use super::{Interest, IoSource, Runtime, blocking_thread, traits};
+use super::{Interest, IoSource, Runtime, traits};
 
 /// Runs `body` once under every runtime this build can make.
 ///
@@ -160,7 +160,7 @@ impl traits::Runtime for TestRuntime {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) += 1;
 
-        blocking_thread::run(work)
+        Box::pin(zruntime::unblock(work))
     }
 }
 

@@ -5,11 +5,12 @@
 # or their private dependencies as a normal dependency, whether the default-rt feature, the tokio
 # feature, both or neither is on (`-e normal` already excludes dev-dependencies, so the test
 # suite's own use of async-io does not trip this). zbus builds its notifications on zruntime's
-# `Event`, and gets its async locks (where Tokio's do not stand in) and broadcast channels from
-# zruntime too, so every tree with the `comms` feature has the `zruntime` crate in it, with its
-# `event`, `lock` and `broadcast` features always, its `runtime` and `helper` features only where
-# zbus's `default-rt` feature is on and its `tracing` feature only where zbus's `tracing` is; it
-# is expected there rather than being on the forbidden list.
+# `Event`, and gets its async locks (where Tokio's do not stand in), broadcast channels and the
+# thread its default blocking-work hook runs on from zruntime too, so every tree with the `comms`
+# feature has the `zruntime` crate in it, with its `event`, `lock`, `broadcast` and `unblock`
+# features always, its `runtime` and `helper` features only where zbus's `default-rt` feature is
+# on and its `tracing` feature only where zbus's `tracing` is; it is expected there rather than
+# being on the forbidden list.
 #
 # Usage: forbidden-deps.sh <label> [cargo tree arguments...]
 #

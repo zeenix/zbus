@@ -106,9 +106,10 @@ runs on the Tokio runtime that is current when it is built; building one from a 
 runtime fails with `Error::Unsupported`.
 
 A build with neither feature depends on no `tokio` crate. It still depends on the `zruntime`
-crate, whose `Event`, async locks and broadcast channels zbus uses, but not with its `runtime`
-feature, so none of zruntime's runtime is built. Every connection in the build needs an explicit
-runtime, given through [`Builder::runtime`].
+crate, whose `Event`, async locks, broadcast channels and `unblock` (the thread that blocking work
+runs on by default) zbus uses, but not with its `runtime` feature, so none of zruntime's runtime is
+built. Every connection in the build needs an explicit runtime, given through
+[`Builder::runtime`].
 
 ### Supplying your own runtime
 

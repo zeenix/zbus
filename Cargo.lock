@@ -2185,7 +2185,7 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/z-galaxy/zruntime?rev=38851561c8f52aeef3ea5ef397d6c1e89764be94#38851561c8f52aeef3ea5ef397d6c1e89764be94"
+source = "git+https://github.com/z-galaxy/zruntime?rev=1ef1a0cfbe0d4790c0230bbb6792885213da9e2a#1ef1a0cfbe0d4790c0230bbb6792885213da9e2a"
 dependencies = [
  "futures-core",
  "rustix",

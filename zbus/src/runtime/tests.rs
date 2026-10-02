@@ -171,7 +171,7 @@ fn the_default_blocking_hook_runs_the_work_on_a_short_lived_thread() {
         runtime.spawn_blocking(|| std::thread::current().name().map(String::from)),
     );
 
-    assert_eq!(name.as_deref(), Some("zbus blocking work"));
+    assert_eq!(name.as_deref(), Some("zruntime blocking work"));
     // The thread is the hook's own, so it is gone once the work is done.
     #[cfg(target_os = "linux")]
     while blocking_threads() > before {
@@ -205,7 +205,8 @@ fn blocking_work_runs_even_when_its_future_is_dropped() {
 
 /// The threads of this process that are running work of the default blocking hook.
 ///
-/// Linux truncates a thread's name to fifteen bytes, leaving only the start of it to match on.
+/// Linux truncates a thread's name to fifteen bytes, leaving only the start of it to match on:
+/// `zruntime blocki`, of the `zruntime blocking work` that zruntime names these threads.
 #[cfg(target_os = "linux")]
 pub(super) fn blocking_threads() -> usize {
     std::fs::read_dir("/proc/self/task")
@@ -213,7 +214,7 @@ pub(super) fn blocking_threads() -> usize {
         .filter_map(Result::ok)
         .filter(|thread| {
             std::fs::read_to_string(thread.path().join("comm"))
-                .is_ok_and(|comm| comm.trim_end().starts_with("zbus blocking"))
+                .is_ok_and(|comm| comm.trim_end().starts_with("zruntime blocki"))
         })
         .count()
 }
