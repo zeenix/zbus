@@ -23,7 +23,10 @@ rust-version = "1.87"
 license = "MIT"
 repository = "https://github.com/z-galaxy/zbus/"
 
+# A single codegen unit, so that how the compiler splits a crate into units, and so what it
+# inlines, cannot shift the numbers when unrelated code changes.
 [profile.bench]
+codegen-units = 1
 debug = true
 strip = "none"
 
