@@ -19,7 +19,6 @@ mod io_source;
 pub use io_source::{Interest, IoSource};
 mod async_drop;
 pub use async_drop::AsyncDrop;
-mod blocking_thread;
 #[cfg(feature = "default-rt")]
 pub(crate) mod zruntime;
 #[cfg(feature = "default-rt")]

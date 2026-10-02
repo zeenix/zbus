@@ -49,6 +49,7 @@ comms = [
     "dep:zruntime",
     "zruntime/broadcast",
     "zruntime/lock",
+    "zruntime/unblock",
     "dep:async-trait",
     "dep:rustix",
     "dep:libc",
@@ -105,10 +106,10 @@ async-trait = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 winnow.workspace = true
 
-# zbus's notifications are built on zruntime's `Event`, and its async locks and broadcast channels
-# come from zruntime, through its `event`, `lock` and `broadcast` features; the `default-rt`
-# feature turns zruntime's runtime on as well, and `tracing` its logging. A Tokio build uses
-# Tokio's locks instead.
+# zbus's notifications are built on zruntime's `Event`, and its async locks, broadcast channels and
+# the thread its default blocking-work hook runs on come from zruntime, through its `event`, `lock`,
+# `broadcast` and `unblock` features; the `default-rt` feature turns zruntime's runtime on as well,
+# and `tracing` its logging. A Tokio build uses Tokio's locks instead.
 zruntime = { workspace = true, optional = true }
 
 # Wire-format impls and async-runtime backends.
