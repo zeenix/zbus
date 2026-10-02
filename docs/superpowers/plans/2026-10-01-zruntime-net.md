@@ -259,3 +259,146 @@ TCP; UDP; unix.
 - File descriptors and peer credentials over a unix socket (zbus has both, runtime-agnostic).
 - Constructors that take `SharedRuntime::current()` (the `helper` feature).
 - A public generic `Async<T>` over any non-blocking source.
+
+## Report
+
+### Commits
+
+zruntime (`zeenix/zruntime`, `ccr-b8770982-7qin80`, on `upstream/main` at `c3c6954`), merged into
+`main` as `1ef1a0c` by z-galaxy/zruntime#12:
+
+- `277ac19` ✨ Add unblock, moved from zbus
+- `5793cab` ✨ Add async TCP sockets
+- `c5bf70c` ✨ Add an async UDP socket
+- `5962ffb` ✨ Add async unix-domain sockets
+
+zbus (`zeenix/zbus`, `ccr-b8770982-7qin80`, on `upstream/main` at `623e624`), with zruntime pinned
+to its `main` at `1ef1a0c`:
+
+- `2845603` 📝 Add the plan for async sockets in zruntime
+- `e2dc0c1` ♻️ zb: Take the blocking-work thread from zruntime
+- this report
+
+### Deviations from the plan
+
+- **Addresses only (Decision 4, at the maintainer's direction):** halfway through, the sockets
+  were changed to take socket addresses (`impl Into<SocketAddr>`) as async-io's do, with no
+  host-name lookup and no `ToSocketAddrs` trait; the plan was amended to say so. Binding a TCP
+  listener or a UDP socket, and connecting a UDP socket, then need no wait, so those are plain
+  functions. tokio and smol (async-net) both look names up on a blocking pool; that is now a
+  follow-up. `unblock` still moved from zbus, as a change of its own that the sockets do not use:
+  it is the one public addition to zruntime beyond `net`, made for the move.
+- **Decision 6's reasoning was wrong:** running out of local ports fails a TCP connect with
+  `EADDRNOTAVAIL`, not `EAGAIN`, at once whether the socket blocks or not. Only the unix connect's
+  retry rests on `EAGAIN`, and it stands; the wrong paragraph in `connect.rs`'s docs went.
+- **Converting through std's owned socket:** socket2 converts a `Socket` into std's unix socket
+  types only with its `all` feature, so `--features unix` alone did not build (tests built only
+  because the socket2 dev-dependency has `all`). The connect converts through
+  `OwnedFd`/`OwnedSocket`, which every std socket takes, instead of enabling `all`.
+- **A TCP stream closes once:** on FreeBSD and NetBSD, a second `shutdown(SHUT_WR)` once the peer
+  has acknowledged the first (state `FIN_WAIT_2`) has `tcp_usrclosed` call `soisdisconnected`,
+  which ends the read half too (Linux and OpenBSD ignore it; macOS answers `ENOTCONN`).
+  `TcpStream` keeps a flag (an `AtomicBool`, since a `&TcpStream` closes too and a shared stream
+  is `Sync`), set before the syscall and never cleared, so that a second close does nothing, which
+  keeps the docs' promise that closing again is fine. No CI platform that runs the tests needs it,
+  so its test guards FreeBSD and NetBSD alone. A unix stream needs no such flag.
+- **`SIGPIPE` on Apple's platforms and the BSDs:** Apple's platforms have no `MSG_NOSIGNAL`, and
+  std's `UnixStream::pair` sets no `SO_NOSIGPIPE`, so every `from_std`, which all the unix
+  constructors and TCP's `accept` go through, sets it there (the `tcp` feature turns on
+  `rustix`'s `net` feature for it). A unix datagram socket's `send` goes through `send(2)` with
+  `MSG_NOSIGNAL` too: std's is a plain `write(2)`, which raises `SIGPIPE` on the BSDs and
+  Apple's platforms after a `shutdown(Write)`.
+- **A unix datagram `send_to` retries on a timer:** Linux reports a socket that sends to an
+  address of its choosing as writable whether or not the receiver has room, so a `send_to` that
+  waited for writability spun a core while the receiver's queue was full (12,500 polls in 100 ms,
+  measured). It retries every 20 ms on the runtime's timer instead; a connected socket's `send`
+  waits for room as any write does.
+- **The full-backlog wait is Linux's and Android's:** FreeBSD and macOS refuse a connect to a full
+  listener at once, blocking or not, so the docs say the wait happens on Linux and Android.
+- **`UnixStream::connect` refuses a path with a zero byte in it,** as std's constructors do:
+  `SockAddr::unix` would take a leading zero byte for a name in Linux's abstract namespace and
+  cut the path short at an inner one.
+- **Accept errors repeat at once:** an error that leaves the connection queued, such as `EMFILE`,
+  comes back on the next poll for as long as the connection stays queued, so the docs of `accept`,
+  `incoming` and `Incoming` ask a caller that goes on after an error to back off first. They had
+  said the opposite.
+- **Tests:** the listener with room for one connection listens with a backlog of 0, which is a
+  queue of one on Linux; the pending-connect and full-backlog tests run on Linux and Android only,
+  since other platforms admit more than the backlog asks. Beyond the plan: poll counts that catch a
+  wait for the wrong readiness, a write that waits for the peer to read, a connect that fails after
+  waiting, a close after a reset, and auto-trait checks. The UDP IPv6 options test skips itself
+  where IPv6 is missing, as in this container, so its body has not run here.
+- **The refused port is held by a connected socket:** the refused-connection test's port was held
+  by a socket that was only bound, and Linux and Windows answer a connection attempt at such a
+  socket with a reset. macOS's kernel drops it without an answer instead (`tcp_input` drops a
+  segment for a PCB in `TCPS_CLOSED`), so on CI's first run on macOS the connect timed out. The
+  port is now held by a socket that is also connected, to a listener the test keeps, so that an
+  attempt at the port matches no socket, which all three answer with a reset.
+- **Commits:** the review fixes went into the commits they fix, as did the fix for the refused
+  port, which rewrote the branch after it had been pushed; zbus's pin moved to the new tip each
+  time. Both branches were then rebased on the latest `main`, which builds the benchmarks with a
+  single codegen unit, so that CodSpeed compares them with what they land on. Once
+  z-galaxy/zruntime#12 was merged, zbus's pin moved to zruntime's `main`.
+
+### Verification
+
+- zruntime, each commit alone: nightly fmt; every feature alone (`runtime`, `event`, `broadcast`,
+  `lock`, `unblock`, and the socket features each commit has) with `-D warnings`, and `unix` alone
+  on Windows; clippy (`--all-targets --all-features`, `-D warnings`) on Linux, Windows, macOS,
+  FreeBSD, NetBSD and Android; `cargo test --all-features` under `-D warnings`, and the commit's
+  own feature alone; docs with `-D warnings`, with all features and with the commit's feature
+  alone; 1.87.0 on all six targets. Clippy and `cargo test --all-features` ran with Rust 1.99, the
+  stable release CI uses. Miri on `unblock`, the locks and the broadcast channel; the socket tests
+  10 times in a row at the tip, and 20 times per family by their authors, also under load; the
+  refused-connection test 40 times in a row once its port was held by a connected socket.
+- CI's first run on z-galaxy/zruntime#12 passed on every job and platform but for the tests on
+  macOS, where the refused-connection test failed as described under the deviations.
+- Mutation runs by the agents that wrote the code: 15 for TCP, 34 for UDP, 33 for unix, each
+  caught by the tests but for these: a UDP send waiting for the wrong readiness (a send on
+  loopback never waits), unix `poll_close`'s `NotConnected` arm (BSD only), and `SEND_FLAGS`
+  emptied (the test harness ignores `SIGPIPE`; checked by hand with `-Zon-broken-pipe=kill`: the
+  test process is then killed, at 1.87.0 too, which is why unix writes do not go through std).
+- zbus: the suites of its CI under `dbus-run-session`, all features, `default-rt`, Tokio,
+  Tokio with `default-rt`, external, the wire builds, docs, clippy, nightly fmt, MSRV and
+  `CI/forbidden-deps.sh`, with only the failures this container always has (`vsock_connect`,
+  `vsock_p2p`, `a_bus_connection_over_a_helper_process`, `unixexec_connection_async`,
+  `fdpass_systemd`), each of which fails the same way at the base. Against the final pin: the
+  build with all features and with `comms` alone, clippy, the runtime tests (the default
+  blocking hook's included) and `CI/forbidden-deps.sh` for its three builds. CI's first run on
+  z-galaxy/zbus#1993, at the pin before the refused-port fix, passed on every job.
+
+### Reviews
+
+- The advisor reviewed the plan before any code (the MSRV and `--locked` constraints, accepted
+  sockets made non-blocking, Linux-only backlog tests, IPv6-free tests, the per-feature commits)
+  and was consulted on host-name lookup.
+- An Opus review of `unblock` and TCP found no soundness or wake-up bug, and found the accept-error
+  docs, the second close on the BSDs, the `EAGAIN` claim, two tests that did not pin what they
+  claimed, and nits; all fixed.
+- A second Opus review, of the fixes, UDP and unix, found the unix `send_to` spin and the
+  `SIGPIPE` gaps above, the TCP close flag's ordering and reset (racy, and wrong on FreeBSD,
+  where a failed shutdown has shut the write half already), the unix accept docs still in their
+  old wording, the backlog wait claimed for every platform, three UDP doc points (a too-long
+  datagram on Windows, datagrams queued before `connect`, Windows' multicast loop), the IPv6 test
+  skipping itself on any error, and the TCP fixes not carried to the unix family; all fixed, each
+  in the commit it belongs to.
+
+## Follow-ups (from the work and the reviews)
+
+- Host names: a `ToSocketAddrs` of zruntime's own that looks names up through `unblock`, and
+  connecting to the first of several addresses.
+- Windows: the poller reports a socket in `select`'s except set as readable and writable both, and
+  urgent (out-of-band) TCP data lands there with no error to read, so a waiting reader may spin
+  while such data is pending; `SO_OOBINLINE` on the sockets `net` makes would avoid it. Untested.
+- Windows: what `shutdown` reports after a reset is unknown; if it is not `NotConnected`, a close
+  after a reset fails there where it succeeds on Linux.
+- `unblock`'s hand-over wakes the task with its lock held, which deadlocks an executor whose
+  `wake` polls the task inline; a comment carried over from zbus assumes none does.
+- A `SIGPIPE` regression test needs a test binary that restores the default handler
+  (`harness = false`).
+- From the plan: `Clone` or owned split halves, `into_std`, vectored writes with `MSG_NOSIGNAL`,
+  unix sockets on Windows, abstract-namespace and `*_addr` constructors, file descriptors and peer
+  credentials over a unix socket, constructors that take `SharedRuntime::current()`, a generic
+  `Async<T>`.
+- A build with `unblock` alone has no crate-level documentation (the README is the crate doc only
+  with `runtime`, `event-only.md` only with `event`).
