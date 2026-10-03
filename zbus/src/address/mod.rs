@@ -54,10 +54,8 @@ impl Address {
         &self.transport
     }
 
-    pub(crate) async fn connect(self, runtime: &Runtime) -> Result<Stream> {
-        // FIXME: Avoid the unconditional clone of the whole `Address`.
-        let address = self.clone();
-        self.transport.connect(address, runtime).await
+    pub(crate) async fn connect(&self, runtime: &Runtime) -> Result<Stream> {
+        self.transport.connect(self, runtime).await
     }
 
     /// Get the address for the session socket respecting the `DBUS_SESSION_BUS_ADDRESS` environment
@@ -431,7 +429,7 @@ mod tests {
         let addr = Address::from_str(&format!("tcp:host=localhost,port={port}")).unwrap();
 
         under_every_runtime(|runtime| {
-            let addr = addr.clone();
+            let addr = &addr;
 
             async move {
                 addr.connect(&runtime).await.unwrap();
@@ -456,7 +454,7 @@ mod tests {
         let addr = Address::from_str(&format!("unix:abstract={name}")).unwrap();
 
         under_every_runtime(|runtime| {
-            let addr = addr.clone();
+            let addr = &addr;
             let listener = &listener;
 
             async move {
@@ -498,7 +496,7 @@ mod tests {
         .unwrap();
 
         under_every_runtime(|runtime| {
-            let addr = addr.clone();
+            let addr = &addr;
             let listener = &listener;
 
             async move {

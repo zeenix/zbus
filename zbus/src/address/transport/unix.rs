@@ -43,7 +43,7 @@ impl Unix {
     }
 
     /// Connects to the socket this address names.
-    pub(super) async fn connect(self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
+    pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
         // Tokio has no unix socket on Windows and no way to watch one a connection owns, so a
         // Tokio connection there has nothing to reach this address with.
         #[cfg(all(windows, feature = "tokio"))]
@@ -51,10 +51,10 @@ impl Unix {
             return Err(Error::Unsupported);
         }
 
-        let socket_address = match self.take_path() {
+        let socket_address = match self.path() {
             UnixSocket::File(path) => SockAddr::unix(path)?,
             #[cfg(target_os = "linux")]
-            UnixSocket::Abstract(name) => SockAddr::unix(abstract_path(&name))?,
+            UnixSocket::Abstract(name) => SockAddr::unix(abstract_path(name))?,
             // A directory is where a server puts a socket of its own, not something to connect
             // to.
             UnixSocket::Dir(_) | UnixSocket::TmpDir(_) => return Err(Error::Unsupported),

@@ -97,7 +97,12 @@ pub enum Error {
     InterfaceExists(InterfaceName<'static>, ObjectPath<'static>),
     /// Failed to connect to the D-Bus server at the given address.
     #[cfg(feature = "comms")]
-    Connection(Arc<io::Error>, Box<Address>),
+    Connection(
+        /// The I/O error that caused the failure.
+        Arc<io::Error>,
+        /// The address that could not be connected to.
+        Box<Address>,
+    ),
 }
 
 // The wire (de)serializers return this type by value out of deeply recursive calls, so its size
@@ -252,7 +257,7 @@ impl fmt::Display for Error {
             Error::InvalidSerial => write!(f, "Serial number in the message header is 0"),
             Error::InterfaceExists(i, p) => write!(f, "Interface `{i}` already exists at `{p}`"),
             #[cfg(feature = "comms")]
-            Error::Connection(e, addr) => write!(f, "Failed to connect to address `{addr}`: {e}"),
+            Error::Connection(e, addr) => write!(f, "failed to connect to `{addr}`: {e}"),
         }
     }
 }

@@ -208,13 +208,15 @@ Five details that a `match` or a log line can notice:
   `zbus::Error::Failure(s)`, which is where zbus already collected such errors.
 * `Error::InputOutput` prints as `I/O error: <the io::Error>`, where `zvariant::Error` printed
   the inner error on its own. zbus has always prefixed it and its rendering is the one that
-  survived, so this is the one change a log line or a string comparison can see at runtime.
+  survived, so a log line or a string comparison that saw the bare message now sees the prefix.
 * `Error::MissingFramingOffset` is gone with the rest of GVariant, and so is
   `Error::IncompatibleFormat`: with a single wire format left, nothing can be incompatible with
   it.
-* `Error::Connection` carries a `Box<Address>` where zbus 5 inlined the `Address`. `Display` is
-  unchanged, but `Error::Connection(_, addr)` now binds a box; dereference it where you need the
-  `Address` itself.
+* `Error::Connection` carries a `Box<Address>` where zbus 5 inlined the `Address`, so
+  `Error::Connection(_, addr)` now binds a box; dereference it where you need the `Address`
+  itself. Its `Display` changed as well:
+  ``Failed to connect to address `<address>`: <io::Error>`` is now
+  ``failed to connect to `<address>`: <io::Error>``.
 * `Error::MethodError`, `Error::FDO` and `Error::Connection` only exist with `comms` enabled.
   A `match` in a wire-only crate cannot name them. `Error` is `#[non_exhaustive]`, so the
   wildcard arm you already need covers them.
