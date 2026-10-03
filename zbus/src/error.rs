@@ -64,6 +64,9 @@ pub enum Error {
     /// Unexpected or incorrect reply.
     InvalidReply,
     /// A D-Bus method error reply.
+    ///
+    /// An error reply whose name is defined by [`fdo::Error`] is reported as [`Error::FDO`]
+    /// instead. This variant is for the names that are not.
     // According to the spec, there can be all kinds of details in D-Bus errors but nobody adds
     // anything more than a string description.
     #[cfg(feature = "comms")]
@@ -75,6 +78,9 @@ pub enum Error {
     /// Unsupported function, or support currently lacking.
     Unsupported,
     /// A [`fdo::Error`] transformed into [`Error`].
+    ///
+    /// This includes the D-Bus error replies whose name is defined by [`fdo::Error`], such as
+    /// `org.freedesktop.DBus.Error.ServiceUnknown`, which becomes [`fdo::Error::ServiceUnknown`].
     #[cfg(feature = "comms")]
     FDO(Box<fdo::Error>),
     /// A [`DBusError`](crate::DBusError) of any other type.
@@ -381,11 +387,19 @@ impl From<Message> for Error {
         }
 
         if let Some(name) = header.error_name() {
-            let name = name.to_owned().into();
-            match message.body().deserialize_ignore_signature::<&str>() {
-                Ok(detail) => Error::MethodError(name, Some(String::from(detail)), message),
-                Err(_) => Error::MethodError(name, None, message),
-            }
+            let name: OwnedErrorName = name.to_owned().into();
+            let detail: Option<String> = message
+                .body()
+                .deserialize_ignore_signature::<&str>()
+                .ok()
+                .map(String::from);
+            let method_error = Error::MethodError(name, detail, message);
+
+            // The conversion through `fdo::Error` is always attempted. A name defined by
+            // `fdo::Error` becomes the matching `fdo::Error` variant, wrapped in `Error::FDO`. Any
+            // other name falls through `fdo::Error::ZBus`, which `From<fdo::Error>` unwraps back
+            // into the original `Error::MethodError`.
+            Error::from(fdo::Error::from(method_error))
         } else {
             Error::InvalidReply
         }
@@ -424,3 +438,60 @@ impl fmt::Display for MaxDepthExceeded {
 
 /// Alias for a `Result` with the error type `zbus::Error`.
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(all(test, feature = "comms"))]
+mod tests {
+    use crate::{Error, fdo, message::Message};
+
+    #[test]
+    fn error_reply_with_fdo_name() {
+        let error = error_reply(
+            "org.freedesktop.DBus.Error.ServiceUnknown",
+            &"no such service",
+        );
+
+        assert_eq!(
+            error,
+            Error::FDO(Box::new(fdo::Error::ServiceUnknown(
+                "no such service".to_string()
+            ))),
+        );
+    }
+
+    #[test]
+    fn error_reply_with_fdo_name_and_no_description() {
+        // An empty body has no description to deserialize.
+        let error = error_reply("org.freedesktop.DBus.Error.ServiceUnknown", &());
+
+        assert_eq!(
+            error,
+            Error::FDO(Box::new(fdo::Error::ServiceUnknown(String::new()))),
+        );
+    }
+
+    #[test]
+    fn error_reply_with_other_name() {
+        let error = error_reply("org.example.Error.Oops", &"oops");
+
+        let Error::MethodError(name, detail, _) = error else {
+            panic!("expected `Error::MethodError`, got {error:?}");
+        };
+        assert_eq!(name.as_str(), "org.example.Error.Oops");
+        assert_eq!(detail.as_deref(), Some("oops"));
+    }
+
+    fn error_reply<B>(name: &str, body: &B) -> Error
+    where
+        B: serde::Serialize + crate::DynamicType,
+    {
+        let call = Message::method_call("/", "foo")
+            .destination(":1.2")
+            .build(&())
+            .unwrap();
+
+        Message::error(&call.header(), name)
+            .build(body)
+            .unwrap()
+            .into()
+    }
+}

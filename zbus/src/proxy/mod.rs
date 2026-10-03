@@ -358,6 +358,12 @@ impl PropertiesCache {
                 Some(Either::Left(_update)) => {
                     // discard updates prior to the initial population
                 }
+                Some(Either::Right(Err(Error::FDO(e)))) => match &*e {
+                    // The service isn't on the bus (yet) but may appear later, so keep watching
+                    // for changes.
+                    fdo::Error::ServiceUnknown(_) => break,
+                    _ => return Err(Error::FDO(e)),
+                },
                 Some(Either::Right(populate)) => {
                     populate?.body().deserialize().map(|values| {
                         self.update_cache(&uncached_properties, &values, &[], &interface);
@@ -1553,6 +1559,73 @@ mod tests {
         futures_util::future::select(signal_fut, prop_fut).await;
 
         handle.await?;
+
+        Ok(())
+    }
+
+    #[test]
+    #[timeout(15000)]
+    fn property_stream_of_service_started_later() {
+        block_on(test_property_stream_of_service_started_later()).unwrap();
+    }
+
+    /// Tests that a property stream created while the service is not on the bus yields the
+    /// changes once the service has started.
+    ///
+    /// The properties cache must not give up when `GetAll` fails with `ServiceUnknown`, as that
+    /// leaves the stream without any update for good.
+    async fn test_property_stream_of_service_started_later() -> Result<()> {
+        struct TestIface {
+            some_prop: u32,
+        }
+
+        #[interface(name = "org.zbus.Test.PropertyStream")]
+        impl TestIface {
+            #[zbus(property)]
+            fn some_prop(&self) -> u32 {
+                self.some_prop
+            }
+        }
+
+        let well_known = "org.zbus.Test.PropertyStreamLater";
+        let path = "/org/zbus/Test/PropertyStreamLater";
+
+        // Nobody owns the name yet.
+        let client_conn = Connection::session().await?;
+        let proxy: Proxy<'_> = Builder::new(&client_conn)
+            .destination(well_known)
+            .path(path)
+            .interface("org.zbus.Test.PropertyStream")
+            .build()
+            .await?;
+        let mut stream = proxy.receive_property_changed::<u32>("SomeProp").await;
+
+        // Wait for the cache to finish its initial population. There is nothing to populate it
+        // from yet, but it must still go on to listen for property changes.
+        proxy
+            .get_property_cache()
+            .expect("proxy has no properties cache")
+            .ready()
+            .await?;
+
+        let service_conn = connection::Builder::session()
+            .name(well_known)
+            .serve_at(path, TestIface { some_prop: 0 })
+            .build()
+            .await?;
+
+        let iface_ref = service_conn
+            .object_server()
+            .interface::<_, TestIface>(path)
+            .await?;
+        {
+            let mut iface = iface_ref.get_mut().await;
+            iface.some_prop = 42;
+            iface.some_prop_changed(iface_ref.signal_emitter()).await?;
+        }
+
+        let change = stream.next().await.expect("property stream ended");
+        assert_eq!(change.get().await?, 42);
 
         Ok(())
     }
