@@ -1,4 +1,4 @@
-use std::{any::Any, marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 use super::{Interface, InterfaceDeref, InterfaceDerefMut, SignalEmitter};
 use crate::runtime::locks::RwLock;
@@ -24,8 +24,6 @@ where
     /// returned is restricted.
     pub async fn get(&self) -> InterfaceDeref<'_, I> {
         let iface = self.lock.read().await;
-
-        <dyn Any>::downcast_ref::<I>(&*iface).expect("Unexpected interface type");
 
         InterfaceDeref {
             iface,
@@ -78,10 +76,7 @@ where
     /// # Ok::<_, Box<dyn Error + Send + Sync>>(())
     /// ```
     pub async fn get_mut(&self) -> InterfaceDerefMut<'_, I> {
-        let mut iface = self.lock.write().await;
-
-        <dyn Any>::downcast_ref::<I>(&*iface).expect("Unexpected interface type");
-        <dyn Any>::downcast_mut::<I>(&mut *iface).expect("Unexpected interface type");
+        let iface = self.lock.write().await;
 
         InterfaceDerefMut {
             iface,
