@@ -135,12 +135,8 @@ impl Tcp {
     }
 
     /// Connects to this address, passing the nonce it names along where there is one.
-    pub(super) async fn connect(
-        mut self,
-        address: &Address,
-        runtime: &Runtime,
-    ) -> Result<BoxedSplit> {
-        let nonce = match self.take_nonce_file() {
+    pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
+        let nonce = match self.nonce_file() {
             Some(path) => Some(read_nonce(path, runtime).await?),
             None => None,
         };
@@ -211,7 +207,7 @@ impl Tcp {
 }
 
 /// The nonce the server expects before anything else, read off `path`.
-async fn read_nonce(path: Vec<u8>, runtime: &Runtime) -> Result<Vec<u8>> {
+async fn read_nonce(path: &[u8], runtime: &Runtime) -> Result<Vec<u8>> {
     let path = nonce_path(path)?;
 
     runtime
@@ -221,16 +217,16 @@ async fn read_nonce(path: Vec<u8>, runtime: &Runtime) -> Result<Vec<u8>> {
 }
 
 /// `path`, as this platform names files.
-fn nonce_path(path: Vec<u8>) -> Result<PathBuf> {
+fn nonce_path(path: &[u8]) -> Result<PathBuf> {
     #[cfg(unix)]
     {
-        use std::os::unix::ffi::OsStringExt;
+        use std::os::unix::ffi::OsStrExt;
 
-        Ok(PathBuf::from(std::ffi::OsString::from_vec(path)))
+        Ok(PathBuf::from(std::ffi::OsStr::from_bytes(path)))
     }
     #[cfg(windows)]
     {
-        String::from_utf8(path)
+        std::str::from_utf8(path)
             .map(PathBuf::from)
             .map_err(|_| Error::Address("nonce file path is invalid UTF-8".to_owned()))
     }

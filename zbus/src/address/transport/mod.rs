@@ -71,18 +71,18 @@ pub enum Transport {
 }
 
 impl Transport {
-    pub(super) async fn connect(self, address: Address, runtime: &Runtime) -> Result<Stream> {
+    pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<Stream> {
         match self {
-            Transport::Unix(unix) => unix.connect(&address, runtime).await.map(Stream::Unix),
+            Transport::Unix(unix) => unix.connect(address, runtime).await.map(Stream::Unix),
 
-            Transport::Tcp(tcp) => tcp.connect(&address, runtime).await.map(Stream::Tcp),
+            Transport::Tcp(tcp) => tcp.connect(address, runtime).await.map(Stream::Tcp),
 
             #[cfg(feature = "vsock")]
-            Transport::Vsock(vsock) => vsock.connect(&address, runtime).await.map(Stream::Vsock),
+            Transport::Vsock(vsock) => vsock.connect(address, runtime).await.map(Stream::Vsock),
 
             #[cfg(all(unix, feature = "unixexec"))]
             Transport::Unixexec(unixexec) => unixexec
-                .connect(&address, runtime)
+                .connect(address, runtime)
                 .await
                 .map(Stream::Unixexec),
 

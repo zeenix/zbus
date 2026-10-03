@@ -35,7 +35,7 @@ impl Vsock {
     }
 
     /// Connects to the VSOCK port this address names.
-    pub(super) async fn connect(self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
+    pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
         let socket_address = SockAddr::vsock(self.cid(), self.port());
         let source = connect(runtime, Domain::VSOCK, Type::STREAM, &socket_address)
             .await
