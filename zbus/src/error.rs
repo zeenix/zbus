@@ -257,7 +257,7 @@ impl fmt::Display for Error {
             Error::InvalidSerial => write!(f, "Serial number in the message header is 0"),
             Error::InterfaceExists(i, p) => write!(f, "Interface `{i}` already exists at `{p}`"),
             #[cfg(feature = "comms")]
-            Error::Connection(e, addr) => write!(f, "Failed to connect to address `{addr}`: {e}"),
+            Error::Connection(e, addr) => write!(f, "failed to connect to `{addr}`: {e}"),
         }
     }
 }

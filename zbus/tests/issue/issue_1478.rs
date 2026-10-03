@@ -34,10 +34,20 @@ async fn connection_error_async() {
     for addr in addresses {
         let res = connection::Builder::address(addr).build().await;
 
-        let Err(Error::Connection(_, error_addr)) = res else {
+        let Err(error) = res else {
             panic!("expected a connection error, got {res:?}");
+        };
+        let Error::Connection(_, error_addr) = &error else {
+            panic!("expected a connection error, got {error:?}");
         };
 
         assert_eq!(error_addr.to_string(), addr);
+        // What follows the address is the I/O error, which differs between platforms.
+        assert!(
+            error
+                .to_string()
+                .starts_with(&format!("failed to connect to `{addr}`: ")),
+            "unexpected message: {error}",
+        );
     }
 }
