@@ -155,21 +155,21 @@ pub(crate) fn array_display_fmt(
     type_annotate: bool,
 ) -> std::fmt::Result {
     // Print as string if it is a bytestring (i.e., first nul character is the last byte)
-    if let [leading @ .., Value::U8(b'\0')] = array.as_ref() {
-        if !leading.contains(&Value::U8(b'\0')) {
-            let bytes = leading
-                .iter()
-                .map(|v| {
-                    v.downcast_ref::<u8>()
-                        .expect("item must have a signature of a byte")
-                })
-                .collect::<Vec<_>>();
+    if let [leading @ .., Value::U8(b'\0')] = array.as_ref()
+        && !leading.contains(&Value::U8(b'\0'))
+    {
+        let bytes = leading
+            .iter()
+            .map(|v| {
+                v.downcast_ref::<u8>()
+                    .expect("item must have a signature of a byte")
+            })
+            .collect::<Vec<_>>();
 
-            let string = String::from_utf8_lossy(&bytes);
-            write!(f, "b{:?}", string.as_ref())?;
+        let string = String::from_utf8_lossy(&bytes);
+        write!(f, "b{:?}", string.as_ref())?;
 
-            return Ok(());
-        }
+        return Ok(());
     }
 
     if array.is_empty() {

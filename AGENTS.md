@@ -126,7 +126,7 @@ Everything below `error.rs` in that list is behind the `comms` feature.
 
 ## Development Guidelines
 
-- **MSRV**: 1.87.0
+- **MSRV**: 1.89.0
 - **Commit style**: Emoji prefix + package abbreviation (e.g., "🐛 zb: Fix connection timeout")
 - **Changelog**: `CHANGELOG.md` files are managed by [release-plz] — do **not** hand-edit
   them. Write a good commit message (conventional-commits-ish) and release-plz will

@@ -80,16 +80,16 @@ impl SocketReader {
 
             let mut senders = self.senders.lock().await;
             for (rule, sender) in &*senders {
-                if let Ok(msg) = &msg {
-                    if let Some(rule) = rule.as_ref() {
-                        match rule.matches(msg) {
-                            Ok(true) => (),
-                            Ok(false) => continue,
-                            Err(e) => {
-                                debug!("Error matching message against rule: {:?}", e);
+                if let Ok(msg) = &msg
+                    && let Some(rule) = rule.as_ref()
+                {
+                    match rule.matches(msg) {
+                        Ok(true) => (),
+                        Ok(false) => continue,
+                        Err(e) => {
+                            debug!("Error matching message against rule: {:?}", e);
 
-                                continue;
-                            }
+                            continue;
                         }
                     }
                 }
