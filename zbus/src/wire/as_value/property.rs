@@ -29,10 +29,11 @@ impl<'de, 'sig> ValueDeserializer<'de, 'sig> {
     }
 
     fn actual(&self) -> &'de Value<'de> {
-        if self.unwrap_variant && self.expected != &Signature::Variant {
-            if let Value::Value(value) = self.value {
-                return value;
-            }
+        if self.unwrap_variant
+            && self.expected != &Signature::Variant
+            && let Value::Value(value) = self.value
+        {
+            return value;
         }
 
         self.value

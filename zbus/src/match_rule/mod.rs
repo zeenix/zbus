@@ -208,10 +208,10 @@ impl<'m> MatchRule<'m> {
         let hdr = msg.header();
 
         // Start with message type.
-        if let Some(msg_type) = self.msg_type() {
-            if msg_type != msg.message_type() {
-                return Ok(false);
-            }
+        if let Some(msg_type) = self.msg_type()
+            && msg_type != msg.message_type()
+        {
+            return Ok(false);
         }
 
         // Then check sender.

@@ -510,13 +510,13 @@ impl StructSerializer {
             ));
         }
 
-        if let Signature::Structure(fields) = &self.expected {
-            if self.fields.len() != fields.len() {
-                return Err(crate::Error::signature_mismatch(
-                    &self.expected,
-                    "a struct with the expected number of fields",
-                ));
-            }
+        if let Signature::Structure(fields) = &self.expected
+            && self.fields.len() != fields.len()
+        {
+            return Err(crate::Error::signature_mismatch(
+                &self.expected,
+                "a struct with the expected number of fields",
+            ));
         }
         if self.expected == Signature::U8 && self.fields.len() == 1 {
             return Ok(self.fields.pop().expect("unit field is present"));

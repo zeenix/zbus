@@ -370,15 +370,15 @@ impl PropertiesCache {
         if let Some((Either::Left(update), _)) = Pin::new(&mut join).take_buffered() {
             // if an update was buffered, then it happened after the get_all returned and needs to
             // be applied before we discard the join
-            if let Ok(args) = update.args() {
-                if args.interface_name == interface {
-                    self.update_cache(
-                        &uncached_properties,
-                        &args.changed_properties,
-                        &args.invalidated_properties,
-                        &interface,
-                    );
-                }
+            if let Ok(args) = update.args()
+                && args.interface_name == interface
+            {
+                self.update_cache(
+                    &uncached_properties,
+                    &args.changed_properties,
+                    &args.invalidated_properties,
+                    &interface,
+                );
             }
         }
         // This is needed to avoid a "implementation of `OrderedStream` is not general enough"
@@ -401,15 +401,15 @@ impl PropertiesCache {
 
         trace!("Listening for property changes on {interface}...");
         while let Some(update) = prop_changes.next().await {
-            if let Ok(args) = update.args() {
-                if args.interface_name == interface {
-                    self.update_cache(
-                        &uncached_properties,
-                        &args.changed_properties,
-                        &args.invalidated_properties,
-                        &interface,
-                    );
-                }
+            if let Ok(args) = update.args()
+                && args.interface_name == interface
+            {
+                self.update_cache(
+                    &uncached_properties,
+                    &args.changed_properties,
+                    &args.invalidated_properties,
+                    &interface,
+                );
             }
         }
 
@@ -1236,16 +1236,14 @@ impl<'a> SignalStream<'a> {
                 if let Some(msg) = queued.and_then(|e| match e.0 {
                     Either::Left(Ok(msg)) => Some(msg),
                     Either::Left(Err(_)) | Either::Right(_) => None,
-                }) {
-                    if let Some(signal) = NameOwnerChanged::from_message(msg) {
-                        if let Ok(args) = signal.args() {
-                            match (args.name(), args.new_owner().deref()) {
-                                (BusName::WellKnown(n), Some(new_owner)) if n == &name => {
-                                    src_unique_name = Some(new_owner.to_owned());
-                                }
-                                _ => (),
-                            }
+                }) && let Some(signal) = NameOwnerChanged::from_message(msg)
+                    && let Ok(args) = signal.args()
+                {
+                    match (args.name(), args.new_owner().deref()) {
+                        (BusName::WellKnown(n), Some(new_owner)) if n == &name => {
+                            src_unique_name = Some(new_owner.to_owned());
                         }
+                        _ => (),
                     }
                 }
                 let name_owner_changed_stream = stream.into_inner();
@@ -1308,13 +1306,13 @@ impl OrderedStream for SignalStream<'_> {
                 before
             )) {
                 PollResult::Item { data, ordering } => {
-                    if let Ok(msg) = data {
-                        if let Ok(true) = this.filter(&msg) {
-                            return Poll::Ready(PollResult::Item {
-                                data: msg,
-                                ordering,
-                            });
-                        }
+                    if let Ok(msg) = data
+                        && let Ok(true) = this.filter(&msg)
+                    {
+                        return Poll::Ready(PollResult::Item {
+                            data: msg,
+                            ordering,
+                        });
                     }
                 }
                 PollResult::Terminated => return Poll::Ready(PollResult::Terminated),

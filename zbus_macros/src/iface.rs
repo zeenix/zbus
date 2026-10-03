@@ -1297,10 +1297,9 @@ fn get_result_inner_type(p: &TypePath) -> syn::Result<&Type> {
         .last()
         .ok_or_else(|| Error::new_spanned(p, "unsupported result type"))?
         .arguments
+        && let Some(syn::GenericArgument::Type(ty)) = args.first()
     {
-        if let Some(syn::GenericArgument::Type(ty)) = args.first() {
-            return Ok(ty);
-        }
+        return Ok(ty);
     }
 
     Err(Error::new_spanned(p, "unhandled Result return"))
@@ -1331,17 +1330,17 @@ fn introspect_add_output_args(
         }
 
         if let Type::Tuple(t) = ty {
-            if let Some(arg_names) = arg_names {
-                if t.elems.len() != arg_names.len() {
-                    return Err(Error::new_spanned(
-                        ty,
-                        format!(
-                            "out_args specifies {} names but method returns {} values",
-                            arg_names.len(),
-                            t.elems.len()
-                        ),
-                    ));
-                }
+            if let Some(arg_names) = arg_names
+                && t.elems.len() != arg_names.len()
+            {
+                return Err(Error::new_spanned(
+                    ty,
+                    format!(
+                        "out_args specifies {} names but method returns {} values",
+                        arg_names.len(),
+                        t.elems.len()
+                    ),
+                ));
             }
             for i in 0..t.elems.len() {
                 let name = arg_names.map(|names| &names[i]);
