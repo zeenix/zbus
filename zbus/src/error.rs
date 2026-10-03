@@ -97,7 +97,12 @@ pub enum Error {
     InterfaceExists(InterfaceName<'static>, ObjectPath<'static>),
     /// Failed to connect to the D-Bus server at the given address.
     #[cfg(feature = "comms")]
-    Connection(Arc<io::Error>, Box<Address>),
+    Connection(
+        /// The I/O error that caused the failure.
+        Arc<io::Error>,
+        /// The address that could not be connected to.
+        Box<Address>,
+    ),
 }
 
 // The wire (de)serializers return this type by value out of deeply recursive calls, so its size
