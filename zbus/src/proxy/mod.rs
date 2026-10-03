@@ -358,6 +358,12 @@ impl PropertiesCache {
                 Some(Either::Left(_update)) => {
                     // discard updates prior to the initial population
                 }
+                Some(Either::Right(Err(Error::FDO(e)))) => match &*e {
+                    // The service isn't on the bus (yet) but may appear later, so keep watching
+                    // for changes.
+                    fdo::Error::ServiceUnknown(_) => break,
+                    _ => return Err(Error::FDO(e)),
+                },
                 Some(Either::Right(populate)) => {
                     populate?.body().deserialize().map(|values| {
                         self.update_cache(&uncached_properties, &values, &[], &interface);
