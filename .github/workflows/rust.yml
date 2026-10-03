@@ -111,6 +111,8 @@ jobs:
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features tokio,p2p,service
           cargo --locked clippy -p zbus --no-default-features --all-targets \
+            --features tokio-multithread,proxy,service
+          cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features default-rt,proxy,service,unixexec
           cargo --locked clippy -p zbus --no-default-features --all-targets \
             --features default-rt,proxy,service,ibus

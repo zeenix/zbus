@@ -226,8 +226,11 @@ of its runtime is built.
 This per-connection selection only matters for a program that has an async runtime of its own. A
 program without one uses `zbus::block_on` instead. Without the `tokio` feature, that call and the
 connection built inside it use zruntime; with it, the call runs inside a Tokio
-runtime, so a connection built inside it always uses Tokio. Note that `zbus::block_on` must not
-be called from inside a task zbus is running, such as an interface method: it panics there.
+runtime, so a connection built inside it always uses Tokio. That runtime is single-threaded, so
+the connection's work only runs while a thread is inside `zbus::block_on`; the
+`tokio-multithread` feature (which enables `tokio`) makes it a multi-threaded runtime instead.
+Note that `zbus::block_on` must not be called from inside a task zbus is running, such as an
+interface method: it panics there.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even
 when the `default-rt` feature is also on; give it a TCP or `autolaunch:` address instead, or

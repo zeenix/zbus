@@ -91,7 +91,7 @@ Four things to know about the features:
 * `arrayvec` was a zvariant-only feature and is available in zbus now.
 * `comms` pulls in the `uuid` crate — it parses D-Bus GUIDs — without turning on zbus's own
   `uuid` feature, so the `Uuid` wire impls stay opt-in, as they were.
-* Any D-Bus feature (`default-rt`, `tokio`, `p2p`, `bus-impl`, `vsock`)
+* Any D-Bus feature (`default-rt`, `tokio`, `tokio-multithread`, `p2p`, `bus-impl`, `vsock`)
   enables `comms`. In a workspace where one crate asks for the wire-only build
   and another for the full one, Cargo's feature unification gives everybody the full build.
   That is a build-size question only; nothing behaves differently.
@@ -751,6 +751,11 @@ drop.
 Two rules come with `zbus::block_on`: the future must not block the thread waiting for work the
 connection has to do, and the function must not be called from inside a task zbus is running,
 where it panics.
+
+With the `tokio` feature, 5.x's blocking API ran on a multi-threaded Tokio runtime of zbus's own,
+whose worker threads kept every connection on it going. `zbus::block_on` runs on a
+single-threaded one instead, so a connection's work only runs while a thread is inside that call.
+Enable the `tokio-multithread` feature (which enables `tokio`) to keep the multi-threaded runtime.
 
 The `#[proxy]` attributes `gen_blocking`, `blocking_name` and `blocking_object` are gone
 with the proxies they configured, and so is `gen_async`, since the async proxy is the only one;

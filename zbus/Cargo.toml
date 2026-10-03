@@ -66,6 +66,9 @@ comms = [
 # `tokio` adds the Tokio backend, which a connection built inside a Tokio runtime prefers.
 default-rt = ["comms", "zruntime/runtime", "zruntime/helper"]
 tokio = ["comms", "dep:tokio"]
+# With the `tokio` feature, `zbus::block_on` runs the future on a single-threaded Tokio runtime of
+# its own. This makes that runtime a multi-threaded one instead (enables `tokio`).
+tokio-multithread = ["tokio", "tokio/rt-multi-thread"]
 # Logging through `tracing` (default). With this off, zbus emits no log events or spans, and
 # `tokio`'s own `tracing` feature is not enabled either.
 tracing = ["dep:tracing", "tokio?/tracing", "zruntime?/tracing"]
@@ -122,7 +125,6 @@ time = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = [
     "rt",
-    "rt-multi-thread",
     "net",
     "time",
     "fs",
@@ -199,6 +201,7 @@ features = [
     "bus-impl",
     "p2p",
     "tokio",
+    "tokio-multithread",
     "object-manager",
     "unixexec",
     "ibus",
