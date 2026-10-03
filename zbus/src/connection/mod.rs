@@ -277,7 +277,8 @@ impl Connection {
     /// Create a method-call message, send it over the connection, then wait for the reply.
     ///
     /// On successful reply, an `Ok(Message)` is returned. On error, an `Err` is returned. D-Bus
-    /// error replies are returned as [`Error::MethodError`].
+    /// error replies whose name is defined by [`crate::fdo::Error`] are returned as
+    /// [`Error::FDO`], and all other error replies are returned as [`Error::MethodError`].
     pub async fn call_method<'d, 'p, 'i, 'm, D, P, I, M, B>(
         &self,
         destination: Option<D>,

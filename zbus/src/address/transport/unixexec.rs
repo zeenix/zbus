@@ -148,7 +148,7 @@ mod tests {
     #[timeout(15000)]
     fn a_bus_connection_over_a_helper_process() {
         use crate::{
-            Error, conn::Builder, connection::Connection, runtime::test_runtime::TestRuntime,
+            Error, conn::Builder, connection::Connection, fdo, runtime::test_runtime::TestRuntime,
         };
 
         let built = futures_lite::future::block_on(
@@ -172,9 +172,11 @@ mod tests {
             &(),
         ));
 
-        assert!(
-            matches!(called, Err(Error::MethodError(..))),
-            "got {called:?}",
-        );
+        let Err(Error::FDO(e)) = called else {
+            panic!("got {called:?}");
+        };
+        let fdo::Error::Failed(_) = *e else {
+            panic!("got {e:?}");
+        };
     }
 }

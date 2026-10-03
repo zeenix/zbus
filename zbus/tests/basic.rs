@@ -49,7 +49,10 @@ async fn test_basic_connection() -> Result<()> {
         )
         .await
     {
-        Err(zbus::Error::MethodError(_, _, _)) => (),
+        Err(zbus::Error::FDO(e)) => match *e {
+            zbus::fdo::Error::Failed(_) => (),
+            e => panic!("{}", e),
+        },
         Err(e) => panic!("{}", e),
 
         _ => panic!(),

@@ -852,6 +852,30 @@ async fn watch(conn: &Connection, rule: MatchRule<'_>, wanted: usize) -> zbus::R
 }
 ```
 
+### Some error replies are `Error::FDO`
+
+zbus 5 reported every D-Bus error reply as `Error::MethodError`. In 6.0 an error reply whose name
+is one of those defined by `fdo::Error` is an `Error::FDO` holding the matching `fdo::Error`
+variant instead, so a caller can match on `fdo::Error::ServiceUnknown` rather than compare a name.
+A reply with any other name is still an `Error::MethodError`. The reply message that `MethodError`
+carries is not kept in the `FDO` case.
+
+A `match` arm that looks for one of those names in an `Error::MethodError` stops matching:
+
+```rust,noplayground
+use zbus::{Error, fdo};
+
+fn is_service_unknown(error: &Error) -> bool {
+    // Was: matches!(error, Error::MethodError(name, ..)
+    //          if name.as_str() == "org.freedesktop.DBus.Error.ServiceUnknown")
+    let Error::FDO(e) = error else {
+        return false;
+    };
+
+    matches!(**e, fdo::Error::ServiceUnknown(_))
+}
+```
+
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated
