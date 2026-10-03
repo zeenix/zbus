@@ -27,8 +27,8 @@ zbus = { version = "6", default-features = false }
 That build compiles `zbus::wire` and `zbus::names` and nothing else — no connection, proxy or
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
 `chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
-and enabling any D-Bus feature (`comms`, `default-rt`, `tokio`, `p2p`, `bus-impl`, `vsock`,
-`proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
+and enabling any D-Bus feature (`comms`, `default-rt`, `tokio`, `tokio-multithread`, `p2p`,
+`bus-impl`, `vsock`, `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
 
 zbus logs through [`tracing`], behind the default `tracing` feature; a `default-features =
 false` build that wants zbus's logs must re-enable it explicitly.
@@ -167,7 +167,10 @@ types build on, but none of its runtime is built.
 
 A program with no async runtime of its own drives the API from inside `zbus::block_on`, which
 with the `tokio` feature polls the future on a Tokio runtime of its own, so a connection built
-inside that call always runs on tokio when that feature is on.
+inside that call always runs on tokio when that feature is on. That runtime is single-threaded:
+the connection's work only runs while a thread is inside `zbus::block_on`. Enable the
+`tokio-multithread` feature (which enables `tokio`) to make it a multi-threaded runtime instead,
+whose worker threads keep the connection going in between calls.
 
 **Note**: On Windows, a connection that ends up on Tokio cannot use a Unix domain socket, even when
 the `default-rt` feature is also on; see [the corresponding tokio issue on GitHub][tctiog].

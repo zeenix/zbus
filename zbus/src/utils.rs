@@ -77,6 +77,12 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
 /// feature, the call runs inside a Tokio runtime that zbus creates on first use and keeps for
 /// the rest of the process, so a connection built inside the future runs on Tokio as well.
 ///
+/// That runtime is single-threaded: the tasks of the connections on it, such as reading incoming
+/// messages and serving method calls, only run while a thread is inside this function, and on
+/// one such thread at a time. With the `tokio-multithread` feature, it is a multi-threaded
+/// runtime instead, whose worker threads keep running those tasks in parallel, whether or not
+/// any thread is inside this function.
+///
 /// Do not call this from another runtime's task. From inside a Tokio async task it panics, as
 /// Tokio's own `block_on` does. From any other runtime's task it blocks that task's thread until
 /// the future completes, which deadlocks the program if the future needs that thread to make
@@ -89,7 +95,12 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
 
     TOKIO_RT
         .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
+            #[cfg(feature = "tokio-multithread")]
+            let mut builder = tokio::runtime::Builder::new_multi_thread();
+            #[cfg(not(feature = "tokio-multithread"))]
+            let mut builder = tokio::runtime::Builder::new_current_thread();
+
+            builder
                 .enable_io()
                 .enable_time()
                 .build()
