@@ -4,8 +4,8 @@
 //!
 //! The pair needs to be fresh for each operation, since a connection caches its peer's
 //! credentials: it is built, untimed, inside the timed `zbus::block_on` itself, through
-//! `iter_custom`, and only the lookup is timed. CodSpeed's walltime mode measures that; its
-//! instrumentation mode skips `iter_custom` and would ignore this id.
+//! `iter_custom`, and only the lookup is timed. CodSpeed's walltime mode measures that; its CPU
+//! simulation skips `iter_custom` and would ignore this id.
 
 #[cfg(unix)]
 mod unix {

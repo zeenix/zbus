@@ -23,6 +23,8 @@ criterion.workspace = true
 [lib]
 bench = false
 
+# Each bench target is measured on CodSpeed by one of the two jobs of
+# `.github/workflows/bench.yml`, which lists it: by CPU simulation, or by the clock.
 [[bench]]
 name = "benchmarks"
 harness = false
