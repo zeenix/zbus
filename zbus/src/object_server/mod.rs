@@ -2,7 +2,7 @@
 
 #[cfg(feature = "object-manager")]
 use std::collections::HashMap;
-use std::{marker::PhantomData, sync::Arc};
+use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use crate::{
     BoxDBusError, Connection, Error, ObjectPath, Result,
@@ -388,11 +388,8 @@ impl ObjectServer {
             .ok_or(Error::InterfaceNotFound)?
             .instance;
 
-        // Ensure what we return can later be dowcasted safely.
-        lock.read()
-            .await
-            .downcast_ref::<I>()
-            .ok_or(Error::InterfaceNotFound)?;
+        // Ensure what we return can later be downcast safely.
+        <dyn Any>::downcast_ref::<I>(&*lock.read().await).ok_or(Error::InterfaceNotFound)?;
 
         let conn = self.connection();
         // SAFETY: We know that there is a valid path on the node as we already converted w/o error.
