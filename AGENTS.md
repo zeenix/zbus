@@ -68,6 +68,11 @@ cargo install cargo-fuzz
 cargo fuzz run --fuzz-dir zbus/fuzz dbus
 ```
 
+On CodSpeed, `.github/workflows/bench.yml` measures each bench target in one of two jobs: by CPU
+simulation, on a GitHub-hosted runner, the targets that run on one thread and wait on no timer or
+socket; by the clock, on a CodSpeed macro runner, those that wait on timers, sockets or other
+threads. A target holds benchmarks of one kind only, and a new one goes in the list of its job.
+
 ## Workspace Architecture
 
 ### Core Crates
