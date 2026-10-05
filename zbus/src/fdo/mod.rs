@@ -136,10 +136,7 @@ mod tests {
 
         let well_known: WellKnownName<'static> = well_known.try_into().unwrap();
         proxy
-            .request_name(
-                well_known.as_ref(),
-                fdo::RequestNameFlags::ReplaceExisting.into(),
-            )
+            .request_name(well_known.as_ref(), fdo::RequestNameFlags::REPLACE_EXISTING)
             .await
             .unwrap();
 

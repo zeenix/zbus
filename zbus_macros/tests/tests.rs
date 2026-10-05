@@ -82,7 +82,7 @@ fn test_proxy() {
             .unwrap()
             .request_name(
                 "org.freedesktop.zbus_macros".try_into().unwrap(),
-                fdo::RequestNameFlags::DoNotQueue.into(),
+                fdo::RequestNameFlags::DO_NOT_QUEUE,
             )
             .await
             .unwrap();

@@ -38,6 +38,7 @@ uuid = ["dep:uuid"]
 
 # The D-Bus API: connection, message, proxy, object server, fdo and friends.
 comms = [
+    "dep:bitflags",
     "enumflags2",
     "zbus_macros/comms",
     "dep:serde_repr",
@@ -99,6 +100,7 @@ zbus_utils = { path = "../zbus_utils", version = "6.0.0" }
 
 serde.workspace = true
 serde_repr = { workspace = true, optional = true }
+bitflags = { workspace = true, optional = true }
 enumflags2 = { workspace = true, optional = true }
 futures-core = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }

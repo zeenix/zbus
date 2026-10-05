@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use enumflags2::BitFlags;
 use ntest::timeout;
 use test_log::test;
 use tracing::{debug, instrument};
@@ -110,7 +109,7 @@ async fn test_freedesktop_api() -> Result<()> {
             "RequestName",
             &(
                 "org.freedesktop.zbus.async",
-                BitFlags::from(RequestNameFlags::ReplaceExisting),
+                RequestNameFlags::REPLACE_EXISTING,
             ),
         )
         .await

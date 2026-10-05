@@ -427,5 +427,5 @@ mod tests {
     assert_impl_all!(chrono::Weekday: Basic);
 
     #[cfg(feature = "comms")]
-    assert_impl_all!(enumflags2::BitFlags<crate::fdo::RequestNameFlags>: Basic);
+    assert_impl_all!(crate::fdo::RequestNameFlags: Basic);
 }

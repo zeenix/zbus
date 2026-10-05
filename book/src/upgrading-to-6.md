@@ -878,6 +878,59 @@ fn is_service_unknown(error: &Error) -> bool {
 }
 ```
 
+### The flag types are `bitflags` types
+
+`fdo::RequestNameFlags` used to be an `enumflags2` enum, one variant per flag, and the API spelt a
+set of them `BitFlags<RequestNameFlags>`. It is now a set of flags itself, made with the
+[`bitflags`] crate, and the API takes it without the `BitFlags` wrapper:
+
+* `Connection::request_name_with_flags` and `fdo::DBusProxy::request_name` take a
+  `RequestNameFlags`.
+
+The flags themselves are associated constants, named in upper snake case:
+
+| Before | After |
+| --- | --- |
+| `RequestNameFlags::AllowReplacement` | `RequestNameFlags::ALLOW_REPLACEMENT` |
+| `RequestNameFlags::ReplaceExisting` | `RequestNameFlags::REPLACE_EXISTING` |
+| `RequestNameFlags::DoNotQueue` | `RequestNameFlags::DO_NOT_QUEUE` |
+
+A single flag is a set already, so drop the `.into()` that used to turn one into a `BitFlags`, and
+write `BitFlags::empty()` and `BitFlags::default()` as `RequestNameFlags::empty()` and
+`RequestNameFlags::default()`:
+
+```rust,noplayground
+use zbus::{Connection, fdo::RequestNameFlags};
+
+async fn request_names(conn: &Connection) -> zbus::Result<()> {
+    // Was: RequestNameFlags::DoNotQueue.into()
+    conn.request_name_with_flags("org.zbus.First", RequestNameFlags::DO_NOT_QUEUE)
+        .await?;
+    // Was: RequestNameFlags::ReplaceExisting | RequestNameFlags::DoNotQueue
+    conn.request_name_with_flags(
+        "org.zbus.Second",
+        RequestNameFlags::REPLACE_EXISTING | RequestNameFlags::DO_NOT_QUEUE,
+    )
+    .await?;
+
+    Ok(())
+}
+```
+
+Most of what you did with a `BitFlags` reads the same: `contains`, `insert`, `remove`, `set`,
+`is_empty`, `bits` and the `|` and `&` operators. `from_bits` returns an `Option` rather than a
+`Result`, and a `match` on a single flag becomes a `contains` check. The type implements neither
+`Display` nor `TryFrom` of its integer, which `BitFlags` did: format it with `{:?}`, which
+names the flags, and turn an integer into flags with `from_bits`, or with `from_bits_retain` to
+keep the bits that no flag defines. `RequestNameFlags::default()`
+is still `ALLOW_REPLACEMENT | REPLACE_EXISTING | DO_NOT_QUEUE`, so an `Optional<RequestNameFlags>`
+uses the same null value as before.
+
+Decoding keeps bits that none of the flags define, where `enumflags2` rejected them with an
+error.
+
+[`bitflags`]: https://docs.rs/bitflags
+
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated

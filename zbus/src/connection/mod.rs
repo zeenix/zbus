@@ -537,8 +537,8 @@ impl Connection {
     /// deregistering names registered through this method.
     ///
     /// Note that exclusive ownership without queueing is requested (using
-    /// [`RequestNameFlags::ReplaceExisting`] and [`RequestNameFlags::DoNotQueue`] flags) since that
-    /// is the most typical case. If that is not what you want, you should use
+    /// [`RequestNameFlags::REPLACE_EXISTING`] and [`RequestNameFlags::DO_NOT_QUEUE`] flags) since
+    /// that is the most typical case. If that is not what you want, you should use
     /// [`Connection::request_name_with_flags`] instead (but make sure then that name is requested
     /// **after** you've set up your service implementation with the `ObjectServer`).
     ///
@@ -562,7 +562,7 @@ impl Connection {
         W: TryInto<WellKnownName<'w>>,
         W::Error: Into<Error>,
     {
-        self.request_name_with_flags(well_known_name, BitFlags::default())
+        self.request_name_with_flags(well_known_name, RequestNameFlags::default())
             .await
             .map(|_| ())
     }
@@ -573,24 +573,24 @@ impl Connection {
     /// requesting the name.
     #[cfg_attr(
         feature = "proxy",
-        doc = "If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up",
-        doc = "in the queue, you can use [`crate::fdo::NameAcquiredStream`] to be notified when",
-        doc = "the name is acquired. A queued name request can be cancelled using",
+        doc = "If the [`RequestNameFlags::DO_NOT_QUEUE`] flag is not specified and request ends",
+        doc = "up in the queue, you can use [`crate::fdo::NameAcquiredStream`] to be notified",
+        doc = "when the name is acquired. A queued name request can be cancelled using",
         doc = "[`Connection::release_name`].",
         doc = "",
-        doc = "If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name",
-        doc = "can be lost if another peer requests the same name. You can use",
+        doc = "If the [`RequestNameFlags::ALLOW_REPLACEMENT`] flag is specified, the requested",
+        doc = "name can be lost if another peer requests the same name. You can use",
         doc = "[`crate::fdo::NameLostStream`] to be notified when the name is lost"
     )]
     #[cfg_attr(
         not(feature = "proxy"),
-        doc = "If the [`RequestNameFlags::DoNotQueue`] flag is not specified and request ends up",
-        doc = "in the queue, you can use `fdo::NameAcquiredStream` (requires the `proxy` feature)",
-        doc = "to be notified when the name is acquired. A queued name request can be cancelled",
-        doc = "using [`Connection::release_name`].",
+        doc = "If the [`RequestNameFlags::DO_NOT_QUEUE`] flag is not specified and request ends",
+        doc = "up in the queue, you can use `fdo::NameAcquiredStream` (requires the `proxy`",
+        doc = "feature) to be notified when the name is acquired. A queued name request can be",
+        doc = "cancelled using [`Connection::release_name`].",
         doc = "",
-        doc = "If the [`RequestNameFlags::AllowReplacement`] flag is specified, the requested name",
-        doc = "can be lost if another peer requests the same name. You can use",
+        doc = "If the [`RequestNameFlags::ALLOW_REPLACEMENT`] flag is specified, the requested",
+        doc = "name can be lost if another peer requests the same name. You can use",
         doc = "`fdo::NameLostStream` (requires the `proxy` feature) to be notified when the name",
         doc = "is lost"
     )]
@@ -602,28 +602,27 @@ impl Connection {
     /// # #[cfg(feature = "proxy")]
     /// # zbus::block_on(async {
     /// use zbus::{Connection, fdo::{DBusProxy, RequestNameFlags, RequestNameReply}};
-    /// use enumflags2::BitFlags;
     /// use futures_util::stream::StreamExt;
     ///
     /// let name = "org.freedesktop.zbus.QueuedNameTest";
     /// let conn1 = Connection::session().await?;
     /// // This should just work right away.
-    /// conn1.request_name_with_flags(name, RequestNameFlags::DoNotQueue.into()).await?;
+    /// conn1.request_name_with_flags(name, RequestNameFlags::DO_NOT_QUEUE).await?;
     ///
     /// let conn2 = Connection::session().await?;
-    /// // A second request from the another connection will fail with `DoNotQueue` flag, which is
+    /// // A second request from the another connection will fail with `DO_NOT_QUEUE` flag, which is
     /// // implicit with `request_name` method.
     /// assert!(conn2.request_name(name).await.is_err());
     ///
-    /// // Now let's try w/o `DoNotQueue` and we should be queued.
+    /// // Now let's try w/o `DO_NOT_QUEUE` and we should be queued.
     /// let reply = conn2
-    ///     .request_name_with_flags(name, RequestNameFlags::AllowReplacement.into())
+    ///     .request_name_with_flags(name, RequestNameFlags::ALLOW_REPLACEMENT)
     ///     .await?;
     /// assert_eq!(reply, RequestNameReply::InQueue);
     /// // Another request should just give us the same response.
     /// let reply = conn2
     ///     // The flags on subsequent requests will however be ignored.
-    ///     .request_name_with_flags(name, BitFlags::empty())
+    ///     .request_name_with_flags(name, RequestNameFlags::empty())
     ///     .await?;
     /// assert_eq!(reply, RequestNameReply::InQueue);
     /// let mut acquired_stream = DBusProxy::new(&conn2)
@@ -671,7 +670,7 @@ impl Connection {
     pub async fn request_name_with_flags<'w, W>(
         &self,
         well_known_name: W,
-        flags: BitFlags<RequestNameFlags>,
+        flags: RequestNameFlags,
     ) -> Result<RequestNameReply>
     where
         W: TryInto<WellKnownName<'w>>,
@@ -726,7 +725,7 @@ impl Connection {
             .deserialize::<RequestNameReply>()?;
         let lost_task_name = format!("monitor_name_lost{{name={well_known_name}}}");
         let lost_task_name_span = info_span!("monitor_name_lost", name = %well_known_name);
-        let name_lost_fut = if flags.contains(RequestNameFlags::AllowReplacement) {
+        let name_lost_fut = if flags.contains(RequestNameFlags::ALLOW_REPLACEMENT) {
             let weak_conn = WeakConnection::from(self);
             let well_known_name = well_known_name.to_owned();
             Some(

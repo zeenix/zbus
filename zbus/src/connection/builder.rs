@@ -1,4 +1,3 @@
-use enumflags2::BitFlags;
 #[cfg(feature = "service")]
 use std::collections::HashMap;
 use std::{collections::HashSet, mem, num::NonZeroUsize, vec};
@@ -61,9 +60,9 @@ type Interfaces<'a> = HashMap<ObjectPath<'a>, HashMap<InterfaceName<'static>, Ar
 
 /// A builder for [`zbus::Connection`].
 ///
-/// The builder allows setting the flags [`RequestNameFlags::AllowReplacement`] and
-/// [`RequestNameFlags::ReplaceExisting`] when requesting names, but the flag
-/// [`RequestNameFlags::DoNotQueue`] will always be enabled. The reasons are:
+/// The builder allows setting the flags [`RequestNameFlags::ALLOW_REPLACEMENT`] and
+/// [`RequestNameFlags::REPLACE_EXISTING`] when requesting names, but the flag
+/// [`RequestNameFlags::DO_NOT_QUEUE`] will always be enabled. The reasons are:
 ///
 /// 1. There is no indication given to the caller of [`Self::build`] that the name(s) request was
 ///    enqueued and that the requested name might not be available right after building.
@@ -99,7 +98,7 @@ pub struct Builder<'a> {
     auth_mechanism: Option<AuthMechanism>,
     #[cfg(feature = "bus-impl")]
     unique_name: Option<crate::names::UniqueName<'a>>,
-    request_name_flags: BitFlags<RequestNameFlags>,
+    request_name_flags: RequestNameFlags,
     method_timeout: Option<std::time::Duration>,
     user_id: Option<u32>,
     // `None` unless the caller picked a runtime, in which case the connection runs on that one
@@ -429,19 +428,19 @@ impl<'a> Builder<'a> {
         self
     }
 
-    /// Whether the [`zbus::fdo::RequestNameFlags::AllowReplacement`] flag will be set when
+    /// Whether the [`zbus::fdo::RequestNameFlags::ALLOW_REPLACEMENT`] flag will be set when
     /// requesting names.
     pub fn allow_name_replacements(mut self, allow_replacement: bool) -> Self {
         self.request_name_flags
-            .set(RequestNameFlags::AllowReplacement, allow_replacement);
+            .set(RequestNameFlags::ALLOW_REPLACEMENT, allow_replacement);
         self
     }
 
-    /// Whether the [`zbus::fdo::RequestNameFlags::ReplaceExisting`] flag will be set when
+    /// Whether the [`zbus::fdo::RequestNameFlags::REPLACE_EXISTING`] flag will be set when
     /// requesting names.
     pub fn replace_existing_names(mut self, replace_existing: bool) -> Self {
         self.request_name_flags
-            .set(RequestNameFlags::ReplaceExisting, replace_existing);
+            .set(RequestNameFlags::REPLACE_EXISTING, replace_existing);
         self
     }
 
@@ -686,7 +685,7 @@ impl<'a> Builder<'a> {
             auth_mechanism: None,
             #[cfg(feature = "bus-impl")]
             unique_name: None,
-            request_name_flags: BitFlags::default(),
+            request_name_flags: RequestNameFlags::default(),
             method_timeout: None,
             user_id: None,
             runtime: None,
