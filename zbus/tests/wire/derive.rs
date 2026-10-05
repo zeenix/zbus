@@ -152,3 +152,31 @@ fn derive() {
     let decoded: AStruct<'_> = encoded.deserialize().unwrap().0;
     assert_eq!(decoded, s);
 }
+
+#[test]
+fn newtype_converts_from_and_to_value_of_any_lifetime() {
+    // A newtype without a lifetime of its own, such as a set of flags over the integer that holds
+    // them.
+    #[derive(Deserialize, Serialize, Type, Value, OwnedValue, Debug, PartialEq, Clone, Copy)]
+    struct Flags(u32);
+
+    fn from_value(value: Value<'_>) -> Result<Flags, Error> {
+        Flags::try_from(value)
+    }
+
+    fn into_value<'v>(flags: Flags) -> Value<'v> {
+        flags.into()
+    }
+
+    // A `Value` that borrows from the buffer it was decoded from, as one taken out of a received
+    // message does.
+    let ctxt = Context::new(LE, 0);
+    let encoded = to_bytes(ctxt, &Value::from(0x5u32)).unwrap();
+    let (value, _): (Value<'_>, _) = encoded.deserialize().unwrap();
+    assert_eq!(from_value(value).unwrap(), Flags(0x5));
+    assert_eq!(into_value(Flags(0x5)), Value::U32(0x5));
+
+    // The `'static` case keeps working.
+    let value: Value<'static> = Flags(0x2).into();
+    assert_eq!(Flags::try_from(value).unwrap(), Flags(0x2));
+}
