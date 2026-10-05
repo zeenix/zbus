@@ -17,7 +17,7 @@ pub struct Args {
 
 #[derive(Parser, Debug, Clone)]
 pub enum Command {
-    /// Generate code for interfaces in the specified file.
+    /// Generate code for interfaces in the specified file. Use '-' to read from stdin.
     #[clap()]
     File { path: PathBuf },
 

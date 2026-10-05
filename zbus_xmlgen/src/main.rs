@@ -5,6 +5,7 @@ use std::{
     error::Error,
     fs::{File, OpenOptions},
     io::Write,
+    path::Path,
 };
 
 use clap::Parser;
@@ -51,9 +52,18 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .await?
         }
         cli::Command::File { path } => {
-            let input_src = path.file_name().unwrap().to_string_lossy().to_string();
-            let f = File::open(path)?;
-            let (node, warnings) = Node::from_reader_with_warnings(f)?;
+            let is_stdin = path == Path::new("-");
+            let input_src = if is_stdin {
+                "stdin".to_string()
+            } else {
+                path.file_name().unwrap().to_string_lossy().to_string()
+            };
+            let (node, warnings) = if is_stdin {
+                Node::from_reader_with_warnings(std::io::stdin())?
+            } else {
+                let f = File::open(path)?;
+                Node::from_reader_with_warnings(f)?
+            };
             report_warnings(&warnings);
             DBusInfo(node, None, None, input_src)
         }
