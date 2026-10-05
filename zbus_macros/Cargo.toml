@@ -40,7 +40,6 @@ zbus_utils = { path = "../zbus_utils", version = "6.0.0" }
 zbus.workspace = true
 serde.workspace = true
 serde_repr.workspace = true
-async-io.workspace = true
 futures-util.workspace = true
 
 [package.metadata.docs.rs]
