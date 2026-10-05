@@ -790,7 +790,11 @@ pub fn expand(args: Punctuated<Meta, Token![,]>, mut input: ItemImpl) -> syn::Re
                             #args_from_msg
                             let reply = self.#ident(#args_names)#method_await;
                             let hdr = __zbus__message.header();
-                            if hdr.primary().flags().contains(#zbus::message::Flags::NoReplyExpected) {
+                            if hdr
+                                .primary()
+                                .flags()
+                                .contains(#zbus::message::Flags::NO_REPLY_EXPECTED)
+                            {
                                 Ok(())
                             } else {
                                 #reply

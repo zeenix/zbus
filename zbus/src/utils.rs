@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[cfg(unix)]
 pub(crate) const FDS_MAX: usize = 1024; // this is hardcoded in sdbus - nothing in the spec
 
@@ -9,6 +11,26 @@ pub(crate) fn padding_for_n_bytes(value: usize, align: usize) -> usize {
     let len_rounded_up = value.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1);
 
     len_rounded_up.wrapping_sub(value)
+}
+
+/// Formats a [`bitflags`] type declared with the `impl` form of `bitflags!` for its `Debug`
+/// implementation.
+///
+/// The `impl` form leaves `Debug` to the type, so this writes what the `struct` form of
+/// `bitflags!` generates: `Name(A | B)`, any bits that no flag defines as a trailing hex number
+/// (`Name(A | 0x8)`), and `Name(0x0)` for an empty set.
+pub(crate) fn fmt_bitflags<F>(name: &str, flags: &F, f: &mut fmt::Formatter<'_>) -> fmt::Result
+where
+    F: bitflags::Flags,
+    F::Bits: bitflags::parser::WriteHex,
+{
+    write!(f, "{name}(")?;
+    if flags.is_empty() {
+        f.write_str("0x0")?;
+    } else {
+        bitflags::parser::to_writer(flags, &mut *f)?;
+    }
+    f.write_str(")")
 }
 
 /// Helper trait for macro-generated code.

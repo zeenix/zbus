@@ -379,7 +379,7 @@ impl MyIface {
             header
                 .primary()
                 .flags()
-                .contains(zbus::message::Flags::NoReplyExpected)
+                .contains(zbus::message::Flags::NO_REPLY_EXPECTED)
         );
     }
 
@@ -392,7 +392,7 @@ impl MyIface {
             header
                 .primary()
                 .flags()
-                .contains(zbus::message::Flags::NoAutoStart)
+                .contains(zbus::message::Flags::NO_AUTO_START)
         );
     }
 
@@ -405,7 +405,7 @@ impl MyIface {
             header
                 .primary()
                 .flags()
-                .contains(zbus::message::Flags::AllowInteractiveAuth)
+                .contains(zbus::message::Flags::ALLOW_INTERACTIVE_AUTH)
         );
     }
 

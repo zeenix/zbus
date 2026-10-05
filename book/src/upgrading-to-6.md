@@ -57,7 +57,7 @@ zbus = { version = "6", default-features = false, features = ["tokio", "proxy", 
 ```
 
 Wire-format-only users replace the crate. Every `zvariant` feature kept its name, except
-`gvariant` and `ostree-tests`, which are gone:
+`gvariant`, `ostree-tests` and `enumflags2`, which are gone:
 
 ```toml
 # Before
@@ -83,11 +83,10 @@ zbus = { version = "6", default-features = false }
 
 Four things to know about the features:
 
-* `enumflags2`: zbus and zbus_names both asked `zvariant` for it, so anything with either in
-  its graph got `BitFlags<F>: Type` without asking. `comms` still enables it, so a full zbus
-  build is unchanged; a `default-features = false` build has to opt in with
-  `features = ["enumflags2"]`. The feature also covers more than it did: `BitFlags<F>` converts
-  into a `Value` now, not just out of one.
+* `enumflags2` is gone. zbus and zbus_names both asked `zvariant` for it, so anything with
+  either in its graph got `BitFlags<F>: Type` without asking. zbus's own flag types are no longer
+  `enumflags2` types (see [below][flag-types]), and a flags type of yours needs no feature to go
+  over the bus: [The `enumflags2` feature is gone][enumflags2] says how to move it off `BitFlags`.
 * `arrayvec` was a zvariant-only feature and is available in zbus now.
 * `comms` pulls in the `uuid` crate — it parses D-Bus GUIDs — without turning on zbus's own
   `uuid` feature, so the `Uuid` wire impls stay opt-in, as they were.
@@ -541,7 +540,7 @@ drop any `.inner()` or `.into_inner()` call on their result.
 `TryFrom<Value>` and `TryFrom<OwnedValue>` for `Optional<T>` check the incoming value against
 `T::null_value()` first and convert only when it does not match. Their bound moved from
 `T: PartialEq<<T as NoneValue>::NoneType>` to `<T as NoneValue>::NoneType: Into<Value<'_>>`. The
-types you would normally put in an `Optional` — strings, numbers, `BitFlags`, the name types —
+types you would normally put in an `Optional` — strings, numbers, flags, the name types —
 satisfy it; a `NoneValue` implementation of your own does not automatically, and loses these two
 conversions if its `NoneType` has no `Into<Value>`.
 
@@ -878,6 +877,143 @@ fn is_service_unknown(error: &Error) -> bool {
 }
 ```
 
+### The flag types are `bitflags` types
+
+`message::Flags`, `proxy::MethodFlags` and `fdo::RequestNameFlags` used to be `enumflags2`
+enums, one variant per flag, and the API spelt a set of them `BitFlags<Flags>`,
+`BitFlags<MethodFlags>` and `BitFlags<RequestNameFlags>`. Each is now a set of flags itself,
+made with the [`bitflags`] crate, and the API takes or returns it without the `BitFlags`
+wrapper:
+
+* `Connection::request_name_with_flags` and `fdo::DBusProxy::request_name` take a
+  `RequestNameFlags`.
+* `Proxy::call_with_flags` takes a `MethodFlags`.
+* `message::PrimaryHeader::flags` returns a `Flags`, and `set_flags` takes one.
+* `message::Builder::with_flags` still takes a `Flags`, but that is a set now, so one call can
+  add several flags.
+
+The flags themselves are associated constants, named in upper snake case:
+
+| Before | After |
+| --- | --- |
+| `NoReplyExpected` (`Flags` and `MethodFlags`) | `NO_REPLY_EXPECTED` |
+| `NoAutoStart` (`Flags` and `MethodFlags`) | `NO_AUTO_START` |
+| `AllowInteractiveAuth` (`Flags` and `MethodFlags`) | `ALLOW_INTERACTIVE_AUTH` |
+| `RequestNameFlags::AllowReplacement` | `RequestNameFlags::ALLOW_REPLACEMENT` |
+| `RequestNameFlags::ReplaceExisting` | `RequestNameFlags::REPLACE_EXISTING` |
+| `RequestNameFlags::DoNotQueue` | `RequestNameFlags::DO_NOT_QUEUE` |
+
+A single flag is a set already, so drop the `.into()` that used to turn one into a `BitFlags`, and
+write `BitFlags::empty()` and `BitFlags::default()` as `RequestNameFlags::empty()` and
+`RequestNameFlags::default()`:
+
+```rust,noplayground
+use zbus::{Connection, fdo::RequestNameFlags};
+
+async fn request_names(conn: &Connection) -> zbus::Result<()> {
+    // Was: RequestNameFlags::DoNotQueue.into()
+    conn.request_name_with_flags("org.zbus.First", RequestNameFlags::DO_NOT_QUEUE)
+        .await?;
+    // Was: RequestNameFlags::ReplaceExisting | RequestNameFlags::DoNotQueue
+    conn.request_name_with_flags(
+        "org.zbus.Second",
+        RequestNameFlags::REPLACE_EXISTING | RequestNameFlags::DO_NOT_QUEUE,
+    )
+    .await?;
+
+    Ok(())
+}
+```
+
+Most of what you did with a `BitFlags` reads the same: `contains`, `insert`, `remove`, `set`,
+`is_empty`, `bits` and the `|` and `&` operators. `from_bits` returns an `Option` rather than a
+`Result`, and a `match` on a single flag becomes a `contains` check. The types implement neither
+`Display` nor `TryFrom` of their integer, which `BitFlags` did: format them with `{:?}`, which
+names the flags, and turn an integer into flags with `from_bits`, or with `from_bits_retain` to
+keep the bits that no flag defines. `RequestNameFlags::default()`
+is still `ALLOW_REPLACEMENT | REPLACE_EXISTING | DO_NOT_QUEUE`, so an `Optional<RequestNameFlags>`
+uses the same null value as before.
+
+Decoding keeps bits that none of the flags define, where `enumflags2` rejected them with an
+error. In particular, zbus 5 failed to read a message whose header set a flag it did not know,
+although the D-Bus specification asks for unknown flags to be ignored; zbus 6 reads it, and the
+unknown bit stays in `PrimaryHeader::flags`.
+
+### The `enumflags2` feature is gone
+
+The `enumflags2` feature implemented `Type`, `Basic` and the `Value` and `OwnedValue` conversions
+for `enumflags2::BitFlags<F>`. Now that zbus's own flag types are `bitflags` types (see
+[above][flag-types]), zbus has no use for `enumflags2`, and the feature is gone with these
+implementations. A `BitFlags<F>` can no longer be an argument, return value or property of a
+`#[proxy]` or `#[interface]`, nor a field of a type that derives `Type`.
+
+You cannot add the implementations back in your own crate either. Rust accepts an implementation
+of a trait only in the crate that defines the trait or the one that defines the type, and `Type`
+and `Value` are zbus's while `BitFlags` is `enumflags2`'s. Wrapping your enum does not make
+`BitFlags<YourEnum>` a type of yours, so `impl Type for BitFlags<YourEnum>` is rejected (`E0117`).
+
+Instead, make the set of flags your own type: a newtype over the integer that derives zbus's
+traits like any other type of yours, with the flags and the methods and operators to work with
+them generated by the `impl` form of the [`bitflags`] crate's `bitflags!` macro. Add `bitflags` to
+your dependencies and replace the enum:
+
+```rust,noplayground
+use serde::{Deserialize, Serialize};
+use zbus::{OwnedValue, Type, Value, proxy};
+
+// Was:
+//
+// #[enumflags2::bitflags]
+// #[repr(u32)]
+// #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// pub enum Permission {
+//     Read = 0x1,
+//     Write = 0x2,
+// }
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash,
+    Serialize, Deserialize, Type, Value, OwnedValue,
+)]
+pub struct Permissions(u32);
+
+bitflags::bitflags! {
+    impl Permissions: u32 {
+        const READ = 0x1;
+        const WRITE = 0x2;
+    }
+}
+
+#[proxy(
+    interface = "org.zbus.Files",
+    default_path = "/org/zbus/Files",
+    default_service = "org.zbus.Files",
+)]
+trait Files {
+    // Was: `permissions: BitFlags<Permission>`
+    fn open(&self, path: &str, permissions: Permissions) -> zbus::Result<()>;
+}
+```
+
+`Permissions` encodes as the `u32` it wraps, as `BitFlags<Permission>` did, so nothing changes on
+the bus. In your code, `Permissions` takes the place of `BitFlags<Permission>` and its constants
+that of the variants: `Permission::Read | Permission::Write` becomes
+`Permissions::READ | Permissions::WRITE`. What the [previous section][flag-types] says about
+working with the flags applies here too, including that decoding now keeps bits that no flag
+defines instead of failing. Besides:
+
+* `#[derive(Default)]` makes the empty set the default, as `BitFlags` did unless the enum had a
+  `#[bitflags(default = ...)]` attribute. If yours had one, implement `Default` by hand to keep
+  it: the default is also what an `Optional<Permissions>` uses as its null value.
+* A `BitFlags<F>` could be the key of a dictionary. For the new type to be one, implement `Basic`
+  for it, as [the FAQ][bit-flags] shows.
+* The derived `Debug` prints the integer (`Permissions(3)`), where that of `BitFlags` named the
+  flags. The FAQ entry says how to name them in yours.
+
+If you would rather keep `enumflags2`, have your `#[proxy]` or `#[interface]` methods take and
+return the integer, and convert it with `BitFlags::bits` and `BitFlags::from_bits` on your side.
+
+[`bitflags`]: https://docs.rs/bitflags
+
 ## A stale zvariant in the dependency graph
 
 If another crate in your tree still depends on zvariant 5, your build contains two unrelated
@@ -913,6 +1049,9 @@ re-exports it from `zvariant_utils` instead, which makes it a second, unrelated 
 build; move a signature across that boundary through its string form.
 
 [breaks]: #what-warns-what-is-silent-what-breaks
+[flag-types]: #the-flag-types-are-bitflags-types
+[enumflags2]: #the-enumflags2-feature-is-gone
+[bit-flags]: faq.md#how-do-i-use-bit-flags
 [`zbus::wire`]: https://docs.rs/zbus/latest/zbus/wire/index.html
 [`zbus::names`]: https://docs.rs/zbus/latest/zbus/names/index.html
 [zgvariant]: https://crates.io/crates/zgvariant

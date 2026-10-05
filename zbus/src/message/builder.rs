@@ -2,8 +2,6 @@
 use crate::OwnedFd;
 use std::{borrow::Cow, io::Cursor, num::NonZeroU32, sync::Arc};
 
-use enumflags2::BitFlags;
-
 use crate::{
     DynamicType, Error, ObjectPath, Result, Signature,
     message::{EndianSig, Fields, Flags, Header, Message, PrimaryHeader, Sequence, Type},
@@ -54,21 +52,22 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Add flags to the message.
+    /// Add flags to the message, on top of any already added.
     ///
-    /// See [`Flags`] documentation for the meaning of the flags.
+    /// See [`Flags`] documentation for the meaning of the flags. Combine them with `|` to add
+    /// several in one call.
     ///
     /// Flags that are invalid for the message type are reported by [`Builder::build`].
     #[must_use]
-    pub fn with_flags(mut self, flag: Flags) -> Self {
+    pub fn with_flags(mut self, flags: Flags) -> Self {
         if self.header.message_type() != Type::MethodCall
-            && BitFlags::from_flag(flag).contains(Flags::NoReplyExpected)
+            && flags.contains(Flags::NO_REPLY_EXPECTED)
         {
             self.record(Error::InvalidField);
 
             return self;
         }
-        let flags = self.header.primary().flags() | flag;
+        let flags = self.header.primary().flags() | flags;
         self.header.primary_mut().set_flags(flags);
 
         self
@@ -396,8 +395,8 @@ mod tests {
 
         // Same for a valid flag after an invalid one.
         let error = Message::signal("/", "org.zbus.Test", "Test")
-            .with_flags(Flags::NoReplyExpected)
-            .with_flags(Flags::NoAutoStart)
+            .with_flags(Flags::NO_REPLY_EXPECTED)
+            .with_flags(Flags::NO_AUTO_START)
             .build(&())
             .unwrap_err();
         assert_eq!(error, Error::InvalidField);

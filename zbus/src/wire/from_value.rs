@@ -155,20 +155,6 @@ impl TryFrom<Value<'_>> for OwnedObjectPath {
 
 // tuple conversions in `structure` module for avoiding code-duplication.
 
-#[cfg(feature = "enumflags2")]
-impl<'a, F> TryFrom<Value<'a>> for enumflags2::BitFlags<F>
-where
-    F: enumflags2::BitFlag,
-    F::Numeric: TryFrom<Value<'a>, Error = Error>,
-{
-    type Error = Error;
-
-    fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
-        Self::from_bits(F::Numeric::try_from(value)?)
-            .map_err(|_| Error::Failure("Failed to convert to bitflags".into()))
-    }
-}
-
 impl<'a, K, V> TryFrom<Value<'a>> for BTreeMap<K, V>
 where
     K: crate::Basic + TryFrom<Value<'a>> + std::cmp::Ord,

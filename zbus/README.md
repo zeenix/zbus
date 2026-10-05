@@ -26,9 +26,9 @@ zbus = { version = "6", default-features = false }
 
 That build compiles `zbus::wire` and `zbus::names` and nothing else — no connection, proxy or
 object server. The optional wire-format features keep zvariant's names (`arrayvec`, `camino`,
-`chrono`, `enumflags2`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`),
-and enabling any D-Bus feature (`comms`, `default-rt`, `tokio`, `tokio-multithread`, `p2p`,
-`bus-impl`, `vsock`, `proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
+`chrono`, `heapless`, `option-as-array`, `serde_bytes`, `time`, `url`, `uuid`), and enabling any
+D-Bus feature (`comms`, `default-rt`, `tokio`, `tokio-multithread`, `p2p`, `bus-impl`, `vsock`,
+`proxy`, `service`, `unixexec`, `ibus`) brings the D-Bus API back.
 
 zbus logs through [`tracing`], behind the default `tracing` feature; a `default-features =
 false` build that wants zbus's logs must re-enable it explicitly.

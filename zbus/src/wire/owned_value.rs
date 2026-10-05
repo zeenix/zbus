@@ -114,19 +114,6 @@ where
     }
 }
 
-#[cfg(feature = "enumflags2")]
-impl<'a, F> TryFrom<OwnedValue> for enumflags2::BitFlags<F>
-where
-    F: enumflags2::BitFlag,
-    F::Numeric: TryFrom<Value<'a>, Error = crate::Error>,
-{
-    type Error = crate::Error;
-
-    fn try_from(value: OwnedValue) -> Result<Self, Self::Error> {
-        Self::try_from(value.0)
-    }
-}
-
 impl<'k, 'v, K, V> TryFrom<OwnedValue> for BTreeMap<K, V>
 where
     K: crate::Basic + TryFrom<Value<'k>> + std::cmp::Ord,
@@ -327,23 +314,6 @@ mod tests {
     use std::{collections::HashMap, error::Error};
 
     use crate::wire::{LE, OwnedValue, Value, serialized::Context, to_bytes};
-
-    #[cfg(feature = "enumflags2")]
-    #[test]
-    fn bitflags() -> Result<(), Box<dyn Error>> {
-        #[repr(u32)]
-        #[enumflags2::bitflags]
-        #[derive(Copy, Clone, Debug)]
-        pub enum Flaggy {
-            One = 0x1,
-            Two = 0x2,
-        }
-
-        let v = Value::from(0x2u32);
-        let ov: OwnedValue = v.try_into()?;
-        assert_eq!(<enumflags2::BitFlags<Flaggy>>::try_from(ov)?, Flaggy::Two);
-        Ok(())
-    }
 
     #[test]
     fn from_value() -> Result<(), Box<dyn Error>> {

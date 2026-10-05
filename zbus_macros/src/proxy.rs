@@ -402,39 +402,18 @@ fn gen_proxy_method_call(
     let proxy_object = resolve_proxy_type_name(&method_attrs, m.span())?;
     let proxy_vec = method_attrs.object_vec;
 
-    let method_flags = match (
-        method_attrs.no_reply,
-        method_attrs.no_autostart,
-        method_attrs.allow_interactive_auth,
-    ) {
-        (true, false, false) => Some(quote!(::std::convert::Into::into(
-            #zbus::proxy::MethodFlags::NoReplyExpected
-        ))),
-        (false, true, false) => Some(quote!(::std::convert::Into::into(
-            #zbus::proxy::MethodFlags::NoAutoStart
-        ))),
-        (false, false, true) => Some(quote!(::std::convert::Into::into(
-            #zbus::proxy::MethodFlags::AllowInteractiveAuth
-        ))),
-
-        (true, true, false) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoReplyExpected | #zbus::proxy::MethodFlags::NoAutoStart
-        )),
-        (true, false, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoReplyExpected
-                | #zbus::proxy::MethodFlags::AllowInteractiveAuth
-        )),
-        (false, true, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoAutoStart | #zbus::proxy::MethodFlags::AllowInteractiveAuth
-        )),
-
-        (true, true, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoReplyExpected
-                | #zbus::proxy::MethodFlags::NoAutoStart
-                | #zbus::proxy::MethodFlags::AllowInteractiveAuth
-        )),
-        _ => None,
-    };
+    let method_flags = [
+        (method_attrs.no_reply, quote!(NO_REPLY_EXPECTED)),
+        (method_attrs.no_autostart, quote!(NO_AUTO_START)),
+        (
+            method_attrs.allow_interactive_auth,
+            quote!(ALLOW_INTERACTIVE_AUTH),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(set, flag)| set.then(|| quote!(#zbus::proxy::MethodFlags::#flag)))
+    .collect::<Vec<_>>();
+    let method_flags = (!method_flags.is_empty()).then(|| quote!(#(#method_flags)|*));
 
     let mut method = parse_str::<Ident>(rust_method_name)?;
     method.set_span(Span::call_site());
@@ -562,7 +541,7 @@ fn gen_proxy_method_call(
 
                         // SAFETY: This unwrap() cannot fail due to the guarantees in
                         // call_with_flags, which can only return Ok(None) if the
-                        // NoReplyExpected is set. By not passing NoReplyExpected,
+                        // NO_REPLY_EXPECTED flag is set. By not passing NO_REPLY_EXPECTED,
                         // we are guaranteed to get either an Err variant (handled
                         // in the previous statement) or Ok(Some(T)) which is safe to
                         // unwrap

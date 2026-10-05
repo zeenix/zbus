@@ -5,16 +5,14 @@
 
 #[cfg(unix)]
 use crate::OwnedFd;
-#[cfg(feature = "proxy")]
-use enumflags2::BitFlags;
-use enumflags2::bitflags;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 #[cfg(feature = "proxy")]
 use std::collections::HashMap;
+use std::fmt;
 
 use super::Result;
-use crate::{DeserializeDict, SerializeDict, Type};
+use crate::{Basic, DeserializeDict, OwnedValue, SerializeDict, Type, Value, utils::fmt_bitflags};
 #[cfg(feature = "proxy")]
 use crate::{
     Optional, OwnedGuid,
@@ -33,40 +31,76 @@ use crate::{
     doc = "The flags used by `DBusProxy::request_name` (requires the `proxy` feature)."
 )]
 ///
-/// The default flags (returned by [`BitFlags::default`](enumflags2::BitFlags::default)) are
-/// `AllowReplacement`, `ReplaceExisting`, and `DoNotQueue`.
-#[bitflags(default = AllowReplacement | ReplaceExisting | DoNotQueue)]
-#[repr(u32)]
-#[derive(Type, Debug, PartialEq, Eq, Copy, Clone, Serialize, Deserialize)]
-pub enum RequestNameFlags {
-    /// If an application A specifies this flag and succeeds in becoming the owner of the name, and
-    #[cfg_attr(
-        feature = "proxy",
-        doc = "another application B later calls [`DBusProxy::request_name`] with the"
-    )]
-    #[cfg_attr(
-        not(feature = "proxy"),
-        doc = "another application B later calls `DBusProxy::request_name` with the"
-    )]
-    /// `ReplaceExisting`
-    /// flag, then application A will lose ownership and receive a `org.freedesktop.DBus.NameLost`
-    /// signal, and application B will become the new owner. If `AllowReplacement` is not specified
-    /// by application A, or `ReplaceExisting` is not specified by application B, then application
-    /// B will not replace application A as the owner.
-    AllowReplacement = 0x01,
-    /// Try to replace the current owner if there is one. If this flag is not set the application
-    /// will only become the owner of the name if there is no current owner. If this flag is set,
-    /// the application will replace the current owner if the current owner specified
-    /// `AllowReplacement`.
-    ReplaceExisting = 0x02,
-    /// Without this flag, if an application requests a name that is already owned, the
-    /// application will be placed in a queue to own the name when the current owner gives it
-    /// up. If this flag is given, the application will not be placed in the queue; the
-    /// request for the name will simply fail. This flag also affects behavior when an
-    /// application is replaced as name owner; by default the application moves back into the
-    /// waiting queue, unless this flag was provided when the application became the name
-    /// owner.
-    DoNotQueue = 0x04,
+/// This is a [`bitflags`](https://docs.rs/bitflags) type: a set of zero or more of the flags
+/// below, combined with `|`. Bits that none of the flags define are retained, not rejected, when
+/// the flags are decoded.
+///
+/// The default flags (returned by [`RequestNameFlags::default`]) are `ALLOW_REPLACEMENT`,
+/// `REPLACE_EXISTING`, and `DO_NOT_QUEUE`.
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Type,
+    Value,
+    OwnedValue,
+)]
+pub struct RequestNameFlags(u32);
+
+bitflags::bitflags! {
+    impl RequestNameFlags: u32 {
+        /// If an application A specifies this flag and succeeds in becoming the owner of the name,
+        #[cfg_attr(
+            feature = "proxy",
+            doc = "and another application B later calls [`DBusProxy::request_name`] with the"
+        )]
+        #[cfg_attr(
+            not(feature = "proxy"),
+            doc = "and another application B later calls `DBusProxy::request_name` with the"
+        )]
+        /// `REPLACE_EXISTING` flag, then application A will lose ownership and receive a
+        /// `org.freedesktop.DBus.NameLost` signal, and application B will become the new owner. If
+        /// `ALLOW_REPLACEMENT` is not specified by application A, or `REPLACE_EXISTING` is not
+        /// specified by application B, then application B will not replace application A as the
+        /// owner.
+        const ALLOW_REPLACEMENT = 0x01;
+        /// Try to replace the current owner if there is one. If this flag is not set the
+        /// application will only become the owner of the name if there is no current owner. If
+        /// this flag is set, the application will replace the current owner if the current owner
+        /// specified `ALLOW_REPLACEMENT`.
+        const REPLACE_EXISTING = 0x02;
+        /// Without this flag, if an application requests a name that is already owned, the
+        /// application will be placed in a queue to own the name when the current owner gives it
+        /// up. If this flag is given, the application will not be placed in the queue; the
+        /// request for the name will simply fail. This flag also affects behavior when an
+        /// application is replaced as name owner; by default the application moves back into the
+        /// waiting queue, unless this flag was provided when the application became the name
+        /// owner.
+        const DO_NOT_QUEUE = 0x04;
+    }
+}
+
+impl Default for RequestNameFlags {
+    fn default() -> Self {
+        Self::ALLOW_REPLACEMENT | Self::REPLACE_EXISTING | Self::DO_NOT_QUEUE
+    }
+}
+
+impl fmt::Debug for RequestNameFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_bitflags("RequestNameFlags", self, f)
+    }
+}
+
+impl Basic for RequestNameFlags {
+    const SIGNATURE_CHAR: char = u32::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = u32::SIGNATURE_STR;
 }
 
 #[cfg_attr(
@@ -81,16 +115,16 @@ pub enum RequestNameFlags {
 #[derive(Deserialize_repr, Serialize_repr, Type, Debug, PartialEq, Eq)]
 pub enum RequestNameReply {
     /// The caller is now the primary owner of the name, replacing any previous owner. Either the
-    /// name had no owner before, or the caller specified [`RequestNameFlags::ReplaceExisting`] and
-    /// the current owner specified [`RequestNameFlags::AllowReplacement`].
+    /// name had no owner before, or the caller specified [`RequestNameFlags::REPLACE_EXISTING`] and
+    /// the current owner specified [`RequestNameFlags::ALLOW_REPLACEMENT`].
     PrimaryOwner = 0x01,
-    /// The name already had an owner, [`RequestNameFlags::DoNotQueue`] was not specified, and
-    /// either the current owner did not specify [`RequestNameFlags::AllowReplacement`] or the
-    /// requesting application did not specify [`RequestNameFlags::ReplaceExisting`].
+    /// The name already had an owner, [`RequestNameFlags::DO_NOT_QUEUE`] was not specified, and
+    /// either the current owner did not specify [`RequestNameFlags::ALLOW_REPLACEMENT`] or the
+    /// requesting application did not specify [`RequestNameFlags::REPLACE_EXISTING`].
     InQueue = 0x02,
-    /// The name already had an owner, [`RequestNameFlags::DoNotQueue`] was specified, and either
-    /// [`RequestNameFlags::AllowReplacement`] was not specified by the current owner, or
-    /// [`RequestNameFlags::ReplaceExisting`] was not specified by the requesting application.
+    /// The name already had an owner, [`RequestNameFlags::DO_NOT_QUEUE`] was specified, and either
+    /// [`RequestNameFlags::ALLOW_REPLACEMENT`] was not specified by the current owner, or
+    /// [`RequestNameFlags::REPLACE_EXISTING`] was not specified by the requesting application.
     Exists = 0x03,
     /// The application trying to request ownership of a name is already the owner of it.
     AlreadyOwner = 0x04,
@@ -416,7 +450,7 @@ pub trait DBus {
     fn request_name(
         &self,
         name: WellKnownName<'_>,
-        flags: BitFlags<RequestNameFlags>,
+        flags: RequestNameFlags,
     ) -> Result<RequestNameReply>;
 
     /// Tries to launch the executable associated with a name (service
@@ -466,15 +500,36 @@ pub trait DBus {
     fn interfaces(&self) -> Result<Vec<OwnedInterfaceName>>;
 }
 
-#[cfg(all(test, feature = "proxy"))]
+#[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn request_name_flags_default() {
-        let flags = BitFlags::<RequestNameFlags>::default();
-        assert!(flags.contains(RequestNameFlags::AllowReplacement));
-        assert!(flags.contains(RequestNameFlags::ReplaceExisting));
-        assert!(flags.contains(RequestNameFlags::DoNotQueue));
+        let flags = RequestNameFlags::default();
+        assert!(flags.contains(RequestNameFlags::ALLOW_REPLACEMENT));
+        assert!(flags.contains(RequestNameFlags::REPLACE_EXISTING));
+        assert!(flags.contains(RequestNameFlags::DO_NOT_QUEUE));
+    }
+
+    #[test]
+    fn request_name_flags_signature_and_debug() {
+        assert_eq!(RequestNameFlags::SIGNATURE, "u");
+        assert_eq!(
+            format!("{:?}", RequestNameFlags::default()),
+            "RequestNameFlags(ALLOW_REPLACEMENT | REPLACE_EXISTING | DO_NOT_QUEUE)"
+        );
+    }
+
+    #[test]
+    fn request_name_flags_convert_from_borrowed_value() {
+        use crate::wire::{LE, serialized::Context, to_bytes};
+
+        // A `Value` that borrows from the buffer it was decoded from, as one taken out of a
+        // received message does.
+        let flags = RequestNameFlags::REPLACE_EXISTING | RequestNameFlags::DO_NOT_QUEUE;
+        let encoded = to_bytes(Context::new(LE, 0), &Value::from(flags)).unwrap();
+        let (value, _): (Value<'_>, _) = encoded.deserialize().unwrap();
+        assert_eq!(RequestNameFlags::try_from(value).unwrap(), flags);
     }
 }

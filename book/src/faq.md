@@ -392,6 +392,82 @@ let s: &str = encoded.deserialize().unwrap().0;
 assert_eq!(s, "Variant2");
 ```
 
+## How do I use bit flags?
+
+D-Bus has no type for bit flags: a set of flags goes over the bus as the unsigned integer with
+their bits set, usually a `u32`. zbus needs no special support for them either. Declare the set as
+a newtype over that integer, derive zbus's traits on it as on any other type of yours, and have
+the [`bitflags`] crate generate the flags and the methods and operators to work with them, through
+the `impl` form of its `bitflags!` macro:
+
+```rust,noplayground
+use serde::{Deserialize, Serialize};
+use zbus::{
+    Basic, OwnedValue, Type, Value, proxy,
+    wire::{serialized::Context, to_bytes, LE},
+};
+
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash,
+    Serialize, Deserialize, Type, Value, OwnedValue,
+)]
+pub struct Permissions(u32);
+
+bitflags::bitflags! {
+    impl Permissions: u32 {
+        const READ = 0x1;
+        const WRITE = 0x2;
+        const EXECUTE = 0x4;
+    }
+}
+
+// Only needed to use the flags as the key of a dictionary.
+impl Basic for Permissions {
+    const SIGNATURE_CHAR: char = u32::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = u32::SIGNATURE_STR;
+}
+
+#[proxy(
+    interface = "org.zbus.Files",
+    default_path = "/org/zbus/Files",
+    default_service = "org.zbus.Files",
+)]
+trait Files {
+    fn open(&self, path: &str, permissions: Permissions) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn default_permissions(&self) -> zbus::Result<Permissions>;
+}
+
+// On the bus, the flags are the integer.
+assert_eq!(Permissions::SIGNATURE, "u");
+let ctxt = Context::new(LE, 0);
+let flags = Permissions::READ | Permissions::WRITE;
+let encoded = to_bytes(ctxt, &flags).unwrap();
+assert_eq!(encoded.bytes(), to_bytes(ctxt, &0x3u32).unwrap().bytes());
+let decoded: Permissions = encoded.deserialize().unwrap().0;
+assert_eq!(decoded, flags);
+```
+
+`Type` gives the flags the signature of the integer, and the serde derives encode them as it.
+`Value` and `OwnedValue` convert them to and from a [`Value`] holding the integer, which a property
+needs, since property values travel as variants. `Default` makes the empty set the null value of
+an [`Optional<T>`].
+
+A few things to be aware of:
+
+* Decoding keeps bits that none of the flags define, so a peer can set flags your code does not
+  know yet without breaking it. Where you would rather refuse them,
+  `Permissions::from_bits(flags.bits())` returns `None` for such a set.
+* The derived `Debug` prints the integer (`Permissions(3)`). To print the flags' names
+  instead (`READ | WRITE`), implement `Debug` with `bitflags::parser::to_writer`; it writes
+  nothing for an empty set.
+* A flags type made with the `struct` form of `bitflags!` can go over the bus too, but without the
+  `Value` conversions: enable the `bitflags` crate's `serde` feature, derive `Serialize`,
+  `Deserialize` and `Type` inside the macro, and give `Type` the signature with
+  `#[zbus(signature = "u")]`, as the struct wraps an internal type the macro generates, which
+  implements none of zbus's traits.
+
 [`proxy::Builder::uncached_properties`]: https://docs.rs/zbus/latest/zbus/proxy/struct.Builder.html#method.uncached_properties
 [`proxy::Builder::cache_properties`]: https://docs.rs/zbus/latest/zbus/proxy/struct.Builder.html#method.cache_properties
 [`proxy`]: https://docs.rs/zbus/latest/zbus/attr.proxy.html
@@ -406,4 +482,5 @@ assert_eq!(s, "Variant2");
 [`Value`]: https://docs.rs/zbus/latest/zbus/wire/enum.Value.html
 [`OwnedValue`]: https://docs.rs/zbus/latest/zbus/wire/struct.OwnedValue.html
 [`serde_repr`]: https://crates.io/crates/serde_repr
+[`bitflags`]: https://docs.rs/bitflags
 [zruntime]: https://docs.rs/zruntime

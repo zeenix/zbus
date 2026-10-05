@@ -189,40 +189,6 @@ mod tests {
         assert_eq!(*opt, None);
     }
 
-    #[cfg(feature = "enumflags2")]
-    #[test]
-    fn value_conversion_maps_empty_bitflags_to_none() {
-        use crate::wire::{Optional, OwnedValue, Value};
-        use enumflags2::BitFlags;
-
-        #[repr(u32)]
-        #[enumflags2::bitflags]
-        #[derive(Copy, Clone, Debug, PartialEq)]
-        pub enum Flaggy {
-            One = 0x1,
-            Two = 0x2,
-        }
-
-        // Empty flags (numeric 0) are the null sentinel and must map to `None`.
-        let opt = Optional::<BitFlags<Flaggy>>::try_from(Value::from(0u32)).unwrap();
-        assert_eq!(Option::<BitFlags<Flaggy>>::from(opt), None);
-        let opt = Optional::<BitFlags<Flaggy>>::try_from(Value::from(0x2u32)).unwrap();
-        assert_eq!(
-            Option::<BitFlags<Flaggy>>::from(opt),
-            Some(Flaggy::Two.into())
-        );
-
-        let owned = OwnedValue::try_from(Value::from(0u32)).unwrap();
-        let opt = Optional::<BitFlags<Flaggy>>::try_from(owned).unwrap();
-        assert_eq!(Option::<BitFlags<Flaggy>>::from(opt), None);
-        let owned = OwnedValue::try_from(Value::from(0x3u32)).unwrap();
-        let opt = Optional::<BitFlags<Flaggy>>::try_from(owned).unwrap();
-        assert_eq!(
-            Option::<BitFlags<Flaggy>>::from(opt),
-            Some(Flaggy::One | Flaggy::Two)
-        );
-    }
-
     #[test]
     fn bool_in_optional() {
         // Ensure trying to encode/decode `bool` in `Optional` fails.

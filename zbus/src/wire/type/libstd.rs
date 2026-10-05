@@ -318,7 +318,7 @@ mod tests {
 
     #[cfg(feature = "comms")]
     assert_impl_all!(
-        HashMap<enumflags2::BitFlags<crate::fdo::RequestNameFlags>, u8>:
+        HashMap<crate::fdo::RequestNameFlags, u8>:
             Type,
             Into<Value<'static>>,
             Into<OwnedValue>,

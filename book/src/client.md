@@ -554,7 +554,7 @@ trait Notifications {
 ```
 
 It should be usable as such. But you may as well improve a bit the naming of the arguments, use
-better types (using `BitFlags`, structs or other custom types), add extra documentation, and other
+better types ([bit flags], structs or other custom types), add extra documentation, and other
 functions to make the binding more pleasing to use from Rust.
 
 For example, the generated `GetServerInformation` method can be improved to a nicer version:
@@ -602,6 +602,7 @@ There you have it, a Rust-friendly binding for your D-Bus service!
 [`gdbus-codegen`]: https://docs.gtk.org/gio/migrating-gdbus.html#generating-code-and-docs
 [`pkg-config`]: https://www.freedesktop.org/wiki/Software/pkg-config/
 [cob]: faq.html#how-do-i-use-zbus-from-synchronous-code
+[bit flags]: faq.html#how-do-i-use-bit-flags
 [`Stream`]: https://docs.rs/futures/4/futures/stream/trait.Stream.html
 
 [^busctl]: `busctl` is part of [`systemd`](https://systemd.io/).

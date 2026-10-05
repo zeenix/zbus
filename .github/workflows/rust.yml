@@ -240,7 +240,7 @@ jobs:
           # No D-Bus API, so no session bus is needed.
           cargo --locked test --release --verbose -p zbus --no-default-features
           cargo --locked test --release --verbose -p zbus --no-default-features \
-            --features arrayvec,camino,chrono,enumflags2,heapless \
+            --features arrayvec,camino,chrono,heapless \
             --features option-as-array,serde_bytes,time,url,uuid
       - name: Test zbus with zbus_utils/gvariant enabled (zgvariant coexistence)
         if: matrix.suite == 'wire'
@@ -327,7 +327,7 @@ jobs:
           # The wire-format-only build.
           cargo --locked test -p zbus --no-default-features
           cargo --locked test -p zbus --no-default-features `
-            --features arrayvec,camino,chrono,enumflags2,heapless `
+            --features arrayvec,camino,chrono,heapless `
             --features option-as-array,serde_bytes,time,url,uuid
 
   zbus_fuzz:

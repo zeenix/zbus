@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{
-    Attribute, Data, DataEnum, DeriveInput, Error, Fields, Generics, Ident, Lifetime,
+    Attribute, Data, DataEnum, DeriveInput, Error, Fields, GenericParam, Generics, Ident, Lifetime,
     LifetimeParam, Variant, spanned::Spanned,
 };
 
@@ -77,6 +77,12 @@ fn impl_struct(
 ) -> Result<TokenStream, Error> {
     let Ctx { zv, attr_lists } = *ctx;
     let statc_lifetime = LifetimeParam::new(Lifetime::new("'static", Span::call_site()));
+    let newtype = matches!(fields, Fields::Unnamed(_)) && fields.len() == 1;
+    // A newtype that has no lifetime of its own converts from and to a `Value` of any lifetime,
+    // as far as the type it wraps does, so that it can be taken out of a `Value` borrowed from a
+    // message, for instance. The impls get a lifetime parameter of their own for that.
+    let mut value_generics = generics.clone();
+    let mut fresh_lifetime = None;
     let (
         value_type,
         value_lifetime,
@@ -88,10 +94,19 @@ fn impl_struct(
     ) = match value_type {
         ValueType::Value => {
             let mut lifetimes = generics.lifetimes();
-            let value_lifetime = lifetimes
-                .next()
-                .cloned()
-                .unwrap_or_else(|| statc_lifetime.clone());
+            let value_lifetime = match lifetimes.next() {
+                Some(lifetime) => lifetime.clone(),
+                None if newtype => {
+                    let lifetime = LifetimeParam::new(Lifetime::new("'__value", Span::call_site()));
+                    value_generics
+                        .params
+                        .insert(0, GenericParam::Lifetime(lifetime.clone()));
+                    fresh_lifetime = Some(lifetime.clone());
+
+                    lifetime
+                }
+                None => statc_lifetime.clone(),
+            };
             if lifetimes.next().is_some() {
                 return Err(Error::new(
                     name.span(),
@@ -121,26 +136,41 @@ fn impl_struct(
     };
 
     let type_params = generics.type_params().cloned().collect::<Vec<_>>();
-    let (from_value_where_clause, into_value_where_clause) = if !type_params.is_empty() {
-        (
-            Some(quote! {
-                where
-                #(
-                    #type_params: ::std::convert::TryFrom<#zv::Value<#value_lifetime>> + #zv::Type,
-                    <#type_params as ::std::convert::TryFrom<#zv::Value<#value_lifetime>>>::Error: ::std::convert::Into<#zv::Error>
-                ),*
-            }),
-            Some(quote! {
-                where
-                #(
-                    #type_params: ::std::convert::Into<#zv::Value<#value_lifetime>> + #zv::Type
-                ),*
-            }),
-        )
-    } else {
-        (None, None)
-    };
-    let (impl_generics, ty_generics, _) = generics.split_for_impl();
+    let mut from_value_bounds = type_params
+        .iter()
+        .map(|type_param| {
+            quote! {
+                #type_param: ::std::convert::TryFrom<#zv::Value<#value_lifetime>> + #zv::Type,
+                <#type_param as ::std::convert::TryFrom<#zv::Value<#value_lifetime>>>::Error:
+                    ::std::convert::Into<#zv::Error>
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut into_value_bounds = type_params
+        .iter()
+        .map(|type_param| {
+            quote! {
+                #type_param: ::std::convert::Into<#zv::Value<#value_lifetime>> + #zv::Type
+            }
+        })
+        .collect::<Vec<_>>();
+    if let Some(lifetime) = &fresh_lifetime {
+        // The conversions of the wrapped type have to work for any lifetime of the `Value`, which
+        // they do for the types that hold no borrowed data.
+        let field_ty = &fields.iter().next().unwrap().ty;
+        from_value_bounds.push(quote! {
+            #field_ty: ::std::convert::TryFrom<#zv::Value<#lifetime>, Error = #zv::Error>
+        });
+        into_value_bounds.push(quote! {
+            #zv::Value<#lifetime>: ::std::convert::From<#field_ty>
+        });
+    }
+    let where_clause =
+        |bounds: &[TokenStream]| (!bounds.is_empty()).then(|| quote! { where #(#bounds),* });
+    let from_value_where_clause = where_clause(&from_value_bounds);
+    let into_value_where_clause = where_clause(&into_value_bounds);
+    let (impl_generics, _, _) = value_generics.split_for_impl();
+    let (_, ty_generics, _) = generics.split_for_impl();
     match fields {
         Fields::Named(_) => {
             let field_names: Vec<_> = fields
