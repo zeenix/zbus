@@ -2,8 +2,6 @@ mod dynamic;
 pub use dynamic::{DynamicDeserialize, DynamicType};
 #[cfg(feature = "serde_bytes")]
 mod bytes;
-#[cfg(feature = "enumflags2")]
-mod enumflags2;
 mod libstd;
 mod net;
 mod paths;

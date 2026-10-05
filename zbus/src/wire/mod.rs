@@ -174,16 +174,15 @@
 //!
 //! Each of these adds [`Type`] (and, where it applies, [`Value`]) implementations for a
 //! third-party crate's types, except `option-as-array`, which instead changes how `Option<T>`
-//! is encoded. None of them enables the D-Bus API, and they are all off in a wire-only build
-//! (`default-features = false`); `comms` — and therefore every default build — turns
-//! `enumflags2` on.
+//! is encoded. None of them enables the D-Bus API, and the D-Bus API enables none of them: they
+//! are all off unless asked for, in a default build as much as in a wire-only one
+//! (`default-features = false`).
 //!
 //! | Feature | Types covered |
 //! | --- | --- |
 //! | `arrayvec` | `arrayvec::ArrayVec` and `arrayvec::ArrayString` |
 //! | `camino` | `camino::Utf8Path` and `camino::Utf8PathBuf` |
 //! | `chrono` | `chrono`'s date and time types |
-//! | `enumflags2` | `enumflags2::BitFlags<F>`, converted to and from `Value` |
 //! | `heapless` | `heapless::Vec` and `heapless::String` |
 //! | `option-as-array` | `Option<T>`, encoded as an array of 0 or 1 elements |
 //! | `serde_bytes` | `serde_bytes::Bytes` and `serde_bytes::ByteBuf` |
@@ -191,6 +190,11 @@
 //! | `url` | `url::Url` |
 //! | `uuid` | `uuid::Uuid` |
 //!
+//! A set of bit flags needs no feature: make it a newtype over its integer, derive [`Type`] and
+//! the other traits on it, and let the `bitflags` crate add the flags, as [the FAQ][bit-flags]
+//! shows.
+//!
+//! [bit-flags]: https://z-galaxy.github.io/zbus/faq.html#how-do-i-use-bit-flags
 //! [dwf]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling
 //! [gv]: https://developer.gnome.org/documentation/specifications/gvariant-specification-1.0.html
 //! [zgvariant]: https://crates.io/crates/zgvariant

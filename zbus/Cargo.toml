@@ -27,7 +27,6 @@ default = [
 arrayvec = ["dep:arrayvec"]
 camino = ["dep:camino"]
 chrono = ["dep:chrono"]
-enumflags2 = ["dep:enumflags2"]
 heapless = ["dep:heapless"]
 # Enables ser/de of `Option<T>` as an array of 0 or 1 elements.
 option-as-array = []
@@ -39,7 +38,6 @@ uuid = ["dep:uuid"]
 # The D-Bus API: connection, message, proxy, object server, fdo and friends.
 comms = [
     "dep:bitflags",
-    "enumflags2",
     "zbus_macros/comms",
     "dep:serde_repr",
     "dep:futures-core",
@@ -101,7 +99,6 @@ zbus_utils = { path = "../zbus_utils", version = "6.0.0" }
 serde.workspace = true
 serde_repr = { workspace = true, optional = true }
 bitflags = { workspace = true, optional = true }
-enumflags2 = { workspace = true, optional = true }
 futures-core = { workspace = true, optional = true }
 futures-lite = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
@@ -194,7 +191,6 @@ features = [
     "arrayvec",
     "camino",
     "chrono",
-    "enumflags2",
     "heapless",
     "option-as-array",
     "serde_bytes",

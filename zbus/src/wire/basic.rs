@@ -376,16 +376,6 @@ impl_basic_with_repr!(
     chrono::Weekday => str,
 );
 
-#[cfg(feature = "enumflags2")]
-impl<F> Basic for enumflags2::BitFlags<F>
-where
-    F: enumflags2::BitFlag,
-    F::Numeric: Basic,
-{
-    const SIGNATURE_CHAR: char = F::Numeric::SIGNATURE_CHAR;
-    const SIGNATURE_STR: &'static str = F::Numeric::SIGNATURE_STR;
-}
-
 #[cfg(test)]
 mod tests {
     use static_assertions::assert_impl_all;
