@@ -1,16 +1,17 @@
 use std::{
+    fmt,
     num::NonZeroU32,
     sync::atomic::{AtomicU32, Ordering::Relaxed},
 };
 
-use enumflags2::{BitFlags, bitflags};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{
-    Error, ObjectPath, Signature, Type as VariantType,
+    Basic, Error, ObjectPath, OwnedValue, Signature, Type as VariantType, Value,
     message::Fields,
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    utils::fmt_bitflags,
     wire::{
         Endian,
         serialized::{self, Context},
@@ -87,25 +88,58 @@ pub enum Type {
 }
 
 /// Pre-defined flags that can be passed in message headers.
-#[bitflags]
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, VariantType)]
-pub enum Flags {
-    /// This message does not expect method return replies or error replies, even if it is of a
-    /// type that can have a reply; the reply should be omitted.
-    ///
-    /// Note that `Type::MethodCall` is the only message type currently defined in the
-    /// specification that can expect a reply, so the presence or absence of this flag in the other
-    /// three message types that are currently documented is meaningless: replies to those message
-    /// types should not be sent, whether this flag is present or not.
-    NoReplyExpected = 0x1,
-    /// The bus must not launch an owner for the destination name in response to this message.
-    NoAutoStart = 0x2,
-    /// This flag may be set on a method call message to inform the receiving side that the caller
-    /// is prepared to wait for interactive authorization, which might take a considerable time to
-    /// complete. For instance, if this flag is set, it would be appropriate to query the user for
-    /// passwords or confirmation via Polkit or a similar framework.
-    AllowInteractiveAuth = 0x4,
+///
+/// This is a [`bitflags`](https://docs.rs/bitflags) type: a set of zero or more of the flags
+/// below, combined with `|`. Bits that none of the flags define are retained, not rejected, when
+/// a header is decoded, as the D-Bus specification asks unknown flags to be ignored.
+#[derive(
+    Copy,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    VariantType,
+    Value,
+    OwnedValue,
+)]
+pub struct Flags(u8);
+
+bitflags::bitflags! {
+    impl Flags: u8 {
+        /// This message does not expect method return replies or error replies, even if it is of
+        /// a type that can have a reply; the reply should be omitted.
+        ///
+        /// Note that `Type::MethodCall` is the only message type currently defined in the
+        /// specification that can expect a reply, so the presence or absence of this flag in the
+        /// other three message types that are currently documented is meaningless: replies to
+        /// those message types should not be sent, whether this flag is present or not.
+        const NO_REPLY_EXPECTED = 0x1;
+        /// The bus must not launch an owner for the destination name in response to this
+        /// message.
+        const NO_AUTO_START = 0x2;
+        /// This flag may be set on a method call message to inform the receiving side that the
+        /// caller is prepared to wait for interactive authorization, which might take a
+        /// considerable time to complete. For instance, if this flag is set, it would be
+        /// appropriate to query the user for passwords or confirmation via Polkit or a similar
+        /// framework.
+        const ALLOW_INTERACTIVE_AUTH = 0x4;
+    }
+}
+
+impl fmt::Debug for Flags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_bitflags("Flags", self, f)
+    }
+}
+
+impl Basic for Flags {
+    const SIGNATURE_CHAR: char = u8::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = u8::SIGNATURE_STR;
 }
 
 /// The primary message header, which is present in all D-Bus messages.
@@ -115,7 +149,7 @@ pub enum Flags {
 pub struct PrimaryHeader {
     endian_sig: EndianSig,
     msg_type: Type,
-    flags: BitFlags<Flags>,
+    flags: Flags,
     protocol_version: u8,
     body_len: u32,
     serial_num: NonZeroU32,
@@ -132,7 +166,7 @@ impl PrimaryHeader {
         Self {
             endian_sig: NATIVE_ENDIAN_SIG,
             msg_type,
-            flags: BitFlags::empty(),
+            flags: Flags::empty(),
             protocol_version: 1,
             body_len,
             serial_num: serial_num.try_into().unwrap(),
@@ -177,12 +211,12 @@ impl PrimaryHeader {
     }
 
     /// The message flags.
-    pub fn flags(&self) -> BitFlags<Flags> {
+    pub fn flags(&self) -> Flags {
         self.flags
     }
 
     /// Set the message flags.
-    pub fn set_flags(&mut self, flags: BitFlags<Flags>) {
+    pub fn set_flags(&mut self, flags: Flags) {
         self.flags = flags;
     }
 
@@ -318,10 +352,10 @@ static SERIAL_NUM: AtomicU32 = AtomicU32::new(0);
 
 #[cfg(test)]
 mod tests {
-    use crate::message::{Fields, Header, PrimaryHeader, Type};
+    use crate::message::{Fields, Flags, Header, PrimaryHeader, Type};
 
     use crate::{
-        ObjectPath, Signature,
+        ObjectPath, Signature, Type as _,
         names::{InterfaceName, MemberName},
         signature,
     };
@@ -371,5 +405,48 @@ mod tests {
         assert_eq!(h.unix_fds(), Some(12));
 
         Ok(())
+    }
+
+    #[test]
+    fn flags_signature_and_debug() {
+        assert_eq!(Flags::SIGNATURE, "y");
+        assert_eq!(format!("{:?}", Flags::empty()), "Flags(0x0)");
+        assert_eq!(
+            format!("{:?}", Flags::NO_REPLY_EXPECTED | Flags::NO_AUTO_START),
+            "Flags(NO_REPLY_EXPECTED | NO_AUTO_START)"
+        );
+    }
+
+    #[test]
+    fn flags_convert_from_borrowed_value() {
+        use crate::{
+            Value,
+            wire::{LE, serialized::Context, to_bytes},
+        };
+
+        // A `Value` that borrows from the buffer it was decoded from, as one taken out of a
+        // received message does.
+        let flags = Flags::NO_REPLY_EXPECTED | Flags::NO_AUTO_START;
+        let encoded = to_bytes(Context::new(LE, 0), &Value::from(flags)).unwrap();
+        let (value, _): (Value<'_>, _) = encoded.deserialize().unwrap();
+        assert_eq!(Flags::try_from(value).unwrap(), flags);
+    }
+
+    #[test]
+    fn unknown_flags_are_retained() {
+        // The primary header of a method call, followed by the length of its (empty) header
+        // fields array. Besides `NO_REPLY_EXPECTED` (0x1), its flags byte sets 0x8, which no flag
+        // defines. The D-Bus specification asks for unknown flags to be ignored, so reading the
+        // header must not fail, and the bit is kept.
+        let bytes = [b'l', 1, 0x9, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
+        let (primary, _) = PrimaryHeader::read(&bytes).unwrap();
+
+        assert_eq!(primary.msg_type(), Type::MethodCall);
+        assert_eq!(primary.flags().bits(), 0x9);
+        assert!(primary.flags().contains(Flags::NO_REPLY_EXPECTED));
+        assert_eq!(
+            format!("{:?}", primary.flags()),
+            "Flags(NO_REPLY_EXPECTED | 0x8)"
+        );
     }
 }

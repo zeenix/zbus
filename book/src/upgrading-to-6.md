@@ -880,17 +880,24 @@ fn is_service_unknown(error: &Error) -> bool {
 
 ### The flag types are `bitflags` types
 
-`fdo::RequestNameFlags` used to be an `enumflags2` enum, one variant per flag, and the API spelt a
-set of them `BitFlags<RequestNameFlags>`. It is now a set of flags itself, made with the
-[`bitflags`] crate, and the API takes it without the `BitFlags` wrapper:
+`message::Flags` and `fdo::RequestNameFlags` used to be `enumflags2` enums, one variant per flag,
+and the API spelt a set of them `BitFlags<Flags>` and `BitFlags<RequestNameFlags>`. Each is now a
+set of flags itself, made with the [`bitflags`] crate, and the API takes or returns it without the
+`BitFlags` wrapper:
 
 * `Connection::request_name_with_flags` and `fdo::DBusProxy::request_name` take a
   `RequestNameFlags`.
+* `message::PrimaryHeader::flags` returns a `Flags`, and `set_flags` takes one.
+* `message::Builder::with_flags` still takes a `Flags`, but that is a set now, so one call can
+  add several flags.
 
 The flags themselves are associated constants, named in upper snake case:
 
 | Before | After |
 | --- | --- |
+| `Flags::NoReplyExpected` | `Flags::NO_REPLY_EXPECTED` |
+| `Flags::NoAutoStart` | `Flags::NO_AUTO_START` |
+| `Flags::AllowInteractiveAuth` | `Flags::ALLOW_INTERACTIVE_AUTH` |
 | `RequestNameFlags::AllowReplacement` | `RequestNameFlags::ALLOW_REPLACEMENT` |
 | `RequestNameFlags::ReplaceExisting` | `RequestNameFlags::REPLACE_EXISTING` |
 | `RequestNameFlags::DoNotQueue` | `RequestNameFlags::DO_NOT_QUEUE` |
@@ -919,15 +926,17 @@ async fn request_names(conn: &Connection) -> zbus::Result<()> {
 
 Most of what you did with a `BitFlags` reads the same: `contains`, `insert`, `remove`, `set`,
 `is_empty`, `bits` and the `|` and `&` operators. `from_bits` returns an `Option` rather than a
-`Result`, and a `match` on a single flag becomes a `contains` check. The type implements neither
-`Display` nor `TryFrom` of its integer, which `BitFlags` did: format it with `{:?}`, which
+`Result`, and a `match` on a single flag becomes a `contains` check. The types implement neither
+`Display` nor `TryFrom` of their integer, which `BitFlags` did: format them with `{:?}`, which
 names the flags, and turn an integer into flags with `from_bits`, or with `from_bits_retain` to
 keep the bits that no flag defines. `RequestNameFlags::default()`
 is still `ALLOW_REPLACEMENT | REPLACE_EXISTING | DO_NOT_QUEUE`, so an `Optional<RequestNameFlags>`
 uses the same null value as before.
 
 Decoding keeps bits that none of the flags define, where `enumflags2` rejected them with an
-error.
+error. In particular, zbus 5 failed to read a message whose header set a flag it did not know,
+although the D-Bus specification asks for unknown flags to be ignored; zbus 6 reads it, and the
+unknown bit stays in `PrimaryHeader::flags`.
 
 [`bitflags`]: https://docs.rs/bitflags
 

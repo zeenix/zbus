@@ -34,7 +34,7 @@ impl<'a> DispatchResult2<'a> {
         DispatchResult2::Async(Box::pin(async move {
             let hdr = msg.header();
             let ret = f.await;
-            if !hdr.primary().flags().contains(Flags::NoReplyExpected) {
+            if !hdr.primary().flags().contains(Flags::NO_REPLY_EXPECTED) {
                 match ret {
                     Ok(r) => conn.reply(&hdr, &r).await,
                     Err(e) => conn.reply_dbus_error(&hdr, e).await,

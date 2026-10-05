@@ -428,4 +428,6 @@ mod tests {
 
     #[cfg(feature = "comms")]
     assert_impl_all!(crate::fdo::RequestNameFlags: Basic);
+    #[cfg(feature = "comms")]
+    assert_impl_all!(crate::message::Flags: Basic);
 }

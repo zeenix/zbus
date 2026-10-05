@@ -345,7 +345,7 @@ impl PropertiesCache {
                 proxy.inner().path(),
                 Some(proxy.inner().interface()),
                 "GetAll",
-                BitFlags::empty(),
+                Flags::empty(),
                 &interface,
             )
             .await
@@ -879,7 +879,7 @@ impl<'a> Proxy<'a> {
         B: serde::ser::Serialize + crate::DynamicType,
         R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
-        let flags = flags.iter().map(Flags::from).collect::<BitFlags<_>>();
+        let flags = flags.iter().map(Flags::from).collect::<Flags>();
         match self
             .inner
             .inner_without_borrows
@@ -1070,9 +1070,9 @@ pub enum MethodFlags {
 impl From<MethodFlags> for Flags {
     fn from(method_flag: MethodFlags) -> Self {
         match method_flag {
-            MethodFlags::NoReplyExpected => Self::NoReplyExpected,
-            MethodFlags::NoAutoStart => Self::NoAutoStart,
-            MethodFlags::AllowInteractiveAuth => Self::AllowInteractiveAuth,
+            MethodFlags::NoReplyExpected => Self::NO_REPLY_EXPECTED,
+            MethodFlags::NoAutoStart => Self::NO_AUTO_START,
+            MethodFlags::AllowInteractiveAuth => Self::ALLOW_INTERACTIVE_AUTH,
         }
     }
 }
@@ -1189,7 +1189,7 @@ impl<'a> SignalStream<'a> {
                         "/org/freedesktop/DBus",
                         Some("org.freedesktop.DBus"),
                         "GetNameOwner",
-                        BitFlags::empty(),
+                        Flags::empty(),
                         &name,
                     )
                     .await

@@ -1,5 +1,4 @@
 //! Connection API.
-use enumflags2::BitFlags;
 use futures_lite::StreamExt;
 use std::{
     borrow::Cow,
@@ -304,7 +303,7 @@ impl Connection {
                 path,
                 interface,
                 method_name,
-                BitFlags::empty(),
+                Flags::empty(),
                 body,
             )
             .await?
@@ -323,7 +322,7 @@ impl Connection {
     /// object that allows the reply to be retrieved.  Typically you'd want to use
     /// [`Connection::call_method`] instead.
     ///
-    /// If the `flags` do not contain `MethodFlags::NoReplyExpected`, the return value is
+    /// If the `flags` do not contain `Flags::NO_REPLY_EXPECTED`, the return value is
     /// guaranteed to be `Ok(Some(_))`, if there was no error encountered.
     ///
     /// INTERNAL NOTE: If this method is ever made pub, flags should become `BitFlags<MethodFlags>`.
@@ -333,7 +332,7 @@ impl Connection {
         path: P,
         interface: Option<I>,
         method_name: M,
-        flags: BitFlags<Flags>,
+        flags: Flags,
         body: &B,
     ) -> Result<Option<PendingMethodCall>>
     where
@@ -374,7 +373,7 @@ impl Connection {
         path: ObjectPath<'b>,
         interface: Option<InterfaceName<'b>>,
         method_name: MemberName<'b>,
-        flags: BitFlags<Flags>,
+        flags: Flags,
     ) -> message::Builder<'b> {
         let mut builder = Message::method_call(path, method_name);
         if let Some(sender) = self.unique_name() {
@@ -386,21 +385,18 @@ impl Connection {
         if let Some(interface) = interface {
             builder = builder.interface(interface)
         }
-        for flag in flags {
-            builder = builder.with_flags(flag);
-        }
 
-        builder
+        builder.with_flags(flags)
     }
 
     /// Send a method call message and register for its reply, unless none is expected.
     async fn send_method_call(
         &self,
         msg: Message,
-        flags: BitFlags<Flags>,
+        flags: Flags,
     ) -> Result<Option<PendingMethodCall>> {
         let serial = msg.primary_header().serial_num();
-        if flags.contains(Flags::NoReplyExpected) {
+        if flags.contains(Flags::NO_REPLY_EXPECTED) {
             self.send(&msg).await?;
 
             Ok(None)
