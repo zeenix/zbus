@@ -182,6 +182,7 @@ async-io.workspace = true
 async-executor.workspace = true
 async-task.workspace = true
 polling.workspace = true
+bitflags.workspace = true
 
 [package.metadata.docs.rs]
 # we can't use:

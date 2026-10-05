@@ -3,6 +3,7 @@ mod common;
 
 mod array_string_value;
 mod array_value;
+mod bitflags_value;
 mod dbus_maybe_rejection;
 mod derive;
 mod dict_compare;
