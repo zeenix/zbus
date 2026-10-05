@@ -402,34 +402,18 @@ fn gen_proxy_method_call(
     let proxy_object = resolve_proxy_type_name(&method_attrs, m.span())?;
     let proxy_vec = method_attrs.object_vec;
 
-    let method_flags = match (
-        method_attrs.no_reply,
-        method_attrs.no_autostart,
-        method_attrs.allow_interactive_auth,
-    ) {
-        (true, false, false) => Some(quote!(#zbus::proxy::MethodFlags::NO_REPLY_EXPECTED)),
-        (false, true, false) => Some(quote!(#zbus::proxy::MethodFlags::NO_AUTO_START)),
-        (false, false, true) => Some(quote!(#zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH)),
-
-        (true, true, false) => Some(quote!(
-            #zbus::proxy::MethodFlags::NO_REPLY_EXPECTED | #zbus::proxy::MethodFlags::NO_AUTO_START
-        )),
-        (true, false, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NO_REPLY_EXPECTED
-                | #zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH
-        )),
-        (false, true, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NO_AUTO_START
-                | #zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH
-        )),
-
-        (true, true, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NO_REPLY_EXPECTED
-                | #zbus::proxy::MethodFlags::NO_AUTO_START
-                | #zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH
-        )),
-        _ => None,
-    };
+    let method_flags = [
+        (method_attrs.no_reply, quote!(NO_REPLY_EXPECTED)),
+        (method_attrs.no_autostart, quote!(NO_AUTO_START)),
+        (
+            method_attrs.allow_interactive_auth,
+            quote!(ALLOW_INTERACTIVE_AUTH),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(set, flag)| set.then(|| quote!(#zbus::proxy::MethodFlags::#flag)))
+    .collect::<Vec<_>>();
+    let method_flags = (!method_flags.is_empty()).then(|| quote!(#(#method_flags)|*));
 
     let mut method = parse_str::<Ident>(rust_method_name)?;
     method.set_span(Span::call_site());
