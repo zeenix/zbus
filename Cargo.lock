@@ -2019,7 +2019,6 @@ dependencies = [
 name = "zbus_macros"
 version = "6.0.0"
 dependencies = [
- "async-io",
  "futures-util",
  "proc-macro2",
  "quote",
