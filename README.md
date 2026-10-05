@@ -143,6 +143,16 @@ Companion crates add [Tokio support][dbrs-tokio], [server builder without macros
 
 There are many other D-Bus crates out there with various levels of maturity and features.
 
+## Sponsors
+
+<a href="https://codspeed.io/?utm_source=oss-sponsorship&utm_medium=z-galaxy">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://codspeed.io/codspeed-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://codspeed.io/codspeed-logo-light.svg">
+    <img alt="CodSpeed logo" src="https://codspeed.io/codspeed-logo-light.svg" width="400">
+  </picture>
+</a>
+
 [`zbus`]: zbus/README.md
 [`zbus_macros`]: zbus_macros/README.md
 [`zbus_xml`]: zbus_xml/README.md
