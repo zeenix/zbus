@@ -39,8 +39,6 @@ strip = true
 
 [workspace.dependencies]
 # Local dependencies
-zbus_utils = { path = "./zbus_utils" }
-zbus_macros = { path = "./zbus_macros" }
 zbus_xml = { path = "./zbus_xml" }
 zbus = { path = "./zbus" }
 
@@ -68,8 +66,6 @@ futures-core = "0.3.30"
 futures-lite = { version = "2.6.0", default-features = false, features = [
     "std",
 ] }
-
-xdg-home = "1.1.0"
 tracing = "0.1.40"
 async-task = "4.7.1"
 polling = "3.11.0"
