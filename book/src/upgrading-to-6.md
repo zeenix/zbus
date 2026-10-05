@@ -880,13 +880,15 @@ fn is_service_unknown(error: &Error) -> bool {
 
 ### The flag types are `bitflags` types
 
-`message::Flags` and `fdo::RequestNameFlags` used to be `enumflags2` enums, one variant per flag,
-and the API spelt a set of them `BitFlags<Flags>` and `BitFlags<RequestNameFlags>`. Each is now a
-set of flags itself, made with the [`bitflags`] crate, and the API takes or returns it without the
-`BitFlags` wrapper:
+`message::Flags`, `proxy::MethodFlags` and `fdo::RequestNameFlags` used to be `enumflags2`
+enums, one variant per flag, and the API spelt a set of them `BitFlags<Flags>`,
+`BitFlags<MethodFlags>` and `BitFlags<RequestNameFlags>`. Each is now a set of flags itself,
+made with the [`bitflags`] crate, and the API takes or returns it without the `BitFlags`
+wrapper:
 
 * `Connection::request_name_with_flags` and `fdo::DBusProxy::request_name` take a
   `RequestNameFlags`.
+* `Proxy::call_with_flags` takes a `MethodFlags`.
 * `message::PrimaryHeader::flags` returns a `Flags`, and `set_flags` takes one.
 * `message::Builder::with_flags` still takes a `Flags`, but that is a set now, so one call can
   add several flags.
@@ -895,9 +897,9 @@ The flags themselves are associated constants, named in upper snake case:
 
 | Before | After |
 | --- | --- |
-| `Flags::NoReplyExpected` | `Flags::NO_REPLY_EXPECTED` |
-| `Flags::NoAutoStart` | `Flags::NO_AUTO_START` |
-| `Flags::AllowInteractiveAuth` | `Flags::ALLOW_INTERACTIVE_AUTH` |
+| `NoReplyExpected` (`Flags` and `MethodFlags`) | `NO_REPLY_EXPECTED` |
+| `NoAutoStart` (`Flags` and `MethodFlags`) | `NO_AUTO_START` |
+| `AllowInteractiveAuth` (`Flags` and `MethodFlags`) | `ALLOW_INTERACTIVE_AUTH` |
 | `RequestNameFlags::AllowReplacement` | `RequestNameFlags::ALLOW_REPLACEMENT` |
 | `RequestNameFlags::ReplaceExisting` | `RequestNameFlags::REPLACE_EXISTING` |
 | `RequestNameFlags::DoNotQueue` | `RequestNameFlags::DO_NOT_QUEUE` |

@@ -325,7 +325,7 @@ impl Connection {
     /// If the `flags` do not contain `Flags::NO_REPLY_EXPECTED`, the return value is
     /// guaranteed to be `Ok(Some(_))`, if there was no error encountered.
     ///
-    /// INTERNAL NOTE: If this method is ever made pub, flags should become `BitFlags<MethodFlags>`.
+    /// INTERNAL NOTE: If this method is ever made pub, flags should become `MethodFlags`.
     pub(crate) async fn call_method_raw<'d, 'p, 'i, 'm, D, P, I, M, B>(
         &self,
         destination: Option<D>,

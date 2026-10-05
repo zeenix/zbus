@@ -1,15 +1,15 @@
 //! The client-side proxy API.
 
 use crate::{
-    AsyncDrop, Connection, Error, MatchRule, MessageStream, ObjectPath, OwnedMatchRule, OwnedValue,
-    Result, Str, Value, as_value,
+    AsyncDrop, Basic, Connection, Error, MatchRule, MessageStream, ObjectPath, OwnedMatchRule,
+    OwnedValue, Result, Str, Value, as_value,
     fdo::{self, IntrospectableProxy, NameOwnerChanged, PropertiesChangedStream, PropertiesProxy},
     log::{Instrument, debug, info_span, trace, warn},
     message::{Flags, Message, Sequence, Type},
     names::{BusName, InterfaceName, MemberName, UniqueName},
     runtime::{Runtime, Task},
+    utils::fmt_bitflags,
 };
-use enumflags2::{BitFlags, bitflags};
 use futures_core::{ready, stream};
 use ordered_stream::{FromFuture, Join, Map, OrderedStream, PollResult, join as join_streams};
 use std::{
@@ -862,7 +862,7 @@ impl<'a> Proxy<'a> {
     /// method flags to control the way the method call message is sent and handled.
     ///
     /// Use [`call`] instead if you do not need any special handling via additional flags.
-    /// If the `NoReplyExpected` flag is passed, this will return None immediately
+    /// If the `NO_REPLY_EXPECTED` flag is passed, this will return None immediately
     /// after sending the message, similar to [`call_noreply`].
     ///
     /// [`call`]: struct.Proxy.html#method.call
@@ -870,7 +870,7 @@ impl<'a> Proxy<'a> {
     pub async fn call_with_flags<'m, M, B, R>(
         &self,
         method_name: M,
-        flags: BitFlags<MethodFlags>,
+        flags: MethodFlags,
         body: &B,
     ) -> Result<Option<R>>
     where
@@ -879,7 +879,6 @@ impl<'a> Proxy<'a> {
         B: serde::ser::Serialize + crate::DynamicType,
         R: for<'d> crate::wire::DynamicDeserialize<'d>,
     {
-        let flags = flags.iter().map(Flags::from).collect::<Flags>();
         match self
             .inner
             .inner_without_borrows
@@ -889,7 +888,7 @@ impl<'a> Proxy<'a> {
                 self.path(),
                 Some(self.interface()),
                 method_name,
-                flags,
+                flags.into(),
                 body,
             )
             .await?
@@ -901,14 +900,15 @@ impl<'a> Proxy<'a> {
 
     /// Call a method without expecting a reply.
     ///
-    /// This sets the `NoReplyExpected` flag on the calling message and does not wait for a reply.
+    /// This sets the `NO_REPLY_EXPECTED` flag on the calling message and does not wait for a
+    /// reply.
     pub async fn call_noreply<'m, M, B>(&self, method_name: M, body: &B) -> Result<()>
     where
         M: TryInto<MemberName<'m>>,
         M::Error: Into<Error>,
         B: serde::ser::Serialize + crate::DynamicType,
     {
-        self.call_with_flags::<_, _, ()>(method_name, MethodFlags::NoReplyExpected.into(), body)
+        self.call_with_flags::<_, _, ()>(method_name, MethodFlags::NO_REPLY_EXPECTED, body)
             .await?;
         Ok(())
     }
@@ -1036,45 +1036,76 @@ struct PropertyValue {
 }
 
 /// Flags to use with [`Proxy::call_with_flags`].
-#[bitflags]
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum MethodFlags {
-    /// No response is expected from this method call, regardless of whether the
-    /// signature for the interface method indicates a reply type. When passed,
-    /// `call_with_flags` will return `Ok(None)` immediately after successfully
-    /// sending the method call.
-    ///
-    /// Errors encountered while *making* the call will still be returned as
-    /// an `Err` variant, but any errors that are triggered by the receiver's
-    /// handling of the call will not be delivered.
-    NoReplyExpected = 0x1,
+///
+/// This is a [`bitflags`](https://docs.rs/bitflags) type: a set of zero or more of the flags
+/// below, combined with `|`. They are the subset of the message header [`Flags`] that a method
+/// call can set, with the same values.
+#[derive(
+    Copy,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    crate::Type,
+    Value,
+    OwnedValue,
+)]
+pub struct MethodFlags(u8);
 
-    /// When set on a call whose destination is a message bus, this flag will instruct
-    /// the bus not to [launch][al] a service to handle the call if no application
-    /// on the bus owns the requested name.
-    ///
-    /// This flag is ignored when using a peer-to-peer connection.
-    ///
-    /// [al]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-bus-starting-services
-    NoAutoStart = 0x2,
+bitflags::bitflags! {
+    impl MethodFlags: u8 {
+        /// No response is expected from this method call, regardless of whether the
+        /// signature for the interface method indicates a reply type. When passed,
+        /// `call_with_flags` will return `Ok(None)` immediately after successfully
+        /// sending the method call.
+        ///
+        /// Errors encountered while *making* the call will still be returned as
+        /// an `Err` variant, but any errors that are triggered by the receiver's
+        /// handling of the call will not be delivered.
+        const NO_REPLY_EXPECTED = 0x1;
 
-    /// Indicates to the receiver that this client is prepared to wait for interactive
-    /// authorization, which might take a considerable time to complete. For example, the receiver
-    /// may query the user for confirmation via [polkit] or a similar framework.
-    ///
-    /// [polkit]: https://gitlab.freedesktop.org/polkit/polkit/
-    AllowInteractiveAuth = 0x4,
+        /// When set on a call whose destination is a message bus, this flag will instruct
+        /// the bus not to [launch][al] a service to handle the call if no application
+        /// on the bus owns the requested name.
+        ///
+        /// This flag is ignored when using a peer-to-peer connection.
+        ///
+        /// [al]:
+        /// https://dbus.freedesktop.org/doc/dbus-specification.html#message-bus-starting-services
+        const NO_AUTO_START = 0x2;
+
+        /// Indicates to the receiver that this client is prepared to wait for interactive
+        /// authorization, which might take a considerable time to complete. For example, the
+        /// receiver may query the user for confirmation via [polkit] or a similar framework.
+        ///
+        /// [polkit]: https://gitlab.freedesktop.org/polkit/polkit/
+        const ALLOW_INTERACTIVE_AUTH = 0x4;
+    }
 }
 
 impl From<MethodFlags> for Flags {
-    fn from(method_flag: MethodFlags) -> Self {
-        match method_flag {
-            MethodFlags::NoReplyExpected => Self::NO_REPLY_EXPECTED,
-            MethodFlags::NoAutoStart => Self::NO_AUTO_START,
-            MethodFlags::AllowInteractiveAuth => Self::ALLOW_INTERACTIVE_AUTH,
-        }
+    fn from(method_flags: MethodFlags) -> Self {
+        // Each method flag has the bit of the header flag of the same name; the
+        // `method_flags_convert_to_header_flags` test checks this. Truncating keeps a bit outside
+        // the defined flags, as `MethodFlags::from_bits_retain` can produce, off the wire.
+        Self::from_bits_truncate(method_flags.bits())
     }
+}
+
+impl fmt::Debug for MethodFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_bitflags("MethodFlags", self, f)
+    }
+}
+
+impl Basic for MethodFlags {
+    const SIGNATURE_CHAR: char = u8::SIGNATURE_CHAR;
+    const SIGNATURE_STR: &'static str = u8::SIGNATURE_STR;
 }
 
 type OwnerChangedStreamMap = Map<
@@ -1371,6 +1402,58 @@ where
 enum Either<L, R> {
     Left(L),
     Right(R),
+}
+
+// Unlike the ones in `tests` below, these tests need no bus.
+#[cfg(test)]
+mod method_flags_tests {
+    use super::{Flags, MethodFlags};
+    use crate::Type as _;
+
+    #[test]
+    fn method_flags_convert_to_header_flags() {
+        for (name, method_flag) in MethodFlags::all().iter_names() {
+            assert_eq!(
+                Flags::from(method_flag),
+                Flags::from_name(name).unwrap(),
+                "{name}"
+            );
+        }
+        assert_eq!(Flags::from(MethodFlags::empty()), Flags::empty());
+        // A bit that no method flag defines must not end up in the message header.
+        assert_eq!(
+            Flags::from(MethodFlags::from_bits_retain(0x81)),
+            Flags::NO_REPLY_EXPECTED
+        );
+    }
+
+    #[test]
+    fn method_flags_convert_from_borrowed_value() {
+        use crate::{
+            Value,
+            wire::{LE, serialized::Context, to_bytes},
+        };
+
+        // A `Value` that borrows from the buffer it was decoded from, as one taken out of a
+        // received message does.
+        let flags = MethodFlags::NO_AUTO_START | MethodFlags::ALLOW_INTERACTIVE_AUTH;
+        let encoded = to_bytes(Context::new(LE, 0), &Value::from(flags)).unwrap();
+        let (value, _): (Value<'_>, _) = encoded.deserialize().unwrap();
+        assert_eq!(MethodFlags::try_from(value).unwrap(), flags);
+    }
+
+    #[test]
+    fn method_flags_signature_and_debug() {
+        assert_eq!(MethodFlags::SIGNATURE, "y");
+        assert_eq!(format!("{:?}", MethodFlags::empty()), "MethodFlags(0x0)");
+        assert_eq!(
+            format!(
+                "{:?}",
+                MethodFlags::NO_AUTO_START | MethodFlags::ALLOW_INTERACTIVE_AUTH
+            ),
+            "MethodFlags(NO_AUTO_START | ALLOW_INTERACTIVE_AUTH)"
+        );
+    }
 }
 
 // Every test here talks to the session bus, which needs a backend to connect to.

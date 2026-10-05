@@ -407,31 +407,26 @@ fn gen_proxy_method_call(
         method_attrs.no_autostart,
         method_attrs.allow_interactive_auth,
     ) {
-        (true, false, false) => Some(quote!(::std::convert::Into::into(
-            #zbus::proxy::MethodFlags::NoReplyExpected
-        ))),
-        (false, true, false) => Some(quote!(::std::convert::Into::into(
-            #zbus::proxy::MethodFlags::NoAutoStart
-        ))),
-        (false, false, true) => Some(quote!(::std::convert::Into::into(
-            #zbus::proxy::MethodFlags::AllowInteractiveAuth
-        ))),
+        (true, false, false) => Some(quote!(#zbus::proxy::MethodFlags::NO_REPLY_EXPECTED)),
+        (false, true, false) => Some(quote!(#zbus::proxy::MethodFlags::NO_AUTO_START)),
+        (false, false, true) => Some(quote!(#zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH)),
 
         (true, true, false) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoReplyExpected | #zbus::proxy::MethodFlags::NoAutoStart
+            #zbus::proxy::MethodFlags::NO_REPLY_EXPECTED | #zbus::proxy::MethodFlags::NO_AUTO_START
         )),
         (true, false, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoReplyExpected
-                | #zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::NO_REPLY_EXPECTED
+                | #zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH
         )),
         (false, true, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoAutoStart | #zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::NO_AUTO_START
+                | #zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH
         )),
 
         (true, true, true) => Some(quote!(
-            #zbus::proxy::MethodFlags::NoReplyExpected
-                | #zbus::proxy::MethodFlags::NoAutoStart
-                | #zbus::proxy::MethodFlags::AllowInteractiveAuth
+            #zbus::proxy::MethodFlags::NO_REPLY_EXPECTED
+                | #zbus::proxy::MethodFlags::NO_AUTO_START
+                | #zbus::proxy::MethodFlags::ALLOW_INTERACTIVE_AUTH
         )),
         _ => None,
     };
@@ -562,7 +557,7 @@ fn gen_proxy_method_call(
 
                         // SAFETY: This unwrap() cannot fail due to the guarantees in
                         // call_with_flags, which can only return Ok(None) if the
-                        // NoReplyExpected is set. By not passing NoReplyExpected,
+                        // NO_REPLY_EXPECTED flag is set. By not passing NO_REPLY_EXPECTED,
                         // we are guaranteed to get either an Err variant (handled
                         // in the previous statement) or Ok(Some(T)) which is safe to
                         // unwrap

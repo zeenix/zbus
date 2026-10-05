@@ -430,4 +430,6 @@ mod tests {
     assert_impl_all!(crate::fdo::RequestNameFlags: Basic);
     #[cfg(feature = "comms")]
     assert_impl_all!(crate::message::Flags: Basic);
+    #[cfg(feature = "proxy")]
+    assert_impl_all!(crate::proxy::MethodFlags: Basic);
 }
