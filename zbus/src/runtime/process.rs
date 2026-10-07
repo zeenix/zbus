@@ -3,14 +3,16 @@
 //! `unixexec:` runs a program and speaks D-Bus over its standard input and output, while `ibus:`
 //! and, on macOS, `launchd:` run one to ask it where the bus is. Either way the program is
 //! started with [`std::process::Command`], its pipes are watched by the connection's runtime the
-//! way its sockets are, and waiting for it to exit is blocking work that runtime is handed.
+//! way its sockets are, and waiting for it to exit is blocking work that runtime is handed, unless
+//! it has exited already.
 //!
 //! That wait starts when the connection lets go of the pipe it reads the program's output from,
 //! which is the end of the transport whichever way round it came about: the program has closed
-//! its output and exited, or the connection has stopped reading. The blocking work it occupies
-//! then lasts until the program is gone — no time at all for one that has already exited, and
-//! for a `unixexec:` program still running until its input ends, which is when the last clone of
-//! the connection lets go of the other pipe.
+//! its output and exited, or the connection has stopped reading. A program that has exited by
+//! then, as one that closed its output usually has, is collected on the spot, with no blocking
+//! work at all. For one still running, the blocking work lasts until the program is gone, which
+//! for a `unixexec:` program is once its input ends: when the last clone of the connection lets
+//! go of the other pipe.
 
 #[cfg(feature = "unixexec")]
 use std::os::fd::BorrowedFd;
@@ -275,6 +277,9 @@ impl Reaper {
 
     /// How the child ended.
     ///
+    /// A child that has exited already is collected without blocking work. One that is still
+    /// running is waited for through the runtime's blocking hook.
+    ///
     /// The outcome only reaches a caller that holds the reaper on its own; anywhere else the
     /// wait is the one [`Drop`] starts, with nobody left to hand an outcome to.
     #[cfg(any(feature = "ibus", target_os = "macos"))]
@@ -285,27 +290,40 @@ impl Reaper {
             ));
         };
 
+        // The output has ended by now, and the program has often exited with it, in which case a
+        // look at it is all the wait takes. An error from the look is the one a wait would give.
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+
         self.runtime.spawn_blocking(move || child.wait()).await
     }
 
     /// Starts the wait for the child, unless something has taken it on already.
     ///
-    /// Nobody is left to hear how the child ended, so the future the blocking hook hands back is
-    /// dropped on the spot: the hook's contract is that the work runs to completion regardless,
-    /// which is what leaves the wait with the runtime's pool and nothing else, in particular no
-    /// task holding a runtime that a helper outliving its connection could keep alive.
+    /// A child that has exited already is collected right here, with no blocking work. One that
+    /// is still running is handed to the blocking hook, and nobody is left to hear how it ended,
+    /// so the future the hook hands back is dropped on the spot: the hook's contract is that the
+    /// work runs to completion regardless, which is what leaves the wait with the runtime's pool
+    /// and nothing else, in particular no task holding a runtime that a helper outliving its
+    /// connection could keep alive.
     ///
-    /// A runtime that is already shutting down is the one case this cannot cover. Tokio's
-    /// blocking pool takes work after its runtime has gone and never runs it, so a helper let
-    /// go of by then is left for this process's own exit to hand over to the init process. And
-    /// a hook that cannot start a thread for the wait panics here, as it would wherever else it
-    /// was asked from.
+    /// For a child that is still running, a runtime that is already shutting down is the one case
+    /// this cannot cover. Tokio's blocking pool takes work after its runtime has gone and never
+    /// runs it, so a helper let go of by then is left for this process's own exit to hand over to
+    /// the init process. And a hook that cannot start a thread for the wait panics here, as it
+    /// would wherever else it was asked from.
     fn reap(&self) {
         let Some(mut child) = self.take() else {
             return;
         };
 
-        drop(self.runtime.spawn_blocking(move || child.wait()));
+        // A look at a child that has exited already collects it. An error from the look means
+        // there is nothing for a wait to collect either, so only a child still running is left to
+        // the blocking hook.
+        if matches!(child.try_wait(), Ok(None)) {
+            drop(self.runtime.spawn_blocking(move || child.wait()));
+        }
     }
 
     /// The child, for whichever of the wait, the reap and the drop gets there first.
@@ -354,8 +372,14 @@ mod tests {
         });
     }
 
-    /// Waiting for a helper process on a runtime that keeps no threads for blocking work leaves
-    /// none behind either.
+    /// Waiting for a helper process that is still running on a runtime that keeps no threads for
+    /// blocking work leaves none behind either.
+    ///
+    /// A program that had exited already is collected on the spot, with no thread started at all,
+    /// so this one closes its output at once and then runs on for a moment. The read ends with the
+    /// program still there to be waited for, and the wait runs on a thread of the default hook's
+    /// own. Should this thread be held up for longer than the program runs, it finds the program
+    /// gone and has no thread to check, which only makes the test pass.
     #[cfg(target_os = "linux")]
     #[test]
     #[timeout(15000)]
@@ -367,8 +391,9 @@ mod tests {
         // count this one has to come back to is the one it started from.
         let before = blocking_threads();
 
-        let printed =
-            futures_lite::future::block_on(stdout(&runtime, Command::new("true"))).unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec >&-; sleep 0.2"]);
+        let printed = futures_lite::future::block_on(stdout(&runtime, command)).unwrap();
 
         assert!(printed.is_empty(), "got {printed:?}");
         while blocking_threads() > before {
@@ -442,20 +467,22 @@ mod split_tests {
     ///
     /// `cat` stands in for a `unixexec:` helper: it writes back what it is given and only exits
     /// once its input ends. Its input is closed here while what it wrote back is still to be
-    /// read.
+    /// read. The program then exits and stays in the process table as a zombie, which shows that
+    /// closing the write half collected nothing, and dropping the read half collects it on the
+    /// spot, with no blocking work.
+    #[cfg(target_os = "linux")]
     #[test]
     #[timeout(15000)]
     fn the_wait_for_a_helper_process_starts_when_its_read_half_goes() {
-        // The runtime counts the blocking work it is handed, and the wait for a helper is the
-        // only such work a pipe can lead to.
+        // The runtime counts the blocking work it is handed, and the wait for a helper that is
+        // still running is the only such work a pipe can lead to.
         let counting = TestRuntime::new();
         let runtime = Runtime::from_external(counting.clone());
 
         futures_lite::future::block_on(async {
-            let (mut stdout, mut stdin) = spawn(&runtime, Command::new("cat"))
-                .unwrap()
-                .into_split()
-                .take();
+            let child = spawn(&runtime, Command::new("cat")).unwrap();
+            let pid = pid_of(&child);
+            let (mut stdout, mut stdin) = child.into_split().take();
             assert_eq!(counting.blocking_calls(), 0);
 
             WriteHalf::sendmsg(&mut stdin, b"hello", &[]).await.unwrap();
@@ -474,9 +501,14 @@ mod split_tests {
                 echoed.extend_from_slice(&buffer[..read]);
             }
             assert_eq!(echoed, b"hello");
+            // A program that has exited and is not waited for stays in the table as a zombie, so
+            // seeing it become one shows that closing the write half collected nothing.
+            wait_until_zombie(pid);
 
             drop(stdout);
-            assert_eq!(counting.blocking_calls(), 1);
+            // The drop itself collected it, without handing the runtime anything.
+            assert!(!is_in_the_process_table(pid));
+            assert_eq!(counting.blocking_calls(), 0);
         });
     }
 
@@ -484,30 +516,71 @@ mod split_tests {
     /// reading it, rather than once whoever holds the other half has finished with it.
     ///
     /// `true` stands in for a helper that exits without being told to, and the write half stays
-    /// for the rest of the test the way a `Connection` that is kept around holds on to it.
+    /// for the rest of the test the way a `Connection` that is kept around holds on to it. The
+    /// program has exited by the time the read half goes, so that is where it is collected, on the
+    /// spot and with no blocking work.
+    #[cfg(target_os = "linux")]
     #[test]
     #[timeout(15000)]
     fn a_helper_process_that_ended_is_waited_for_once_the_read_half_is_gone() {
-        // The runtime counts the blocking work it is handed, and the wait for a helper is the
-        // only such work a pipe can lead to.
+        // The runtime counts the blocking work it is handed, and the wait for a helper that is
+        // still running is the only such work a pipe can lead to.
         let counting = TestRuntime::new();
         let runtime = Runtime::from_external(counting.clone());
 
         futures_lite::future::block_on(async {
-            let (mut stdout, stdin) = spawn(&runtime, Command::new("true"))
-                .unwrap()
-                .into_split()
-                .take();
+            let child = spawn(&runtime, Command::new("true")).unwrap();
+            let pid = pid_of(&child);
+            let (mut stdout, stdin) = child.into_split().take();
 
             let mut buffer = [0; 64];
             while ReadHalf::recvmsg(&mut stdout, &mut buffer).await.unwrap().0 != 0 {}
+            // The program has exited, and nothing has collected it yet.
+            wait_until_zombie(pid);
             assert_eq!(counting.blocking_calls(), 0);
 
             drop(stdout);
-            assert_eq!(counting.blocking_calls(), 1);
+            assert!(!is_in_the_process_table(pid));
+            assert_eq!(counting.blocking_calls(), 0);
 
-            // The wait has been started, so the half that outlives it asks for no second one.
+            // The child has been collected, so the half that outlives that asks for no second
+            // wait.
             drop(stdin);
+            assert_eq!(counting.blocking_calls(), 0);
+        });
+    }
+
+    /// A helper process that is still running when the connection stops reading it is waited for
+    /// on blocking work, which collects it once it has exited.
+    ///
+    /// `cat` blocks reading its input and the write half holds that open, so the program cannot
+    /// have exited when the read half goes: there is nothing to collect on the spot, and the wait
+    /// is handed to the runtime. Closing the write half is what lets the program go, and the
+    /// entry in the process table is gone once that wait has run.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[timeout(15000)]
+    fn a_helper_process_still_running_is_waited_for_on_blocking_work() {
+        // The runtime counts the blocking work it is handed, and the wait for a helper that is
+        // still running is the only such work a pipe can lead to.
+        let counting = TestRuntime::new();
+        let runtime = Runtime::from_external(counting.clone());
+
+        futures_lite::future::block_on(async {
+            let child = spawn(&runtime, Command::new("cat")).unwrap();
+            let pid = pid_of(&child);
+            let (stdout, mut stdin) = child.into_split().take();
+
+            drop(stdout);
+            assert_eq!(counting.blocking_calls(), 1);
+            assert!(is_in_the_process_table(pid));
+
+            WriteHalf::close(&mut stdin).await.unwrap();
+            // The wait is the runtime's to run in its own time, and the entry stays until it has.
+            while is_in_the_process_table(pid) {
+                std::thread::yield_now();
+            }
+            // The reaper went with the write half, and asked for no second wait.
             assert_eq!(counting.blocking_calls(), 1);
         });
     }
@@ -547,7 +620,7 @@ mod split_tests {
         });
 
         // The wait is the runtime's to run in its own time, and the entry stays until it has.
-        while std::path::Path::new(&format!("/proc/{pid}")).exists() {
+        while is_in_the_process_table(pid) {
             std::thread::yield_now();
         }
     }
@@ -595,11 +668,13 @@ mod split_tests {
             (pid, stdin)
         });
 
-        // The wait is the runtime's to run in its own time, and the entry stays until it has.
-        while std::path::Path::new(&format!("/proc/{pid}")).exists() {
+        // A program that has exited by now was collected by the drop, and the entry is gone. One
+        // that was still on its way out is the runtime's to wait for in its own time, and the
+        // entry stays until it has.
+        while is_in_the_process_table(pid) {
             std::thread::yield_now();
         }
-        // The thread the wait ran on is the hook's own, so it is gone once the wait is done.
+        // If the wait ran on a thread, it is the hook's own, so it is gone once the wait is done.
         while blocking_threads() > before {
             std::thread::yield_now();
         }
@@ -626,5 +701,56 @@ mod split_tests {
 
             assert_eq!(refused.kind(), io::ErrorKind::NotConnected);
         });
+    }
+
+    /// The process id of the program `child` runs.
+    ///
+    /// Splitting the child into its halves uses it up, so a test asks for the id before that. The
+    /// reaper has the process until something waits for it, which nothing has done by then.
+    #[cfg(target_os = "linux")]
+    fn pid_of(child: &Child) -> u32 {
+        child
+            .reaper
+            .child
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("nothing has waited for the helper yet")
+            .id()
+    }
+
+    /// Waits until the process `pid` has exited and nothing has collected it.
+    ///
+    /// A process that has gone but is not waited for stays in the process table as a zombie, the
+    /// state `Z`. Its entry vanishing before it was seen as one means that something did wait.
+    #[cfg(target_os = "linux")]
+    fn wait_until_zombie(pid: u32) {
+        loop {
+            match state_of(pid) {
+                Some('Z') => return,
+                Some(_) => std::thread::yield_now(),
+                None => panic!("something collected the helper before its read half went"),
+            }
+        }
+    }
+
+    /// The state of the process `pid` in the process table, or `None` once its entry is gone.
+    ///
+    /// The state is the letter that follows the program's name in `/proc/<pid>/stat`. The name is
+    /// in parentheses and may hold spaces and parentheses of its own, so the last closing one is
+    /// where it ends.
+    #[cfg(target_os = "linux")]
+    fn state_of(pid: u32) -> Option<char> {
+        let stat = std::fs::read(format!("/proc/{pid}/stat")).ok()?;
+        let name_end = stat.iter().rposition(|&byte| byte == b')')?;
+        let state = stat[name_end + 1..].trim_ascii_start().first()?;
+
+        Some(char::from(*state))
+    }
+
+    /// Whether the process table has an entry for `pid`, a zombie's included.
+    #[cfg(target_os = "linux")]
+    fn is_in_the_process_table(pid: u32) -> bool {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
     }
 }

@@ -133,9 +133,10 @@ a `unixexec:`, `ibus:` or `launchd:` address to exit. These go through [`spawn_b
 default runs each one on a thread of its own that exits once the call returns; a runtime that
 keeps a pool of threads for blocking work should override it to use that pool instead. The wait
 for a helper process starts once the connection has let go of the pipe it reads that process's
-output from, and occupies a worker until the program is gone: no time at all for one that has
-already exited, and until its input ends for a `unixexec:` program that is still running — one
-that ignores the end of its input keeps that worker.
+output from. A program that has exited by then is collected on the spot and the runtime is
+handed no work for it; one that is still running occupies a worker until it is gone, which for a
+`unixexec:` program is once its input ends — one that ignores the end of its input keeps that
+worker.
 
 zbus's integration tests include a reference runtime: a single-threaded one built on the
 `polling` crate, whose run loop drives a connection's readiness, timers and tasks without
