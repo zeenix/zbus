@@ -93,10 +93,10 @@ pub trait Runtime: Send + Sync + 'static {
     /// The default runs every call on a thread of its own, which exits with the work and whose
     /// failure to start panics, so a runtime that keeps a pool of threads for blocking work
     /// should hand the work to that pool instead. The wait for a helper process starts once the
-    /// connection has let go of the pipe it reads that process's output from, and occupies a
-    /// worker until the program is gone: no time at all for one that has already exited, and
-    /// until its input ends for a `unixexec:` program that is still running — one that ignores
-    /// the end of its input keeps that worker.
+    /// connection has let go of the pipe it reads that process's output from. A program that has
+    /// exited by then is collected on the spot and the runtime is handed no work for it; one that
+    /// is still running occupies a worker until it is gone, which for a `unixexec:` program is
+    /// once its input ends — one that ignores the end of its input keeps that worker.
     ///
     /// Work that has been handed over has to run to completion whether or not the future this
     /// returns is polled, and whether or not that future is dropped. A thread of its own runs
