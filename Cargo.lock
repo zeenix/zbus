@@ -2151,9 +2151,10 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/z-galaxy/zruntime?rev=1ef1a0cfbe0d4790c0230bbb6792885213da9e2a#1ef1a0cfbe0d4790c0230bbb6792885213da9e2a"
+source = "git+https://github.com/z-galaxy/zruntime?rev=1becd68a87d41d2efee99d78fa60ed7774eb0499#1becd68a87d41d2efee99d78fa60ed7774eb0499"
 dependencies = [
  "futures-core",
+ "futures-io",
  "rustix",
  "tracing",
  "windows-sys",
