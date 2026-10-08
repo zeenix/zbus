@@ -16,7 +16,7 @@
 //! sleep. A spawn costs two, the future and the handle, and a third as the task ends for a value
 //! that is not zero-sized. A call to the blocking hook costs three — the work, the value it hands
 //! back and the future that downcasts that value — on top of the boxed future the hook itself
-//! returns.
+//! returns. A connect costs the one allocation of the boxed future its method returns.
 //!
 //! Readiness is mirrored without erasing anything: the operation a registration runs hands its
 //! result back through the caller's own captures, so an I/O call costs no allocation here.
@@ -30,6 +30,8 @@ use std::{
     fmt,
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -47,6 +49,8 @@ pub(crate) trait ErasedRuntime: Send + Sync {
         name: &str,
         future: BoxFuture<'static, Box<dyn Any + Send>>,
     ) -> Box<dyn ErasedTask>;
+    fn connect_tcp(&self, address: SocketAddr) -> BoxFuture<'_, io::Result<IoSource>>;
+    fn connect_unix<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<IoSource>>;
     fn spawn_blocking(
         &self,
         work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
@@ -78,6 +82,14 @@ where
         future: BoxFuture<'static, Box<dyn Any + Send>>,
     ) -> Box<dyn ErasedTask> {
         Box::new(traits::Runtime::spawn(self, name, future))
+    }
+
+    fn connect_tcp(&self, address: SocketAddr) -> BoxFuture<'_, io::Result<IoSource>> {
+        Box::pin(traits::Runtime::connect_tcp(self, address))
+    }
+
+    fn connect_unix<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<IoSource>> {
+        Box::pin(traits::Runtime::connect_unix(self, path))
     }
 
     fn spawn_blocking(

@@ -1,17 +1,31 @@
-//! The Tokio backend: Tokio's reactor for readiness, its timer, its tasks and its thread pool
-//! for blocking work.
+//! The Tokio backend: Tokio's reactor for readiness, its timer, its tasks, its connects and its
+//! thread pool for blocking work.
+//!
+//! A socket of Tokio's own belongs to the runtime that is current where it is made, and zbus may
+//! poll the future of a connect from a thread with no Tokio runtime current: a program that drives
+//! zbus with an executor of its own does. So the runtime the connection was built on is entered
+//! for every poll of a connect, and what it makes is that runtime's wherever it is polled from.
+//!
+//! A connect to a TCP or unix-domain socket is Tokio's own non-blocking connect. It waits on the
+//! reactor and so occupies no thread, and the socket comes back as a std one that Tokio no longer
+//! watches, for the connection to register for its traffic. Tokio turns a connection to a unix
+//! listener whose backlog is full away at once on Linux and Android, where a blocking connect
+//! would wait for room, so that connect tries again every 20 milliseconds, on Tokio's timer, for
+//! as long as the future is awaited.
 //!
 //! The socket a connection registers is watched through Tokio's `AsyncFd` on unix. On Windows
 //! Tokio watches only the sockets of its own types, each of which owns its socket, so the
 //! registration there is a `TcpStream` made from a duplicate of the connection's socket handle.
 //! The duplicate refers to the same socket as the handle the connection reads and writes through,
 //! and the stream is there to tell when that socket is ready. Tokio has no unix-domain sockets on
-//! Windows, and mio, which it watches sockets with, has none either, so the registration of a
-//! unix-domain socket there is `Unsupported`.
+//! Windows, and mio, which it watches sockets with, has none either. So a unix-domain connect
+//! there is `Unsupported`, and so is the registration of a unix-domain socket.
 
 use std::{
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -23,13 +37,15 @@ use socket2::{Domain, SockRef};
 use tokio::io::unix::AsyncFd;
 use tokio::runtime::Handle;
 
+#[cfg(unix)]
+use super::io::unix_socket_address;
 use super::{Interest, IoSource, traits};
 
 /// The Tokio runtime a connection runs on.
 ///
-/// The handle is taken when the connection is built, so its tasks, timers and blocking work keep
-/// going to that runtime even where the connection is later polled from a thread with no Tokio
-/// runtime current.
+/// The handle is taken when the connection is built, so its tasks, timers, blocking work and
+/// connects keep going to that runtime even where the connection is later polled from a thread
+/// with no Tokio runtime current.
 pub(crate) struct Tokio {
     handle: Handle,
 }
@@ -93,6 +109,44 @@ impl traits::Runtime for Tokio {
         T: Send + 'static,
     {
         TokioTask::new(spawn_named(&self.handle, name, future))
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        entered(&self.handle, async move {
+            let stream = tokio::net::TcpStream::connect(address).await?.into_std()?;
+
+            Ok(IoSource::new(stream.into()))
+        })
+    }
+
+    #[cfg(unix)]
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        let address = unix_socket_address(path).map(tokio::net::unix::SocketAddr::from);
+
+        entered(&self.handle, async move {
+            let address = address?;
+            let stream = loop {
+                match tokio::net::UnixStream::connect_addr(&address).await {
+                    // A full backlog is turned away at once, where a blocking connect would wait
+                    // in the kernel for room in it, and Tokio does not wait for it: this does.
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        tokio::time::sleep(BACKLOG_INTERVAL).await;
+                    }
+                    result => break result?,
+                }
+            };
+
+            Ok(IoSource::new(stream.into_std()?.into()))
+        })
+    }
+
+    // Tokio has no unix-domain sockets on Windows: see the module documentation.
+    #[cfg(windows)]
+    fn connect_unix(&self, _path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        std::future::ready(Err(io::Error::from(io::ErrorKind::Unsupported)))
     }
 
     fn spawn_blocking<T>(
@@ -188,6 +242,32 @@ impl traits::PollIo for Registration {
     }
 }
 
+/// Awaits `future`, polling it with the runtime of `handle` entered.
+///
+/// A socket or a timer of Tokio's own belongs to the runtime that is current at the moment it is
+/// made. For a connect that is the first poll, which makes the socket, and the poll after a
+/// connection that a full backlog turned away, which arms a timer. The guard lives for one poll
+/// and never across an await, so this future is `Send` whenever `future` is.
+async fn entered<F>(handle: &Handle, future: F) -> F::Output
+where
+    F: Future,
+{
+    use std::{future::poll_fn, pin::pin};
+
+    let mut future = pin!(future);
+
+    poll_fn(|cx| {
+        let _guard = handle.enter();
+
+        future.as_mut().poll(cx)
+    })
+    .await
+}
+
+/// How long a unix connect that a full listen backlog turned away waits before it is tried again.
+#[cfg(unix)]
+const BACKLOG_INTERVAL: Duration = Duration::from_millis(20);
+
 /// Spawns `future` on `handle`, named where Tokio has somewhere to keep a name.
 ///
 /// A task's name is what tokio-console and a task dump show it by, and the builder that takes
@@ -277,5 +357,109 @@ mod tests {
         let task = runtime.spawn("a task with an output", async { 42 });
 
         assert_eq!(task.await.unwrap(), 42);
+    }
+
+    /// A TCP connect polled from a thread with no Tokio runtime current is made on the runtime the
+    /// backend belongs to.
+    ///
+    /// Tokio's own connect panics where it finds no runtime to register its socket with, so the
+    /// connect succeeding is what shows the runtime was entered for it.
+    #[test]
+    #[timeout(15000)]
+    fn a_tcp_connect_polled_outside_the_runtime_is_made_on_it() {
+        use std::net::{Ipv4Addr, TcpListener};
+
+        use socket2::SockRef;
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+
+        let source =
+            futures_lite::future::block_on(runtime.connect_tcp(listener.local_addr().unwrap()))
+                .unwrap();
+
+        // The address the listener sees the connection come from is the socket's own.
+        let (_accepted, peer) = listener.accept().unwrap();
+        assert_eq!(
+            SockRef::from(&source).local_addr().unwrap().as_socket(),
+            Some(peer),
+        );
+    }
+
+    /// A unix connect polled from a thread with no Tokio runtime current is made on the runtime
+    /// the backend belongs to.
+    #[cfg(unix)]
+    #[test]
+    #[timeout(15000)]
+    fn a_unix_connect_polled_outside_the_runtime_is_made_on_it() {
+        use std::{io::Write, mem::MaybeUninit, os::unix::net::UnixListener};
+
+        use socket2::SockRef;
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("socket");
+        let listener = UnixListener::bind(&path).unwrap();
+
+        let source = futures_lite::future::block_on(runtime.connect_unix(&path)).unwrap();
+
+        // A byte written at the other end that comes out of the socket is what says the two ends
+        // are joined, since neither end of a connection to a path names the other.
+        let (mut accepted, _) = listener.accept().unwrap();
+        accepted.write_all(b"!").unwrap();
+        let mut byte = [MaybeUninit::uninit(); 1];
+        assert_eq!(SockRef::from(&source).recv(&mut byte).unwrap(), 1);
+    }
+
+    /// A unix connect to a listener with no room left for it, polled from a thread with no Tokio
+    /// runtime current, waits on the timer of the runtime the backend belongs to.
+    ///
+    /// Tokio turns the connection away, and the backend arms a timer to try again: a timer, like a
+    /// socket, panics where it finds no runtime.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    #[test]
+    #[timeout(15000)]
+    fn a_unix_connect_to_a_full_backlog_polled_outside_the_runtime_waits_on_it() {
+        use socket2::{Domain, SockAddr, SockRef, Socket, Type};
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("socket");
+        let listener = Socket::new(Domain::UNIX, Type::STREAM, None).unwrap();
+        listener.bind(&SockAddr::unix(&path).unwrap()).unwrap();
+        listener.listen(0).unwrap();
+
+        // The listener's one place is taken from here on, so a further connection has to wait
+        // until it accepts this one.
+        let _queued = futures_lite::future::block_on(runtime.connect_unix(&path)).unwrap();
+        let mut pending = std::pin::pin!(runtime.connect_unix(&path));
+        assert!(
+            futures_lite::future::block_on(futures_lite::future::poll_once(pending.as_mut()))
+                .is_none(),
+            "the connection was made before the listener had room for it",
+        );
+
+        let _accepted = listener.accept().unwrap();
+        let source = futures_lite::future::block_on(pending).unwrap();
+
+        assert!(SockRef::from(&source).peer_addr().is_ok());
+    }
+
+    /// A Tokio runtime that runs with nothing inside `block_on`, and the backend for it.
+    ///
+    /// The thread of the test has no Tokio runtime current, which is what makes a future of the
+    /// backend polled on it one that runs outside the runtime, as a program that drives zbus with
+    /// an executor of its own polls it. The runtime has to be kept for as long as the backend is
+    /// used: its threads are what drive the reactor and the timer.
+    fn runtime_and_backend() -> (tokio::runtime::Runtime, Tokio) {
+        let tokio = tokio::runtime::Runtime::new().unwrap();
+        let backend =
+            tokio.block_on(async { Tokio::current().expect("a Tokio runtime is current") });
+        assert!(
+            Tokio::current().is_none(),
+            "the test's thread is inside a Tokio runtime",
+        );
+
+        (tokio, backend)
     }
 }

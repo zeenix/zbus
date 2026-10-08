@@ -3,12 +3,15 @@
 //! It is a [`traits::Runtime`] over the smol crates, reached as dev-dependencies: those never
 //! enter a user's graph, so this runtime exists in every test build, including the one with no
 //! runtime of zbus's own compiled in. Its tasks run on one thread per instance, which lives as
-//! long as the process, and its registrations and timers are async-io's: enough for a test, not
-//! a model for a real host.
+//! long as the process, and its registrations and timers are async-io's. It connects with a
+//! blocking connect on its own hook for blocking work, which counts the calls. That is enough for
+//! a test, not a model for a real host.
 
 use std::{
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     sync::{Arc, Mutex, PoisonError},
     task::{Context, Poll},
@@ -17,8 +20,9 @@ use std::{
 
 use async_executor::Executor;
 use async_io::{Async, Timer};
+use socket2::{Domain, SockAddr};
 
-use super::{Interest, IoSource, Runtime, traits};
+use super::{Interest, IoSource, Runtime, io::connect_blocking, traits};
 
 /// Runs `body` once under every runtime this build can make.
 ///
@@ -131,6 +135,22 @@ impl traits::Runtime for TestRuntime {
         Task(self.executor.spawn(future))
     }
 
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::spawn_blocking(self, move || {
+            connect_blocking(Domain::for_address(address), &address.into())
+        })
+    }
+
+    async fn connect_unix(&self, path: &Path) -> io::Result<IoSource> {
+        let address = SockAddr::unix(path)?;
+
+        traits::Runtime::spawn_blocking(self, move || connect_blocking(Domain::UNIX, &address))
+            .await
+    }
+
     fn spawn_blocking<T>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,
@@ -151,9 +171,7 @@ impl traits::Runtime for TestRuntime {
 ///
 /// [`TestRuntime`] polls the other way round, trying the operation first and waiting only once it
 /// reports a would-block, and [`traits::PollIo`] allows either. Running the sweeps under both is
-/// what holds an operation to the same answer whichever order it is asked in; the connect
-/// predicate, which has to tell a connection still under way from one that has settled, is the
-/// one that could tell the difference.
+/// what holds an operation to the same answer whichever order it is asked in.
 #[derive(Clone, Debug)]
 pub(crate) struct ReadinessFirst(TestRuntime);
 
@@ -184,6 +202,17 @@ impl traits::Runtime for ReadinessFirst {
         T: Send + 'static,
     {
         traits::Runtime::spawn(&self.0, name, future)
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_tcp(&self.0, address)
+    }
+
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_unix(&self.0, path)
     }
 
     fn spawn_blocking<T>(
@@ -231,6 +260,71 @@ impl traits::Runtime for DefaultBlocking {
         T: Send + 'static,
     {
         traits::Runtime::spawn(&self.0, name, future)
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_tcp(&self.0, address)
+    }
+
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_unix(&self.0, path)
+    }
+}
+
+/// A [`TestRuntime`] with connects of its own, which never connect to anything.
+///
+/// Each reports where it was asked to connect as its error, so that a test sees which connect ran
+/// and what it was handed: this one, and not a connect made some other way, which would have gone
+/// to the address and found nothing there.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnConnects(TestRuntime);
+
+impl OwnConnects {
+    pub(crate) fn new() -> Self {
+        Self(TestRuntime::new())
+    }
+}
+
+impl traits::Runtime for OwnConnects {
+    type RegisteredIoSource = Registration;
+    type Sleep = Sleep;
+    type Task<T>
+        = Task<T>
+    where
+        T: Send + 'static;
+
+    fn register_io_source(&self, source: IoSource) -> io::Result<Registration> {
+        traits::Runtime::register_io_source(&self.0, source)
+    }
+
+    fn sleep(&self, duration: Duration) -> Sleep {
+        traits::Runtime::sleep(&self.0, duration)
+    }
+
+    fn spawn<T>(&self, name: &str, future: impl Future<Output = T> + Send + 'static) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        traits::Runtime::spawn(&self.0, name, future)
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        std::future::ready(Err(io::Error::other(format!(
+            "a connect of its own to {address}"
+        ))))
+    }
+
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        std::future::ready(Err(io::Error::other(format!(
+            "a connect of its own to {}",
+            path.display(),
+        ))))
     }
 }
 
@@ -307,6 +401,17 @@ impl traits::Runtime for AbortingRuntime {
 
         // An aborted task leaves its future unfinished, which is exactly what is under test.
         AbortableTask(traits::Runtime::spawn(&self.inner, name, future))
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_tcp(&self.inner, address)
+    }
+
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_unix(&self.inner, path)
     }
 }
 

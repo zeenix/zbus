@@ -1538,8 +1538,15 @@ mod tests {
                 if e.kind() == std::io::ErrorKind::ConnectionRefused),
             "connecting to a closed port reported `{error}` rather than a refused connection",
         );
-        assert!(
-            runtime.blocking_calls() > 0,
+        // The test runtime connects on blocking work as well: one call for each address the name
+        // resolves to, since a refused connection moves on to the next one, and one for the
+        // lookup itself.
+        let addresses = std::net::ToSocketAddrs::to_socket_addrs(&("localhost", refused.port()))
+            .unwrap()
+            .count();
+        assert_eq!(
+            runtime.blocking_calls(),
+            addresses + 1,
             "the host name was resolved without asking the runtime for blocking work",
         );
     }
@@ -1558,9 +1565,10 @@ mod tests {
                 if e.kind() == std::io::ErrorKind::ConnectionRefused),
             "connecting to a closed port reported `{error}` rather than a refused connection",
         );
+        // The one call is the connect, which the test runtime makes on blocking work.
         assert_eq!(
             runtime.blocking_calls(),
-            0,
+            1,
             "an address that is already an IP address was handed to the resolver anyway",
         );
     }

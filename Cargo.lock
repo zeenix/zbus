@@ -2156,6 +2156,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "rustix",
+ "socket2",
  "tracing",
  "windows-sys",
 ]

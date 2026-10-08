@@ -39,7 +39,7 @@ use tokio_rt::Tokio;
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
 
-use std::{any::Any, future::Future, sync::Arc};
+use std::{any::Any, future::Future, net::SocketAddr, path::Path, sync::Arc};
 
 use erased::{BoxFuture, ErasedRuntime};
 
@@ -119,6 +119,22 @@ impl Runtime {
         let future = Box::pin(async move { Box::new(future.await) as Box<dyn Any + Send> });
 
         Task::new(self.0.spawn(name, future))
+    }
+
+    /// Connects a stream socket to the TCP endpoint at `address`, the way this runtime does it.
+    ///
+    /// The socket comes back connected and non-blocking, and no longer watched by the runtime, so
+    /// that the connection can register it for its own traffic.
+    pub(crate) async fn connect_tcp(&self, address: SocketAddr) -> std::io::Result<IoSource> {
+        self.0.connect_tcp(address).await
+    }
+
+    /// Connects a stream socket to the unix-domain socket at `path`, the way this runtime does it.
+    ///
+    /// A path whose first byte is zero names an abstract socket on Linux and Android. The socket
+    /// comes back as [`Runtime::connect_tcp`]'s does.
+    pub(crate) async fn connect_unix(&self, path: &Path) -> std::io::Result<IoSource> {
+        self.0.connect_unix(path).await
     }
 
     /// Runs `work` off the event loop, on whatever this runtime keeps for blocking work.
