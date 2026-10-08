@@ -146,11 +146,11 @@ either; only a Tokio build swaps in Tokio's locks instead.
 ### Bringing your own socket
 
 Besides an address, a connection can be built directly over a socket you already have.
-[`Builder::unix_stream`], [`Builder::tcp_stream`] and [`Builder::vsock_stream`] each take an
-owned, platform-native stream and register it on the connection's runtime; a stream of another
-kind is handed over as the socket it wraps, such as `into_std()` for a Tokio stream.
-[`Builder::socket`] and [`Builder::authenticated_socket`] take any other implementation of
-`Socket`, for a transport that is not a file descriptor at all, such as an in-process channel.
+[`Builder::unix_stream`] and [`Builder::tcp_stream`] each take an owned, platform-native stream and
+register it on the connection's runtime; a stream of another kind is handed over as the socket it
+wraps, such as `into_std()` for a Tokio stream. [`Builder::socket`] and
+[`Builder::authenticated_socket`] take any other implementation of `Socket`, for any other
+transport, such as an in-process channel or a tunnel of your own.
 
 [NetworkManager]: https://developer.gnome.org/NetworkManager/stable/spec.html
 [BlueZ]: https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc
@@ -167,7 +167,6 @@ kind is handed over as the socket it wraps, such as `into_std()` for a Tokio str
 [`spawn_blocking`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#method.spawn_blocking
 [`Builder::unix_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.unix_stream
 [`Builder::tcp_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.tcp_stream
-[`Builder::vsock_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.vsock_stream
 [`Builder::socket`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.socket
 [`Builder::authenticated_socket`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.authenticated_socket
 

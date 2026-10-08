@@ -71,7 +71,6 @@ tokio-multithread = ["tokio", "tokio/rt-multi-thread"]
 # Logging through `tracing` (default). With this off, zbus emits no log events or spans, and
 # `tokio`'s own `tracing` feature is not enabled either.
 tracing = ["dep:tracing", "tokio?/tracing", "zruntime?/tracing"]
-vsock = ["comms", "dep:vsock"]
 # The client-side (proxy) API (default).
 proxy = ["comms", "zbus_macros/proxy"]
 # The service-side (object server) API (default).
@@ -132,9 +131,6 @@ tokio = { workspace = true, optional = true, features = [
 ] }
 socket2 = { workspace = true, optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-vsock = { workspace = true, optional = true }
-
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, optional = true }
 uds_windows = { workspace = true, optional = true }
@@ -182,30 +178,7 @@ polling.workspace = true
 bitflags.workspace = true
 
 [package.metadata.docs.rs]
-# we can't use:
-# all-features = true
-# because some features (such as vsock) are target-specific
-features = [
-    "default-rt",
-    "comms",
-    "arrayvec",
-    "camino",
-    "chrono",
-    "heapless",
-    "option-as-array",
-    "serde_bytes",
-    "time",
-    "url",
-    "uuid",
-    "bus-impl",
-    "p2p",
-    "tokio",
-    "tokio-multithread",
-    "object-manager",
-    "unixexec",
-    "ibus",
-    "tracing",
-]
+all-features = true
 targets = [
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-gnu",

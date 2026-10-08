@@ -2,9 +2,8 @@
 //!
 //! Every socket a connection owns is registered on that connection's runtime once and then read,
 //! written, shut down and asked for peer credentials through that one registration. What tells a
-//! unix socket apart from a TCP or VSOCK stream, or from a pipe to a helper process, is a
-//! [`SocketOps`], so the readiness machinery itself exists once rather than once per transport and
-//! per runtime.
+//! unix socket apart from a TCP stream, or from a pipe to a helper process, is a [`SocketOps`], so
+//! the readiness machinery itself exists once rather than once per transport and per runtime.
 
 #[cfg(any(unix, windows))]
 mod unix;
@@ -14,8 +13,6 @@ mod unix;
 mod pipe;
 
 pub(crate) mod tcp;
-#[cfg(feature = "vsock")]
-mod vsock;
 
 mod connect;
 pub(crate) use connect::connect;
@@ -42,8 +39,6 @@ pub(crate) use pipe::PipeOps;
 pub(crate) use tcp::TcpOps;
 #[cfg(any(unix, windows))]
 pub(crate) use unix::UnixOps;
-#[cfg(feature = "vsock")]
-pub(crate) use vsock::VsockOps;
 
 use super::{Interest, IoSource, Runtime, erased::ErasedRegistration, traits};
 use crate::{
@@ -120,7 +115,7 @@ where
 /// Registers a descriptor zbus was handed, after switching it to non-blocking mode.
 ///
 /// The streams a builder is given and both pipes of a helper process come through here. The
-/// sockets zbus opens for a `unix:`, `tcp:` or `vsock:` address do not: `connect` creates those
+/// sockets zbus opens for a `unix:` or `tcp:` address do not: `connect` creates those
 /// non-blocking and registers them itself. A descriptor zbus did not open has to be switched
 /// over before it is watched: a runtime waits for readiness and then runs the operation, which
 /// would hold up the thread it is polled on if the descriptor still blocked.
@@ -147,7 +142,7 @@ type Owned = std::os::fd::OwnedFd;
 #[cfg(windows)]
 type Owned = std::os::windows::io::OwnedSocket;
 
-/// The non-blocking operations of one family of socket: unix, TCP, VSOCK or a pipe.
+/// The non-blocking operations of one family of socket: unix, TCP or a pipe.
 ///
 /// Every method here is one attempt at a syscall on a descriptor that is already non-blocking,
 /// and it is [`RegisteredIo`] that turns an attempt into the asynchronous operation the

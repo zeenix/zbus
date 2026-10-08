@@ -22,9 +22,3 @@ fn a_unix_stream_builder_takes_the_platform_stream() {
 fn a_tcp_stream_builder_takes_the_std_stream() {
     let _: fn(std::net::TcpStream) -> Builder<'static> = Builder::tcp_stream;
 }
-
-#[test]
-fn a_vsock_stream_builder_takes_the_vsock_stream() {
-    #[cfg(feature = "vsock")]
-    let _: fn(vsock::VsockStream) -> Builder<'static> = Builder::vsock_stream;
-}

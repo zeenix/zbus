@@ -99,6 +99,7 @@ impl Common {
                 .await?;
             send_buffer.drain(..written);
         }
+        self.socket.write_mut().flush().await?;
         trace!("Wrote all commands");
         Ok(())
     }

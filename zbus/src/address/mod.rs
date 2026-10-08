@@ -304,17 +304,6 @@ mod tests {
             Address::from_str("ibus:").unwrap(),
             Transport::Ibus(crate::address::transport::Ibus::new()).into(),
         );
-
-        #[cfg(all(feature = "vsock", feature = "p2p"))]
-        {
-            let guid = crate::Guid::generate();
-            assert_eq!(
-                Address::from_str(&format!("vsock:cid=98,port=2934,guid={guid}")).unwrap(),
-                Address::from(Transport::Vsock(super::transport::Vsock::new(98, 2934)))
-                    .set_guid(guid)
-                    .unwrap(),
-            );
-        }
         assert_eq!(
             Address::from_str("unix:dir=/some/dir").unwrap(),
             Transport::Unix(Unix::new(UnixSocket::Dir("/some/dir".into()))).into(),
@@ -407,18 +396,6 @@ mod tests {
             Address::from(Transport::Ibus(crate::address::transport::Ibus::new())).to_string(),
             "ibus:"
         );
-
-        #[cfg(all(feature = "vsock", feature = "p2p"))]
-        {
-            let guid = crate::Guid::generate();
-            assert_eq!(
-                Address::from(Transport::Vsock(super::transport::Vsock::new(98, 2934)))
-                    .set_guid(guid.clone())
-                    .unwrap()
-                    .to_string(),
-                format!("vsock:cid=98,port=2934,guid={guid}"),
-            );
-        }
     }
 
     #[test]

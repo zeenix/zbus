@@ -70,9 +70,7 @@ tracing = "0.1.40"
 async-task = "4.7.1"
 polling = "3.11.0"
 tokio = "1.37.0"
-vsock = "0.5.0"
-# `all` is what gates socket2's VSOCK address family behind its own feature flag.
-socket2 = { version = "0.6.5", features = ["all"] }
+socket2 = "0.6.5"
 ntest = "0.10.0"
 test-log = { version = "0.2.16", features = [
     "trace",

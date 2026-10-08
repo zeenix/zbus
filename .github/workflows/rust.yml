@@ -188,7 +188,7 @@ jobs:
         run: |
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose -p zbus \
-              --features uuid,url,time,chrono,option-as-array,vsock,bus-impl \
+              --features uuid,url,time,chrono,option-as-array,bus-impl \
               -- --skip fdpass_systemd
       - name: Test the doc examples with the proxy or service API disabled
         if: matrix.suite == 'zruntime'
@@ -220,7 +220,7 @@ jobs:
         run: |
           # The features are additive, so the backend is then chosen at run time.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose -p zbus --features tokio,p2p,vsock \
+            cargo --locked test --release --verbose -p zbus --features tokio,p2p \
               -- --skip fdpass_systemd
       - name: Test the external-runtime-only build
         if: matrix.suite == 'external'

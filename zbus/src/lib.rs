@@ -52,9 +52,6 @@ mod doctests {
     doc_comment::doctest!("../../book/src/faq.md");
 }
 
-#[cfg(all(feature = "vsock", not(target_os = "linux")))]
-compile_error!("The \"vsock\" feature is only supported on Linux.");
-
 mod error;
 pub use error::*;
 

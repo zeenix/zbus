@@ -114,7 +114,10 @@ fn sasl_auth_id() -> Result<String> {
 // The handshake runs over a real socket pair.
 #[cfg(all(test, unix, feature = "p2p"))]
 mod tests {
-    use std::{io::Write, os::unix::net::UnixStream};
+    use std::{
+        io::{self, Write},
+        os::{fd::BorrowedFd, unix::net::UnixStream},
+    };
 
     use futures_util::future::join;
     use ntest::timeout;
@@ -122,8 +125,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Guid,
-        connection::socket::BoxedSplit,
+        Guid, Message,
+        connection::socket::{BoxedSplit, Split},
         runtime::{
             Runtime,
             io::{UnixOps, registered},
@@ -149,6 +152,46 @@ mod tests {
 
             assert_eq!(client.server_guid, server.server_guid);
             assert_eq!(client.cap_unix_fd, server.cap_unix_fd);
+        });
+    }
+
+    #[test]
+    #[timeout(15000)]
+    fn holding_sockets() {
+        under_every_runtime(|runtime| async move {
+            let (p0, p1) = socket_pair(&runtime);
+            let (p0, p1) = (holding(p0), holding(p1));
+
+            let guid = OwnedGuid::from(Guid::generate());
+            let client = Client::new(p0, None, Some(guid.clone()), false, None);
+            let server = Server::new(p1, guid, Some(geteuid().as_raw()), None, None).unwrap();
+
+            // Neither side would see the other's commands if they stayed held.
+            let (mut client, mut server) =
+                join(async move { client.perform().await.unwrap() }, async move {
+                    server.perform().await.unwrap()
+                })
+                .await;
+
+            // Nor a message sent once the handshake is done.
+            let sent = Message::method_call("/", "Ping")
+                .interface("org.freedesktop.DBus.Peer")
+                .build(&())
+                .unwrap();
+            client.socket_write.send_message(&sent).await.unwrap();
+            let received = server
+                .socket_read
+                .as_mut()
+                .unwrap()
+                .receive_message(
+                    0,
+                    &mut server.already_received_bytes,
+                    &mut server.already_received_fds,
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(received.to_string(), sent.to_string());
         });
     }
 
@@ -312,5 +355,53 @@ mod tests {
             registered(runtime, p0, UnixOps).unwrap().into(),
             registered(runtime, p1, UnixOps).unwrap().into(),
         )
+    }
+
+    /// `socket`, with a write half that holds on to what it is given until it is flushed.
+    fn holding(socket: BoxedSplit) -> BoxedSplit {
+        let (read, write) = socket.take();
+
+        Split::new(
+            read,
+            Box::new(Holding {
+                half: write,
+                held: vec![],
+            }),
+        )
+    }
+
+    /// A write half that only sends what it is given once it is flushed.
+    #[derive(Debug)]
+    struct Holding {
+        half: Box<dyn WriteHalf>,
+        held: Vec<u8>,
+    }
+
+    #[async_trait]
+    impl WriteHalf for Holding {
+        async fn sendmsg(&mut self, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::Result<usize> {
+            assert!(
+                fds.is_empty(),
+                "no file descriptors are sent in these tests"
+            );
+            self.held.extend_from_slice(buffer);
+
+            Ok(buffer.len())
+        }
+
+        async fn flush(&mut self) -> io::Result<()> {
+            let mut held = &self.held[..];
+            while !held.is_empty() {
+                let written = self.half.sendmsg(held, &[]).await?;
+                held = &held[written..];
+            }
+            self.held.clear();
+
+            self.half.flush().await
+        }
+
+        async fn close(&mut self) -> io::Result<()> {
+            self.half.close().await
+        }
     }
 }
