@@ -85,9 +85,17 @@ impl Client {
         Ok(())
     }
 
-    /// Perform the authentication handshake with the server.
+    /// Sends out every command of the handshake at once, followed by the `Hello` call on a bus
+    /// connection.
+    ///
+    /// Nothing the client says depends on how the server answers, so it all goes in one write
+    /// and the answers are read afterwards. A server that rejects the mechanism answers `AUTH` with
+    /// `REJECTED` and may drop the connection over what follows, which fails the handshake as
+    /// waiting for its answer would have.
+    ///
+    /// Returns how many answers the server gives to the commands after `AUTH`.
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self), level = "trace"))]
-    async fn authenticate(&mut self) -> Result<()> {
+    async fn send_commands(&mut self) -> Result<usize> {
         let mechanism = self.common.mechanism();
         trace!("Trying {mechanism} mechanism");
         let user_id = self.user_id.clone();
@@ -95,7 +103,33 @@ impl Client {
             AuthMechanism::Anonymous => Command::Auth(Some(mechanism), Some("zbus".into())),
             AuthMechanism::External => Command::Auth(Some(mechanism), Some(user_id?.into_bytes())),
         };
-        self.common.write_command(auth_cmd).await?;
+        let mut commands = Vec::with_capacity(3);
+        commands.push(auth_cmd);
+
+        let can_pass_fd = self.common.socket_mut().read_mut().can_pass_unix_fd();
+        if can_pass_fd {
+            commands.push(Command::NegotiateUnixFD);
+        }
+        commands.push(Command::Begin);
+        let hello_method = if self.bus {
+            Some(create_hello_method_call())
+        } else {
+            None
+        };
+
+        self.common
+            .write_commands(&commands, hello_method.as_ref().map(|m| &**m.data()))
+            .await?;
+
+        // Server replies to all commands except `BEGIN`, and the reply to `AUTH` is read on its
+        // own.
+        Ok(commands.len() - 2)
+    }
+
+    /// Reads the server's answer to `AUTH`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self), level = "trace"))]
+    async fn receive_auth_response(&mut self) -> Result<()> {
+        let mechanism = self.common.mechanism();
 
         match self.common.read_command().await? {
             Command::Ok(guid) => {
@@ -115,30 +149,6 @@ impl Client {
                 "Unexpected command from server: {cmd}"
             ))),
         }
-    }
-
-    /// Sends out all commands after authentication.
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self), level = "trace"))]
-    async fn send_secondary_commands(&mut self) -> Result<usize> {
-        let mut commands = Vec::with_capacity(4);
-
-        let can_pass_fd = self.common.socket_mut().read_mut().can_pass_unix_fd();
-        if can_pass_fd {
-            commands.push(Command::NegotiateUnixFD);
-        }
-        commands.push(Command::Begin);
-        let hello_method = if self.bus {
-            Some(create_hello_method_call())
-        } else {
-            None
-        };
-
-        self.common
-            .write_commands(&commands, hello_method.as_ref().map(|m| &**m.data()))
-            .await?;
-
-        // Server replies to all commands except `BEGIN`.
-        Ok(commands.len() - 1)
     }
 
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self), level = "trace"))]
@@ -172,8 +182,8 @@ impl Handshake for Client {
         #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
         self.send_zero_byte().await?;
 
-        self.authenticate().await?;
-        let expected_n_responses = self.send_secondary_commands().await?;
+        let expected_n_responses = self.send_commands().await?;
+        self.receive_auth_response().await?;
 
         if expected_n_responses > 0 {
             self.receive_secondary_responses(expected_n_responses)
