@@ -256,8 +256,8 @@ pub trait WriteHalf: std::fmt::Debug + Send + Sync + 'static {
     ///
     /// This is the higher-level method to send a full D-Bus message.
     ///
-    /// The default implementation uses `sendmsg` to send the message. Implementers should override
-    /// either this or `sendmsg`.
+    /// The default implementation uses `sendmsg` to send the message, and then `flush`.
+    /// Implementers should override either this or `sendmsg`.
     async fn send_message(&mut self, msg: &Message) -> crate::Result<()> {
         let data = msg.data();
         let serial = msg.primary_header().serial_num();
@@ -279,6 +279,7 @@ pub trait WriteHalf: std::fmt::Debug + Send + Sync + 'static {
                 )
                 .await?;
         }
+        self.flush().await?;
         trace!("Sent message with serial: {}", serial);
 
         Ok(())
@@ -304,6 +305,20 @@ pub trait WriteHalf: std::fmt::Debug + Send + Sync + 'static {
         #[cfg(unix)] _fds: &[BorrowedFd<'_>],
     ) -> io::Result<usize> {
         unimplemented!("`WriteHalf` implementers must either override `send_message` or `sendmsg`");
+    }
+
+    /// Flush whatever the socket holds on to of the bytes `sendmsg` was given.
+    ///
+    /// The default `send_message` calls this once it has handed a whole message to `sendmsg`. The
+    /// authentication handshake calls it each time before it waits for the peer to answer, so the
+    /// commands it pipelines go out together. A socket that holds on to what it is given, such as
+    /// one over a buffered or encrypted stream, has to send it on here: zbus has no other way to
+    /// flush it, and the peer would never see it otherwise.
+    ///
+    /// The default implementation does nothing, which suits a socket that sends what it is given
+    /// right away.
+    async fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 
     /// The dbus daemon on `freebsd` and `dragonfly` currently requires sending the zero byte
@@ -386,6 +401,10 @@ impl WriteHalf for Box<dyn WriteHalf> {
                 fds,
             )
             .await
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        (**self).flush().await
     }
 
     #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
