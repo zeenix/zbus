@@ -129,22 +129,31 @@ async fn connect(runtime: impl Runtime) -> Result<Connection> {
 
 An implementation supplies readiness for a registered socket or pipe (through
 [`PollIo::poll_io`]), a timer, and spawning a future to run in the background. Every zbus
-operation goes through these, except a handful of calls that have no async form: the host-name
-lookup for a `tcp:` address, reading the file a `nonce-tcp:` address names, the
-supplementary-group lookup behind a peer-credential check, and waiting for the helper process of
-a `unixexec:`, `ibus:` or `launchd:` address to exit. These go through [`spawn_blocking`], whose
-default runs each one on a thread of its own that exits once the call returns; a runtime that
-keeps a pool of threads for blocking work should override it to use that pool instead. The wait
-for a helper process starts once the connection has let go of the pipe it reads that process's
-output from. A program that has exited by then is collected on the spot and the runtime is
-handed no work for it; one that is still running occupies a worker until it is gone, which for a
-`unixexec:` program is once its input ends — one that ignores the end of its input keeps that
-worker.
+operation goes through these, or through a handful of methods that a runtime implements with what
+it has of its own:
+
+* [`connect_tcp`] and [`connect_unix`] connect the socket of a `tcp:` or `unix:` address. A
+  runtime with a non-blocking connect uses it; one without makes a blocking connect on a thread
+  for blocking work, such as one of [`spawn_blocking`]'s.
+* [`spawn_process`], on unix, runs the helper process of a `unixexec:`, `ibus:` or `launchd:`
+  address and waits for it to exit. A runtime that can wait for a child without a thread, through a
+  pidfd, a kqueue or a handler for `SIGCHLD`, does; one that cannot waits for it with a blocking
+  wait on a thread for blocking work, or looks at it at an interval on its timer, as the reference
+  runtime below does. zbus awaits the exit itself, on a task of the runtime for a `unixexec:`
+  program, so that program is collected as soon as it exits. A `unixexec:` program exits once its
+  input ends, which closing the connection does.
+* [`spawn_blocking`] runs the calls that have no async form: the host-name lookup for a `tcp:`
+  address, reading the file a `nonce-tcp:` address names, and the supplementary-group lookup
+  behind a peer-credential check. It is the one method with a default, which hands each call to
+  zruntime's pool of threads for blocking work; a runtime that keeps a pool of its own should
+  override it to use that pool instead.
+
+The two built-in backends implement all of these with what zruntime and Tokio have of their own.
 
 zbus's integration tests include a reference runtime: a single-threaded one built on the
-`polling` crate, whose run loop drives a connection's readiness, timers and tasks without
-starting a thread of its own. The build it runs in needs no extra feature for zbus's locks
-either; only a Tokio build swaps in Tokio's locks instead.
+`polling` crate, whose run loop drives a connection's readiness, timers and tasks, its connects
+and its wait for a helper process without starting a thread of its own. The build it runs in needs
+no extra feature for zbus's locks either; only a Tokio build swaps in Tokio's locks instead.
 
 ### Bringing your own socket
 
@@ -168,6 +177,9 @@ transport, such as an in-process channel or a tunnel of your own.
 [zruntime]: https://docs.rs/zruntime
 [`PollIo::poll_io`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.PollIo.html#tymethod.poll_io
 [`spawn_blocking`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#method.spawn_blocking
+[`connect_tcp`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#tymethod.connect_tcp
+[`connect_unix`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#tymethod.connect_unix
+[`spawn_process`]: https://docs.rs/zbus/latest/zbus/runtime/traits/trait.Runtime.html#tymethod.spawn_process
 [`Builder::unix_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.unix_stream
 [`Builder::tcp_stream`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.tcp_stream
 [`Builder::socket`]: https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.socket
