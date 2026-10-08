@@ -17,6 +17,8 @@ use crate::{
 /// `unixexec:` D-Bus transport.
 ///
 /// <https://dbus.freedesktop.org/doc/dbus-specification.html#transports-exec>
+///
+/// This type is only available when the `unixexec` feature is enabled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unixexec {
     path: PathBuf,

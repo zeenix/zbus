@@ -31,6 +31,9 @@ is provided via `launchctl getenv DBUS_LAUNCHD_SESSION_BUS_SOCKET` command outpu
 You may also specify a custom bus with [`connection::Builder::address`] which takes a D-Bus address
 [as specified in the specification][dspec].
 
+**Note:** the `unixexec:` and `ibus:` transports are only available when the `unixexec` and `ibus`
+cargo features of `zbus`, respectively, are enabled.
+
 ## Peer to peer connection
 
 Peer-to-peer connections are bus-less[^bus-less], and the initial handshake protocol is a bit
