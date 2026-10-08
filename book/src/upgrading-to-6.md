@@ -90,8 +90,8 @@ Four things to know about the features:
 * `arrayvec` was a zvariant-only feature and is available in zbus now.
 * `comms` pulls in the `uuid` crate — it parses D-Bus GUIDs — without turning on zbus's own
   `uuid` feature, so the `Uuid` wire impls stay opt-in, as they were.
-* Any D-Bus feature (`default-rt`, `tokio`, `tokio-multithread`, `p2p`, `bus-impl`, `vsock`)
-  enables `comms`. In a workspace where one crate asks for the wire-only build
+* Any D-Bus feature (`default-rt`, `tokio`, `tokio-multithread`, `p2p`, `bus-impl`) enables
+  `comms`. In a workspace where one crate asks for the wire-only build
   and another for the full one, Cargo's feature unification gives everybody the full build.
   That is a build-size question only; nothing behaves differently.
 
@@ -413,14 +413,25 @@ whichever runtime it was built with. Hand a stream of another kind over as the s
   `autolaunch:` address instead.
 - `Builder::tcp_stream` takes a `std::net::TcpStream`. A `tokio::net::TcpStream` becomes one with
   `into_std()`; an `async_io::Async<T>` becomes one with `into_inner()`.
-- `Builder::vsock_stream` takes a `vsock::VsockStream`. It serves a Tokio connection too, so the
-  `tokio-vsock` feature and the constructor that took its stream are both gone; `vsock` no longer
-  enables `async-io` either.
 
 `Builder::socket` is likewise no longer a way to bring a runtime's own socket type along: the
 `Socket`, `ReadHalf` and `WriteHalf` implementations for `async_io::Async<T>` and for Tokio's
-stream types are gone. Implement `Socket` for a transport that is none of the three above, such
-as an in-process channel or a tunnel of your own.
+stream types are gone. Implement `Socket` for a transport that is neither of the two above, such
+as a VSOCK stream ([see below][vsock]), an in-process channel or a tunnel of your own.
+
+### VSOCK is not a transport of zbus anymore
+
+The `vsock` and `tokio-vsock` features are gone, and with them `Builder::vsock_stream` and the
+`vsock:` address transport, `Transport::Vsock` and `address::transport::Vsock`: `Address::from_str`
+rejects a `vsock:` address now. D-Bus never took VSOCK up, neither in its specification nor in
+its reference implementation, so zbus no longer carries a transport of its own for it.
+
+A connection still runs over a VSOCK stream that you open yourself, such as a
+`tokio_vsock::VsockStream`: implement `Socket` for it and hand it to `Builder::socket`. A VSOCK peer
+has no credentials to check, so have the read half's `auth_mechanism` return
+`AuthMechanism::Anonymous`, the mechanism zbus's own VSOCK transport used, or set it with
+`Builder::auth_mechanism`. File descriptors cannot travel over the stream, so leave
+`can_pass_unix_fd` at its default of `false`.
 
 ### The encoding context has no format
 
@@ -1051,6 +1062,7 @@ build; move a signature across that boundary through its string form.
 [breaks]: #what-warns-what-is-silent-what-breaks
 [flag-types]: #the-flag-types-are-bitflags-types
 [enumflags2]: #the-enumflags2-feature-is-gone
+[vsock]: #vsock-is-not-a-transport-of-zbus-anymore
 [bit-flags]: faq.md#how-do-i-use-bit-flags
 [`zbus::wire`]: https://docs.rs/zbus/latest/zbus/wire/index.html
 [`zbus::names`]: https://docs.rs/zbus/latest/zbus/names/index.html

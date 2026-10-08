@@ -45,10 +45,10 @@ pub(crate) type RecvmsgResult = io::Result<usize>;
 /// into a read half and a write half. The reader and writer halves can be any types that implement
 /// [`ReadHalf`] and [`WriteHalf`] respectively.
 ///
-/// A unix, TCP or VSOCK stream needs none of this: hand the socket itself to
-/// [`Builder::unix_stream`], [`Builder::tcp_stream`] or `Builder::vsock_stream` and the connection
-/// drives it on its own runtime. Implement this trait for a transport that is none of those, such
-/// as an in-process channel or a tunnel of your own.
+/// A unix or TCP stream needs none of this: hand the socket itself to [`Builder::unix_stream`] or
+/// [`Builder::tcp_stream`] and the connection drives it on its own runtime. Implement this trait
+/// for a transport that is neither, such as a VSOCK stream, an in-process channel or a tunnel of
+/// your own.
 ///
 /// [`Builder::unix_stream`]: crate::connection::Builder::unix_stream
 /// [`Builder::tcp_stream`]: crate::connection::Builder::tcp_stream

@@ -892,7 +892,6 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
- "memoffset",
 ]
 
 [[package]]
@@ -1662,16 +1661,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vsock"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba782755fc073877e567c2253c0be48e4aa9a254c232d36d3985dfae0bd5205"
-dependencies = [
- "libc",
- "nix",
-]
-
-[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2005,7 +1994,6 @@ dependencies = [
  "uds_windows",
  "url",
  "uuid",
- "vsock",
  "windows-sys",
  "winnow 1.0.4",
  "zbus_macros",

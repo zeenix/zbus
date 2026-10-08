@@ -26,7 +26,7 @@ cargo test -p zbus --no-default-features
 
 # Test with specific features
 cargo test --no-default-features --features tokio
-cargo test --features uuid,url,time,chrono,option-as-array,vsock,bus-impl
+cargo test --features uuid,url,time,chrono,option-as-array,bus-impl
 
 # Run single test
 cargo test basic_connection
@@ -102,7 +102,7 @@ GVariant is not supported; it lives in the separate zgvariant crate.
 **Connection Management**:
 - Session, system, and P2P connections via `Connection::builder()`
 - Automatic authentication and capability negotiation
-- Transport abstraction (Unix sockets, TCP, VS_SOCK)
+- Transport abstraction (Unix sockets, TCP)
 
 ## Architecture Overview
 

@@ -33,12 +33,6 @@ pub use launchd::Launchd;
 mod ibus;
 #[cfg(all(unix, feature = "ibus"))]
 pub use ibus::Ibus;
-#[cfg(feature = "vsock")]
-#[path = "vsock.rs"]
-// Gotta rename to avoid name conflict with the `vsock` crate.
-mod vsock_transport;
-#[cfg(feature = "vsock")]
-pub use vsock_transport::Vsock;
 
 /// The transport properties of a D-Bus address.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,11 +54,6 @@ pub enum Transport {
     /// IBus daemon for its D-Bus address using the `ibus address` command.
     #[cfg(all(unix, feature = "ibus"))]
     Ibus(Ibus),
-    /// A VSOCK address.
-    ///
-    /// This variant is only available with the `vsock` feature.
-    #[cfg(feature = "vsock")]
-    Vsock(Vsock),
     /// A `unixexec` address.
     #[cfg(all(unix, feature = "unixexec"))]
     Unixexec(Unixexec),
@@ -76,9 +65,6 @@ impl Transport {
             Transport::Unix(unix) => unix.connect(address, runtime).await.map(Stream::Unix),
 
             Transport::Tcp(tcp) => tcp.connect(address, runtime).await.map(Stream::Tcp),
-
-            #[cfg(feature = "vsock")]
-            Transport::Vsock(vsock) => vsock.connect(address, runtime).await.map(Stream::Vsock),
 
             #[cfg(all(unix, feature = "unixexec"))]
             Transport::Unixexec(unixexec) => unixexec
@@ -127,8 +113,6 @@ impl Transport {
             "unixexec" => Unixexec::from_options(options).map(Self::Unixexec),
             "tcp" => Tcp::from_options(options, false).map(Self::Tcp),
             "nonce-tcp" => Tcp::from_options(options, true).map(Self::Tcp),
-            #[cfg(feature = "vsock")]
-            "vsock" => Vsock::from_options(options).map(Self::Vsock),
             #[cfg(windows)]
             "autolaunch" => Autolaunch::from_options(options).map(Self::Autolaunch),
             #[cfg(target_os = "macos")]
@@ -151,8 +135,6 @@ pub(crate) enum Stream {
     #[cfg(all(unix, feature = "unixexec"))]
     Unixexec(BoxedSplit),
     Tcp(BoxedSplit),
-    #[cfg(feature = "vsock")]
-    Vsock(BoxedSplit),
 }
 
 fn decode_hex(c: char) -> Result<u8> {
@@ -242,8 +224,6 @@ impl Display for Transport {
             Self::Unix(unix) => write!(f, "{unix}")?,
             #[cfg(all(unix, feature = "unixexec"))]
             Self::Unixexec(unixexec) => write!(f, "{unixexec}")?,
-            #[cfg(feature = "vsock")]
-            Self::Vsock(vsock) => write!(f, "{}", vsock)?,
             #[cfg(windows)]
             Self::Autolaunch(autolaunch) => write!(f, "{autolaunch}")?,
             #[cfg(target_os = "macos")]

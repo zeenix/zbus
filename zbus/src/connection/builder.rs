@@ -16,8 +16,6 @@ use uds_windows::UnixStream;
 use crate::MessageStream;
 #[cfg(any(unix, windows))]
 use crate::runtime::io::UnixOps;
-#[cfg(feature = "vsock")]
-use crate::runtime::io::VsockOps;
 use crate::{
     Connection, Error, Guid, OwnedGuid, Result, address,
     address::Address,
@@ -48,8 +46,6 @@ enum Target {
     #[cfg(any(unix, windows))]
     UnixStream(UnixStream),
     TcpStream(std::net::TcpStream),
-    #[cfg(feature = "vsock")]
-    VsockStream(vsock::VsockStream),
     Address(Address),
     Socket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
     AuthenticatedSocket(Split<Box<dyn ReadHalf>, Box<dyn WriteHalf>>),
@@ -236,18 +232,6 @@ impl<'a> Builder<'a> {
     /// Tokio stream.
     pub fn tcp_stream(stream: std::net::TcpStream) -> Self {
         Self::new(Target::TcpStream(stream))
-    }
-
-    /// Create a builder for a connection over `stream`.
-    ///
-    /// The stream is a [`vsock::VsockStream`], and the connection takes ownership of it: it is
-    /// switched to non-blocking mode and driven by the runtime the connection is built on. A
-    /// stream of another kind is handed over as the socket it wraps.
-    ///
-    /// [`vsock::VsockStream`]: https://docs.rs/vsock/latest/vsock/struct.VsockStream.html
-    #[cfg(feature = "vsock")]
-    pub fn vsock_stream(stream: vsock::VsockStream) -> Self {
-        Self::new(Target::VsockStream(stream))
     }
 
     /// Create a builder for a connection that will use the given socket.
@@ -795,8 +779,6 @@ impl<'a> Builder<'a> {
                 registered(runtime, socket, UnixOps)?.into()
             }
             Target::TcpStream(stream) => tcp_stream(runtime, stream)?,
-            #[cfg(feature = "vsock")]
-            Target::VsockStream(stream) => registered(runtime, stream, VsockOps)?.into(),
             Target::Address(address) => {
                 guid = address.guid().map(|g| g.to_owned().into());
                 match address.connect(runtime).await? {
@@ -804,8 +786,6 @@ impl<'a> Builder<'a> {
                     #[cfg(all(unix, feature = "unixexec"))]
                     address::transport::Stream::Unixexec(split) => split,
                     address::transport::Stream::Tcp(split) => split,
-                    #[cfg(feature = "vsock")]
-                    address::transport::Stream::Vsock(split) => split,
                 }
             }
             Target::Socket(stream) => stream,
