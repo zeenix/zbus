@@ -35,23 +35,6 @@ where
     under_tokio(&body);
 }
 
-/// [`under_every_runtime`], minus any runtime that cannot watch a socket zbus owns.
-///
-/// Tokio on Windows reaches a socket through a type that owns it, so it has nowhere to keep a
-/// descriptor of zbus's own and [`traits::Runtime::register_io_source`] reports `Unsupported`
-/// there. So on Windows this sweep leaves Tokio out: a test that has zbus register a descriptor
-/// of its own cannot run under it, while one that does not runs under Tokio there as anywhere.
-pub(crate) fn under_every_watching_runtime<Body, Fut>(body: Body)
-where
-    Body: Fn(Runtime) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    under_the_polled_runtimes(&body);
-
-    #[cfg(all(feature = "tokio", not(windows)))]
-    under_tokio(&body);
-}
-
 /// Runs `body` under the runtimes a test drives with `futures_lite` from the calling thread.
 ///
 /// The last two are the same runtime in the two orders [`traits::PollIo`] leaves an

@@ -20,12 +20,9 @@ use super::connect::{connect, outcome};
 use super::{RegisteredIo, UnixOps};
 #[cfg(unix)]
 use crate::connection::socket::{ReadHalf, WriteHalf};
-use crate::runtime::{IoSource, test_runtime::under_every_watching_runtime};
+use crate::runtime::{IoSource, test_runtime::under_every_runtime};
 #[cfg(unix)]
-use crate::runtime::{
-    Runtime,
-    test_runtime::{TestRuntime, under_every_runtime},
-};
+use crate::runtime::{Runtime, test_runtime::TestRuntime};
 
 #[cfg(unix)]
 #[test]
@@ -191,7 +188,7 @@ fn a_pending_connect_resolves_on_writable() {
 #[test]
 #[timeout(15000)]
 fn a_pending_connect_reports_the_socket_error() {
-    under_every_watching_runtime(|runtime| async move {
+    under_every_runtime(|runtime| async move {
         let refused = RefusedPort::on(Ipv4Addr::LOCALHOST.into());
 
         let error = connect(

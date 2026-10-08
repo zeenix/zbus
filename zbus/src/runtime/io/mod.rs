@@ -12,7 +12,7 @@ mod unix;
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 mod pipe;
 
-pub(crate) mod tcp;
+mod tcp;
 
 mod connect;
 pub(crate) use connect::connect;

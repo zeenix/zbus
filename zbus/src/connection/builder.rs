@@ -780,7 +780,7 @@ impl<'a> Builder<'a> {
 
                 registered(runtime, socket, UnixOps)?.into()
             }
-            Target::TcpStream(stream) => tcp_stream(runtime, stream)?,
+            Target::TcpStream(stream) => registered(runtime, stream, TcpOps)?.into(),
             Target::Address(address) => {
                 guid = address.guid().map(|g| g.to_owned().into());
                 match address.connect(runtime).await? {
@@ -800,26 +800,6 @@ impl<'a> Builder<'a> {
 
         Ok((split, guid, authenticated))
     }
-}
-
-/// Hands `stream` over to `runtime` the way a `tcp:` address hands its own socket over.
-///
-/// Tokio watches a Windows socket through a type that owns it, so a Tokio connection there takes
-/// the stream over as one of Tokio's rather than registering a descriptor of its own.
-fn tcp_stream(runtime: &Runtime, stream: std::net::TcpStream) -> Result<BoxedSplit> {
-    #[cfg(all(windows, feature = "tokio"))]
-    if let Runtime::Tokio(tokio_runtime) = runtime {
-        use crate::connection::socket::TokioTcp;
-
-        stream.set_nonblocking(true)?;
-        // Tokio hands the socket to the reactor of whichever runtime is current, which has to be
-        // this connection's and not whichever one the caller is on.
-        let _guard = tokio_runtime.enter();
-
-        return Ok(TokioTcp::new(tokio::net::TcpStream::from_std(stream)?, runtime.clone()).into());
-    }
-
-    Ok(registered(runtime, stream, TcpOps)?.into())
 }
 
 #[cfg(test)]
