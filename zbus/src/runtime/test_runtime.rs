@@ -4,9 +4,14 @@
 //! enter a user's graph, so this runtime exists in every test build, including the one with no
 //! runtime of zbus's own compiled in. Its tasks run on one thread per instance, which lives as
 //! long as the process, and its registrations and timers are async-io's. It connects with a
-//! blocking connect on its own hook for blocking work, which counts the calls. That is enough for
-//! a test, not a model for a real host.
+//! blocking connect on its own hook for blocking work, which counts the calls, and waits for a
+//! child process on a thread of zruntime's pool, starting the wait with the first poll of the
+//! future of the exit status. A process whose future is dropped before then stays uncollected, as
+//! the trait lets a runtime leave it, so a test on this runtime sees whether zbus awaits the
+//! future itself. That is enough for a test, not a model for a real host.
 
+#[cfg(unix)]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{
     future::Future,
     io,
@@ -22,6 +27,8 @@ use async_executor::Executor;
 use async_io::{Async, Timer};
 use socket2::{Domain, SockAddr};
 
+#[cfg(unix)]
+use super::erased::BoxFuture;
 use super::{Interest, IoSource, Runtime, io::connect_blocking, traits};
 
 /// Runs `body` once under every runtime this build can make.
@@ -151,6 +158,37 @@ impl traits::Runtime for TestRuntime {
             .await
     }
 
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        mut command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        let child = command.stdin(stdin).stdout(stdout).stderr(stderr).spawn();
+        // The command holds the streams it was given for as long as it lives, which is longer
+        // than the process needs them: a copy of the write end of a pipe that stays open here is
+        // a pipe that never ends for whoever reads it.
+        drop(command);
+        let mut child = child?;
+
+        // The first poll looks at the process, which collects it right there if it has exited
+        // already. A process that is still running is waited for with a blocking `wait` on a
+        // thread of the pool that `zruntime::unblock` runs its work on, and the pool thread wakes
+        // the task that polled last once the process is gone. It is zruntime's pool and not the
+        // runtime's own blocking work, as `TestRuntime::blocking_calls` counts the blocking work
+        // that zbus hands the runtime, and the runtime starts this wait of its own accord. A wait
+        // that is under way on the pool runs to its end whether or not the future is dropped.
+        Ok(Box::pin(async move {
+            if let Some(status) = child.try_wait()? {
+                return Ok(status);
+            }
+
+            zruntime::unblock(move || child.wait()).await
+        }))
+    }
+
     fn spawn_blocking<T>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,
@@ -215,6 +253,17 @@ impl traits::Runtime for ReadinessFirst {
         traits::Runtime::connect_unix(&self.0, path)
     }
 
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        traits::Runtime::spawn_process(&self.0, command, stdin, stdout, stderr)
+    }
+
     fn spawn_blocking<T>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,
@@ -272,6 +321,17 @@ impl traits::Runtime for DefaultBlocking {
     fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
         traits::Runtime::connect_unix(&self.0, path)
     }
+
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        traits::Runtime::spawn_process(&self.0, command, stdin, stdout, stderr)
+    }
 }
 
 /// A [`TestRuntime`] with connects of its own, which never connect to anything.
@@ -325,6 +385,82 @@ impl traits::Runtime for OwnConnects {
             "a connect of its own to {}",
             path.display(),
         ))))
+    }
+
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        traits::Runtime::spawn_process(&self.0, command, stdin, stdout, stderr)
+    }
+}
+
+/// A [`TestRuntime`] with a spawn of processes of its own, which never starts a process.
+///
+/// It reports the program it was asked to run as its error, so that a test sees which spawn ran
+/// and what it was handed: this one, and not a spawn made some other way, which would have run
+/// the program.
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+#[derive(Clone, Debug)]
+pub(crate) struct OwnSpawn(TestRuntime);
+
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+impl OwnSpawn {
+    pub(crate) fn new() -> Self {
+        Self(TestRuntime::new())
+    }
+}
+
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+impl traits::Runtime for OwnSpawn {
+    type RegisteredIoSource = Registration;
+    type Sleep = Sleep;
+    type Task<T>
+        = Task<T>
+    where
+        T: Send + 'static;
+
+    fn register_io_source(&self, source: IoSource) -> io::Result<Registration> {
+        traits::Runtime::register_io_source(&self.0, source)
+    }
+
+    fn sleep(&self, duration: Duration) -> Sleep {
+        traits::Runtime::sleep(&self.0, duration)
+    }
+
+    fn spawn<T>(&self, name: &str, future: impl Future<Output = T> + Send + 'static) -> Task<T>
+    where
+        T: Send + 'static,
+    {
+        traits::Runtime::spawn(&self.0, name, future)
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_tcp(&self.0, address)
+    }
+
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        traits::Runtime::connect_unix(&self.0, path)
+    }
+
+    fn spawn_process(
+        &self,
+        command: Command,
+        _stdin: Stdio,
+        _stdout: Stdio,
+        _stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        Err(io::Error::other(format!(
+            "a spawn of its own for {}",
+            command.get_program().to_string_lossy(),
+        )))
     }
 }
 
@@ -412,6 +548,17 @@ impl traits::Runtime for AbortingRuntime {
 
     fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
         traits::Runtime::connect_unix(&self.inner, path)
+    }
+
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        traits::Runtime::spawn_process(&self.inner, command, stdin, stdout, stderr)
     }
 }
 

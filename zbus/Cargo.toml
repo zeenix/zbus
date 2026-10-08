@@ -60,7 +60,10 @@ comms = [
 # The runtime zbus ships, provided by zruntime: one runtime per thread that runs
 # `zbus::block_on`, driven by that thread (default). The feature is named for the role, not for
 # the crate behind it. It also turns on zruntime's TCP and unix-domain sockets, which a connection
-# is made through.
+# is made through, and its child processes, which the runtime runs a helper process through.
+# Cargo cannot turn zruntime's `process` feature on only where `unixexec`, `ibus` or macOS needs
+# it, so it is on whenever this feature is, and the backend spawns through it on every unix
+# build, as the runtime trait has a spawn of a process there whatever the features.
 # `tokio` adds the Tokio backend, which a connection built inside a Tokio runtime prefers.
 default-rt = [
     "comms",
@@ -68,6 +71,7 @@ default-rt = [
     "zruntime/helper",
     "zruntime/tcp",
     "zruntime/unix",
+    "zruntime/process",
 ]
 tokio = ["comms", "dep:tokio"]
 # With the `tokio` feature, `zbus::block_on` runs the future on a single-threaded Tokio runtime of
@@ -83,10 +87,12 @@ service = ["comms", "zbus_macros/service"]
 # The service-side `ObjectManager` implementation, along with the `InterfacesAdded` and
 # `InterfacesRemoved` signals the object server emits on its behalf (default).
 object-manager = ["service"]
-# The `unixexec:` transport, which runs a command and talks D-Bus over its standard I/O.
-unixexec = ["comms"]
+# The `unixexec:` transport, which runs a command and talks D-Bus over its standard I/O. The Tokio
+# backend runs the command with Tokio's `process` feature.
+unixexec = ["comms", "tokio?/process"]
 # The `ibus:` transport, which asks the IBus daemon for its bus address by running `ibus address`.
-ibus = ["comms"]
+# The Tokio backend runs the command with Tokio's `process` feature.
+ibus = ["comms", "tokio?/process"]
 # Enables API that is only needed for peer-to-peer (p2p) connections.
 p2p = ["comms", "uuid?/v4"]
 # Enables API that is only needed for bus implementations (enables `p2p`).
@@ -112,8 +118,8 @@ winnow.workspace = true
 
 # zbus's notifications are built on zruntime's `Event`, and its async locks, broadcast channels and
 # the thread its default blocking-work hook runs on come from zruntime, through its `event`, `lock`,
-# `broadcast` and `unblock` features; the `default-rt` feature turns zruntime's runtime and sockets
-# on as well, and `tracing` its logging. A Tokio build uses Tokio's locks instead.
+# `broadcast` and `unblock` features; the `default-rt` feature turns zruntime's runtime, sockets and
+# child processes on as well, and `tracing` its logging. A Tokio build uses Tokio's locks instead.
 zruntime = { workspace = true, optional = true }
 
 # Wire-format impls and async-runtime backends.
@@ -126,6 +132,11 @@ time = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["rt", "net", "time", "sync"] }
 socket2 = { workspace = true, optional = true }
+
+# The `launchd:` transport runs a program on macOS whatever the features are, so the Tokio backend
+# needs Tokio's `process` feature there as well. Cargo adds the features of the two entries up.
+[target.'cfg(target_os = "macos")'.dependencies]
+tokio = { workspace = true, optional = true, features = ["process"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, optional = true }

@@ -38,7 +38,11 @@ use tokio_rt::Tokio;
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run a program.
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
+#[cfg(all(test, target_os = "linux", feature = "unixexec"))]
+mod process_table;
 
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{any::Any, future::Future, net::SocketAddr, path::Path, sync::Arc};
 
 use erased::{BoxFuture, ErasedRuntime};
@@ -160,6 +164,23 @@ impl Runtime {
                 .downcast()
                 .expect("blocking work hands back the value it produced")
         })
+    }
+
+    /// Spawns `command` as a child process, the way this runtime does it, and waits for it.
+    ///
+    /// `stdin`, `stdout` and `stderr` are the standard streams of the process. The future this
+    /// hands back resolves to the exit status once the process has exited. One that is dropped
+    /// before it resolves leaves the process to the runtime: see
+    /// [`traits::Runtime::spawn_process`].
+    #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+    pub(crate) fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> std::io::Result<BoxFuture<'static, std::io::Result<ExitStatus>>> {
+        self.0.spawn_process(command, stdin, stdout, stderr)
     }
 }
 

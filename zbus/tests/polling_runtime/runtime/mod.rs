@@ -11,6 +11,14 @@
 //! again after a wait on the timer. A runtime with no non-blocking connect of its own connects on
 //! a thread for blocking work instead, and so starts one for the connection to a bus.
 //!
+//! [`traits::Runtime::spawn_process`] is implemented here too, on the runtime's own timer: a
+//! runtime with a pidfd, a kqueue or a handler for `SIGCHLD` is told when a child exits, and this
+//! one has nothing of the kind, so it looks at the child at an interval. A connection awaits the
+//! exit of a `unixexec:` child on a task of the runtime, which keeps looking until the child has
+//! exited, and a released runtime drops that task and leaves the child to the process's own exit.
+//! A runtime that waits for a child on a thread for blocking work instead starts one wherever a
+//! connection runs a program: on macOS the session bus is found through `launchd`, which does.
+//!
 //! [`traits::Runtime::spawn_blocking`] keeps its default, which hands each call to zruntime's
 //! pool of threads for blocking work. On Linux and Android a connection looks its peer's
 //! supplementary groups up through it — [`zbus::Connection::peer_creds`] does, and so does the
@@ -23,7 +31,8 @@ use std::{
     future::Future,
     net::SocketAddr,
     path::Path,
-    pin::pin,
+    pin::{Pin, pin},
+    process::{Command, ExitStatus, Stdio},
     sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
     task::{Context, Poll, Wake, Waker},
     time::{Duration, Instant},
@@ -37,6 +46,7 @@ mod connect;
 mod io;
 pub use io::RegisteredIoSource;
 use io::Sources;
+mod process;
 mod task;
 use task::Detached;
 pub use task::Task;
@@ -270,6 +280,16 @@ impl traits::Runtime for Handle {
 
     fn connect_unix(&self, path: &Path) -> impl Future<Output = std::io::Result<IoSource>> + Send {
         connect::unix(self, path)
+    }
+
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> std::io::Result<Pin<Box<dyn Future<Output = std::io::Result<ExitStatus>> + Send>>> {
+        process::spawn(self, command, stdin, stdout, stderr)
     }
 }
 

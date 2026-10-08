@@ -16,7 +16,8 @@
 //! sleep. A spawn costs two, the future and the handle, and a third as the task ends for a value
 //! that is not zero-sized. A call to the blocking hook costs three — the work, the value it hands
 //! back and the future that downcasts that value — on top of the boxed future the hook itself
-//! returns. A connect costs the one allocation of the boxed future its method returns.
+//! returns. A connect costs the one allocation of the boxed future its method returns, and a
+//! spawned process costs none, its method returning that future boxed already.
 //!
 //! Readiness is mirrored without erasing anything: the operation a registration runs hands its
 //! result back through the caller's own captures, so an I/O call costs no allocation here.
@@ -25,6 +26,8 @@
 //! [`Runtime`]: super::Runtime
 //! [`Task`]: super::Task
 
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{
     any::Any,
     fmt,
@@ -51,6 +54,14 @@ pub(crate) trait ErasedRuntime: Send + Sync {
     ) -> Box<dyn ErasedTask>;
     fn connect_tcp(&self, address: SocketAddr) -> BoxFuture<'_, io::Result<IoSource>>;
     fn connect_unix<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<IoSource>>;
+    #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>>;
     fn spawn_blocking(
         &self,
         work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
@@ -90,6 +101,17 @@ where
 
     fn connect_unix<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<IoSource>> {
         Box::pin(traits::Runtime::connect_unix(self, path))
+    }
+
+    #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<BoxFuture<'static, io::Result<ExitStatus>>> {
+        traits::Runtime::spawn_process(self, command, stdin, stdout, stderr)
     }
 
     fn spawn_blocking(
