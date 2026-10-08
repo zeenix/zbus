@@ -39,7 +39,7 @@ use tokio_rt::Tokio;
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
 
-use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
+use std::{borrow::Cow, future::Future, net::SocketAddr, path::Path, pin::Pin, sync::Arc};
 
 use erased::ErasedRuntime;
 
@@ -138,6 +138,34 @@ impl Runtime {
             Self::External(runtime) => {
                 Task::External(traits::Runtime::spawn(runtime, &name, future))
             }
+        }
+    }
+
+    /// Connects a stream socket to the TCP endpoint at `address`, the way this runtime does it.
+    ///
+    /// The socket comes back connected and non-blocking, and no longer watched by the runtime, so
+    /// that the connection can register it for its own traffic.
+    pub(crate) async fn connect_tcp(&self, address: SocketAddr) -> std::io::Result<IoSource> {
+        match self {
+            #[cfg(feature = "default-rt")]
+            Self::ZRuntime(runtime) => traits::Runtime::connect_tcp(runtime, address).await,
+            #[cfg(feature = "tokio")]
+            Self::Tokio(runtime) => traits::Runtime::connect_tcp(runtime, address).await,
+            Self::External(runtime) => traits::Runtime::connect_tcp(runtime, address).await,
+        }
+    }
+
+    /// Connects a stream socket to the unix-domain socket at `path`, the way this runtime does it.
+    ///
+    /// A path whose first byte is zero names an abstract socket on Linux and Android. The socket
+    /// comes back as [`Runtime::connect_tcp`]'s does.
+    pub(crate) async fn connect_unix(&self, path: &Path) -> std::io::Result<IoSource> {
+        match self {
+            #[cfg(feature = "default-rt")]
+            Self::ZRuntime(runtime) => traits::Runtime::connect_unix(runtime, path).await,
+            #[cfg(feature = "tokio")]
+            Self::Tokio(runtime) => traits::Runtime::connect_unix(runtime, path).await,
+            Self::External(runtime) => traits::Runtime::connect_unix(runtime, path).await,
         }
     }
 

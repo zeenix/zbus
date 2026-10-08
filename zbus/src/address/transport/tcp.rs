@@ -7,15 +7,13 @@ use std::{
     sync::Arc,
 };
 
-use socket2::{Domain, Type};
-
 use super::encode_percents;
 use crate::{
     Address, Error, Result,
     connection::socket::{BoxedSplit, WriteHalf},
     runtime::{
         Runtime,
-        io::{RegisteredIo, TcpOps, connect},
+        io::{RegisteredIo, TcpOps},
     },
 };
 
@@ -144,8 +142,7 @@ impl Tcp {
         let mut error = self.nothing_found(address);
 
         for socket_address in addresses {
-            let domain = Domain::for_address(socket_address);
-            match connect(runtime, domain, Type::STREAM, &socket_address.into()).await {
+            match runtime.connect_tcp(socket_address).await {
                 Ok(source) => {
                     let mut split = BoxedSplit::from(RegisteredIo::new(runtime, source, TcpOps)?);
                     if let Some(nonce) = nonce.as_deref() {

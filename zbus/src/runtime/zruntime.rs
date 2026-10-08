@@ -1,5 +1,11 @@
-//! The zruntime backend: [zruntime]'s reactor for readiness, its timer, its tasks and the
-//! standard hook for blocking work.
+//! The zruntime backend: [zruntime]'s reactor for readiness, its timer, its tasks, its connects
+//! and the standard hook for blocking work.
+//!
+//! A connection to a TCP or unix-domain socket is made by zruntime's own non-blocking connect,
+//! which waits on its reactor and so occupies no thread. The socket comes back as a std one, which
+//! zruntime no longer watches, for the connection to register for its traffic. zruntime has no
+//! unix-domain sockets on Windows, so a unix-domain connect there is a blocking one, made on a
+//! thread of the pool for blocking work.
 //!
 //! [zruntime]: https://docs.rs/zruntime
 
@@ -8,11 +14,15 @@ use std::{
     fmt,
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
+#[cfg(unix)]
+use super::io::unix_socket_address;
 use super::{Interest, IoSource, traits};
 
 /// The runtime zbus brings along by default: a thin wrapper around [`zruntime::SharedRuntime`].
@@ -70,6 +80,43 @@ impl traits::Runtime for ZRuntime {
         // A copy of its own: this signature is fixed by `traits::Runtime`, whose caller only
         // hands out a borrow, while a task's cell keeps its name for as long as it lives.
         self.spawn_named(name.to_owned().into(), future)
+    }
+
+    async fn connect_tcp(&self, address: SocketAddr) -> io::Result<IoSource> {
+        let stream = zruntime::net::TcpStream::<zruntime::Shared>::connect(&self.0, address)
+            .await?
+            .into_std();
+
+        Ok(IoSource::new(stream.into()))
+    }
+
+    #[cfg(unix)]
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        let address = unix_socket_address(path);
+
+        async move {
+            let stream = zruntime::net::unix::UnixStream::<zruntime::Shared>::connect_addr(
+                &self.0, &address?,
+            )
+            .await?
+            .into_std();
+
+            Ok(IoSource::new(stream.into()))
+        }
+    }
+
+    // zruntime has no unix-domain sockets on Windows, so the connect is a blocking one, on a
+    // thread for blocking work.
+    #[cfg(windows)]
+    async fn connect_unix(&self, path: &Path) -> io::Result<IoSource> {
+        use socket2::{Domain, SockAddr};
+
+        let address = SockAddr::unix(path)?;
+
+        traits::Runtime::spawn_blocking(self, move || {
+            super::io::connect_blocking(Domain::UNIX, &address)
+        })
+        .await
     }
 }
 

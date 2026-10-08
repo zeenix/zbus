@@ -6,9 +6,12 @@
 //! a Tokio runtime runs on it instead (the `tokio` feature), and any other runtime reaches a
 //! connection through whatever implements [`Runtime`] and is handed to [`Builder::runtime`].
 //! Implementing the trait takes a readiness registration, a timer and a task handle, all of which
-//! every async runtime already has, together with a hook for blocking work. Both built-in
-//! backends are implementations of these traits, and the polling-based runtime in zbus's
-//! integration tests is a worked example of the whole contract on a single thread.
+//! every async runtime already has, and the connects of TCP and unix-domain sockets, which a
+//! runtime makes with what it has: a non-blocking connect or, where it lacks one, a thread for
+//! blocking work. Only the hook for blocking work comes with a default, which a runtime with a
+//! pool of threads for blocking work replaces. Both built-in backends are implementations of these
+//! traits, and the polling-based runtime in zbus's integration tests is a worked example of the
+//! whole contract on a single thread: it connects on its own poller.
 //!
 //! The async locks a connection holds are not part of the trait: they come from zruntime, so no
 //! build needs a feature for them, whichever runtime it runs on, nor pulls in a lock crate of its
@@ -20,6 +23,8 @@
 use std::{
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -78,6 +83,51 @@ pub trait Runtime: Send + Sync + 'static {
     ) -> Self::Task<T>
     where
         T: Send + 'static;
+
+    /// Connect a stream socket to the TCP endpoint at `address`.
+    ///
+    /// The future resolves to the connected socket in non-blocking mode, which the connection then
+    /// registers through [`Runtime::register_io_source`] as it does every socket it does I/O on.
+    /// So a runtime that watched the socket to wait for the connect must have stopped doing so by
+    /// then: a socket handed back out of the type the runtime wrapped it in, such as through
+    /// `into_std`, has. An [`IoSource`] is made from an owned descriptor with `From`: an
+    /// `OwnedFd` on unix, an `OwnedSocket` on Windows.
+    ///
+    /// `address` is an IP address and a port; a host name is resolved before this is called. A
+    /// connection that is refused, or that fails in any other way, is the future's `Err`.
+    ///
+    /// An implementation must not block the thread it is polled on. A runtime with a non-blocking
+    /// connect of its own uses it. One without makes a blocking `connect(2)` on a thread for
+    /// blocking work, such as one of those [`Runtime::spawn_blocking`] hands work to, and switches
+    /// the socket to non-blocking mode once it is connected. That occupies the thread for as long
+    /// as the kernel takes over the connection, which for a peer that does not answer is the
+    /// system's own connect timeout, and dropping the future does not stop that connect, only
+    /// discards the socket it makes.
+    fn connect_tcp(&self, address: SocketAddr)
+    -> impl Future<Output = io::Result<IoSource>> + Send;
+
+    /// Connect a stream socket to the unix-domain socket at `path`.
+    ///
+    /// The future resolves to the connected socket in non-blocking mode, which the connection then
+    /// registers through [`Runtime::register_io_source`] as it does every socket it does I/O on.
+    /// So a runtime that watched the socket to wait for the connect must have stopped doing so by
+    /// then: a socket handed back out of the type the runtime wrapped it in, such as through
+    /// `into_std`, has. An [`IoSource`] is made from an owned descriptor with `From`: an
+    /// `OwnedFd` on unix, an `OwnedSocket` on Windows.
+    ///
+    /// On Linux and Android, a `path` whose first byte is zero does not name a file. The rest of
+    /// it is a name in the abstract socket namespace instead. A `path` that is too long to make a
+    /// socket address of, a connection that is refused and any other failure to connect are the
+    /// future's `Err`.
+    ///
+    /// An implementation must not block the thread it is polled on, and has the same two ways of
+    /// connecting as [`Runtime::connect_tcp`]: a non-blocking connect of the runtime's own, or a
+    /// blocking one on a thread for blocking work. On Linux and Android, a listener whose backlog
+    /// is full turns a non-blocking connect away with a would-block error, where a blocking one
+    /// waits in the kernel until the listener accepts a connection. So a non-blocking
+    /// implementation waits a moment and tries again for as long as that lasts, rather than fail
+    /// the connect, and a blocking one holds its thread for as long as the listener takes.
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send;
 
     /// Run `work` off the event loop.
     ///

@@ -1,14 +1,13 @@
 #[cfg(target_os = "linux")]
 use std::ffi::OsString;
 use std::{
+    borrow::Cow,
     ffi::OsStr,
     fmt::{Display, Formatter},
     io,
     path::PathBuf,
     sync::Arc,
 };
-
-use socket2::{Domain, SockAddr, Type};
 
 #[cfg(unix)]
 use super::encode_percents;
@@ -17,7 +16,7 @@ use crate::{
     connection::socket::BoxedSplit,
     runtime::{
         Runtime,
-        io::{RegisteredIo, UnixOps, connect},
+        io::{RegisteredIo, UnixOps},
     },
 };
 
@@ -45,29 +44,26 @@ impl Unix {
 
     /// Connects to the socket this address names.
     pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
-        let socket_address = match self.path() {
-            UnixSocket::File(path) => SockAddr::unix(path)?,
+        let path = match self.path() {
+            UnixSocket::File(path) => Cow::Borrowed(path.as_path()),
             #[cfg(target_os = "linux")]
-            UnixSocket::Abstract(name) => SockAddr::unix(abstract_path(name))?,
+            UnixSocket::Abstract(name) => Cow::Owned(abstract_path(name)),
             // A directory is where a server puts a socket of its own, not something to connect
             // to.
             UnixSocket::Dir(_) | UnixSocket::TmpDir(_) => return Err(Error::Unsupported),
         };
 
-        // A runtime that cannot watch a unix-domain socket, such as Tokio on Windows, answers with
-        // `Unsupported` as the socket is registered. That says nothing about this address, so it is
-        // not a failed connection.
-        let failed = |e: io::Error| match e.kind() {
-            io::ErrorKind::Unsupported => Error::Unsupported,
-            _ => Error::Connection(Arc::new(e), Box::new(address.clone())),
-        };
-        let source = connect(runtime, Domain::UNIX, Type::STREAM, &socket_address)
+        // A runtime that has no unix-domain sockets, such as Tokio on Windows, answers with
+        // `Unsupported`. That says nothing about this address, so it is not a failed connection.
+        let source = runtime
+            .connect_unix(&path)
             .await
-            .map_err(failed)?;
+            .map_err(|e| match e.kind() {
+                io::ErrorKind::Unsupported => Error::Unsupported,
+                _ => Error::Connection(Arc::new(e), Box::new(address.clone())),
+            })?;
 
-        Ok(RegisteredIo::new(runtime, source, UnixOps)
-            .map_err(failed)?
-            .into())
+        Ok(RegisteredIo::new(runtime, source, UnixOps)?.into())
     }
 
     pub(super) fn from_options(opts: std::collections::HashMap<&str, &str>) -> crate::Result<Self> {

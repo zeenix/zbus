@@ -6,7 +6,7 @@ use ntest::timeout;
 
 use super::{
     Runtime,
-    test_runtime::{DefaultBlocking, TestRuntime, under_every_runtime},
+    test_runtime::{DefaultBlocking, OwnConnects, TestRuntime, under_every_runtime},
 };
 
 #[cfg(all(feature = "p2p", feature = "service"))]
@@ -238,6 +238,33 @@ fn an_address_is_connected_on_the_runtime_it_is_given() {
     assert!(
         matches!(&error, Error::Connection(e, _) if e.kind() == std::io::ErrorKind::NotFound),
         "got {error:?}",
+    );
+}
+
+/// The connects an external runtime implements itself are the ones a connection makes.
+///
+/// The runtime is boxed on its way in, and the box has to hand each connect to the runtime it
+/// holds, rather than connect some other way.
+#[test]
+#[timeout(15000)]
+fn an_external_runtimes_own_connects_are_not_bypassed() {
+    use std::{net::SocketAddr, path::Path};
+
+    let runtime = Runtime::from_external(OwnConnects::new());
+    let tcp = SocketAddr::from(([127, 0, 0, 1], 9));
+    let unix = Path::new("/nonexistent/zbus-own-connect");
+
+    let (tcp_error, unix_error) = futures_lite::future::block_on(async {
+        (
+            runtime.connect_tcp(tcp).await.unwrap_err(),
+            runtime.connect_unix(unix).await.unwrap_err(),
+        )
+    });
+
+    assert_eq!(tcp_error.to_string(), "a connect of its own to 127.0.0.1:9");
+    assert_eq!(
+        unix_error.to_string(),
+        "a connect of its own to /nonexistent/zbus-own-connect",
     );
 }
 

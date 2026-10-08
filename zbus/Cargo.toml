@@ -59,9 +59,16 @@ comms = [
 ]
 # The runtime zbus ships, provided by zruntime: one runtime per thread that runs
 # `zbus::block_on`, driven by that thread (default). The feature is named for the role, not for
-# the crate behind it.
+# the crate behind it. It also turns on zruntime's TCP and unix-domain sockets, which a connection
+# is made through.
 # `tokio` adds the Tokio backend, which a connection built inside a Tokio runtime prefers.
-default-rt = ["comms", "zruntime/runtime", "zruntime/helper"]
+default-rt = [
+    "comms",
+    "zruntime/runtime",
+    "zruntime/helper",
+    "zruntime/tcp",
+    "zruntime/unix",
+]
 tokio = ["comms", "dep:tokio"]
 # With the `tokio` feature, `zbus::block_on` runs the future on a single-threaded Tokio runtime of
 # its own. This makes that runtime a multi-threaded one instead (enables `tokio`).
@@ -105,8 +112,8 @@ winnow.workspace = true
 
 # zbus's notifications are built on zruntime's `Event`, and its async locks, broadcast channels and
 # the thread its default blocking-work hook runs on come from zruntime, through its `event`, `lock`,
-# `broadcast` and `unblock` features; the `default-rt` feature turns zruntime's runtime on as well,
-# and `tracing` its logging. A Tokio build uses Tokio's locks instead.
+# `broadcast` and `unblock` features; the `default-rt` feature turns zruntime's runtime and sockets
+# on as well, and `tracing` its logging. A Tokio build uses Tokio's locks instead.
 zruntime = { workspace = true, optional = true }
 
 # Wire-format impls and async-runtime backends.
@@ -165,6 +172,8 @@ async-executor.workspace = true
 async-task.workspace = true
 polling.workspace = true
 bitflags.workspace = true
+socket2.workspace = true
+libc.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

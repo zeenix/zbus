@@ -15,7 +15,8 @@
 //! does a sleep. A spawn costs two, the future and the handle, and a third as the task ends for
 //! the value it produced, which a task that produces nothing does not pay. A call to the blocking
 //! hook costs three — the work, the value it hands back and the future that downcasts that value
-//! — on top of the boxed future the hook returns whichever runtime it is called on.
+//! — on top of the boxed future the hook returns whichever runtime it is called on. A connect
+//! costs the one allocation of the boxed future its method returns.
 //!
 //! Readiness is mirrored without erasing anything: the operation a registration runs hands its
 //! result back through the caller's own captures, so an I/O call costs no allocation here.
@@ -28,6 +29,8 @@ use std::{
     future::Future,
     io,
     marker::PhantomData,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -46,6 +49,8 @@ pub(crate) trait ErasedRuntime: Send + Sync {
         name: &str,
         future: BoxFuture<'static, Box<dyn Any + Send>>,
     ) -> Box<dyn ErasedTask>;
+    fn connect_tcp(&self, address: SocketAddr) -> BoxFuture<'_, io::Result<IoSource>>;
+    fn connect_unix<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<IoSource>>;
     fn spawn_blocking(
         &self,
         work: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
@@ -77,6 +82,14 @@ where
         future: BoxFuture<'static, Box<dyn Any + Send>>,
     ) -> Box<dyn ErasedTask> {
         Box::new(traits::Runtime::spawn(self, name, future))
+    }
+
+    fn connect_tcp(&self, address: SocketAddr) -> BoxFuture<'_, io::Result<IoSource>> {
+        Box::pin(traits::Runtime::connect_tcp(self, address))
+    }
+
+    fn connect_unix<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<IoSource>> {
+        Box::pin(traits::Runtime::connect_unix(self, path))
     }
 
     fn spawn_blocking(
@@ -114,6 +127,20 @@ impl traits::Runtime for Arc<dyn ErasedRuntime> {
         T: Send + 'static,
     {
         ExternalTask::spawn(&**self, name, future)
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        ErasedRuntime::connect_tcp(&**self, address)
+    }
+
+    // An `async fn` rather than the mirror's boxed future returned as it is: the mirror ties both
+    // of its borrows to one lifetime, which a returned future that names two lifetimes of its own
+    // cannot be, but a future that holds both can.
+    async fn connect_unix(&self, path: &Path) -> io::Result<IoSource> {
+        ErasedRuntime::connect_unix(&**self, path).await
     }
 
     fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> BoxFuture<'static, T>

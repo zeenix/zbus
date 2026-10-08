@@ -66,6 +66,37 @@ impl SocketOps for UnixOps {
     }
 }
 
+/// The address of the unix-domain socket that `path` names, as the standard library has it.
+///
+/// This is the form a runtime's own connect takes, where [`Runtime::connect_unix`] is handed a
+/// path. On Linux and Android, a `path` whose first byte is zero does not name a file: the rest of
+/// it is a name in the abstract namespace, and may hold zero bytes of its own. Any other `path` is
+/// the path of the file the socket is bound to, and holds no zero byte. A `path` that does, and
+/// one that is too long for an address, is an [`InvalidInput`](io::ErrorKind::InvalidInput) error.
+///
+/// [`Runtime::connect_unix`]: crate::runtime::traits::Runtime::connect_unix
+#[cfg(all(unix, any(feature = "default-rt", feature = "tokio")))]
+pub(crate) fn unix_socket_address(
+    path: &std::path::Path,
+) -> io::Result<std::os::unix::net::SocketAddr> {
+    use std::os::unix::net::SocketAddr;
+
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        #[cfg(target_os = "android")]
+        use std::os::android::net::SocketAddrExt;
+        #[cfg(target_os = "linux")]
+        use std::os::linux::net::SocketAddrExt;
+        use std::os::unix::ffi::OsStrExt;
+
+        if let Some(name) = path.as_os_str().as_bytes().strip_prefix(b"\0") {
+            return SocketAddr::from_abstract_name(name);
+        }
+    }
+
+    SocketAddr::from_pathname(path)
+}
+
 /// The credentials of the peer of a unix socket.
 ///
 /// The socket itself is asked on the calling thread: those are plain socket options. The
