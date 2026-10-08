@@ -432,6 +432,7 @@ has no credentials to check, so have the read half's `auth_mechanism` return
 `AuthMechanism::Anonymous`, the mechanism zbus's own VSOCK transport used, or set it with
 `Builder::auth_mechanism`. File descriptors cannot travel over the stream, so leave
 `can_pass_unix_fd` at its default of `false`.
+[The FAQ][vsock-socket] has such an implementation, for any stream of Tokio's.
 
 ### The encoding context has no format
 
@@ -1063,6 +1064,7 @@ build; move a signature across that boundary through its string form.
 [flag-types]: #the-flag-types-are-bitflags-types
 [enumflags2]: #the-enumflags2-feature-is-gone
 [vsock]: #vsock-is-not-a-transport-of-zbus-anymore
+[vsock-socket]: faq.md#how-do-i-connect-over-vsock
 [bit-flags]: faq.md#how-do-i-use-bit-flags
 [`zbus::wire`]: https://docs.rs/zbus/latest/zbus/wire/index.html
 [`zbus::names`]: https://docs.rs/zbus/latest/zbus/names/index.html
