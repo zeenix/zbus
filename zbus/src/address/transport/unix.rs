@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::{
     ffi::OsStr,
     fmt::{Display, Formatter},
+    io,
     path::PathBuf,
     sync::Arc,
 };
@@ -44,13 +45,6 @@ impl Unix {
 
     /// Connects to the socket this address names.
     pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
-        // Tokio has no unix socket on Windows and no way to watch one a connection owns, so a
-        // Tokio connection there has nothing to reach this address with.
-        #[cfg(all(windows, feature = "tokio"))]
-        if let Runtime::Tokio(_) = runtime {
-            return Err(Error::Unsupported);
-        }
-
         let socket_address = match self.path() {
             UnixSocket::File(path) => SockAddr::unix(path)?,
             #[cfg(target_os = "linux")]
@@ -60,11 +54,20 @@ impl Unix {
             UnixSocket::Dir(_) | UnixSocket::TmpDir(_) => return Err(Error::Unsupported),
         };
 
+        // A runtime that cannot watch a unix-domain socket, such as Tokio on Windows, answers with
+        // `Unsupported` as the socket is registered. That says nothing about this address, so it is
+        // not a failed connection.
+        let failed = |e: io::Error| match e.kind() {
+            io::ErrorKind::Unsupported => Error::Unsupported,
+            _ => Error::Connection(Arc::new(e), Box::new(address.clone())),
+        };
         let source = connect(runtime, Domain::UNIX, Type::STREAM, &socket_address)
             .await
-            .map_err(|e| Error::Connection(Arc::new(e), Box::new(address.clone())))?;
+            .map_err(failed)?;
 
-        Ok(RegisteredIo::new(runtime, source, UnixOps)?.into())
+        Ok(RegisteredIo::new(runtime, source, UnixOps)
+            .map_err(failed)?
+            .into())
     }
 
     pub(super) fn from_options(opts: std::collections::HashMap<&str, &str>) -> crate::Result<Self> {

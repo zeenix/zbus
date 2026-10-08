@@ -1,5 +1,13 @@
 //! The Tokio backend: Tokio's reactor for readiness, its timer, its tasks and its thread pool
 //! for blocking work.
+//!
+//! The socket a connection registers is watched through Tokio's `AsyncFd` on unix. On Windows
+//! Tokio watches only the sockets of its own types, each of which owns its socket, so the
+//! registration there is a `TcpStream` made from a duplicate of the connection's socket handle.
+//! The duplicate refers to the same socket as the handle the connection reads and writes through,
+//! and the stream is there to tell when that socket is ready. Tokio has no unix-domain sockets on
+//! Windows, and mio, which it watches sockets with, has none either, so the registration of a
+//! unix-domain socket there is `Unsupported`.
 
 use std::{
     future::Future,
@@ -9,6 +17,8 @@ use std::{
     time::Duration,
 };
 
+#[cfg(windows)]
+use socket2::{Domain, SockRef};
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
 use tokio::runtime::Handle;
@@ -30,15 +40,6 @@ impl Tokio {
     pub(crate) fn current() -> Option<Self> {
         Handle::try_current().ok().map(|handle| Self { handle })
     }
-
-    /// Makes this runtime the current one for as long as the guard lives.
-    ///
-    /// A socket or timer of Tokio's own belongs to the runtime that is current where it is
-    /// created, so one built anywhere but in the methods below needs this guard around it.
-    #[cfg(windows)]
-    pub(crate) fn enter(&self) -> tokio::runtime::EnterGuard<'_> {
-        self.handle.enter()
-    }
 }
 
 impl traits::Runtime for Tokio {
@@ -59,10 +60,23 @@ impl traits::Runtime for Tokio {
     }
 
     #[cfg(windows)]
-    fn register_io_source(&self, _source: IoSource) -> io::Result<Registration> {
-        // Tokio watches a Windows socket through a type that owns the socket, so there is
-        // nothing to hand a descriptor of our own to.
-        Err(io::Error::from(io::ErrorKind::Unsupported))
+    fn register_io_source(&self, source: IoSource) -> io::Result<Registration> {
+        let socket = SockRef::from(&source);
+        // A socket's address says which kind of socket it is, and every socket zbus registers is
+        // connected, so it has one. Tokio cannot watch a unix-domain socket here: see the module
+        // documentation.
+        if socket.local_addr()?.domain() == Domain::UNIX {
+            return Err(io::Error::from(io::ErrorKind::Unsupported));
+        }
+        // Tokio's stream owns the socket it watches, so it is given a duplicate of the handle.
+        // The socket is in non-blocking mode already, and the mode belongs to the socket, which
+        // both handles refer to.
+        let stream = std::net::TcpStream::from(socket.try_clone()?);
+        // A registration is made on the runtime of the calling thread, which is not necessarily
+        // the one this connection belongs to.
+        let _guard = self.handle.enter();
+
+        tokio::net::TcpStream::from_std(stream).map(Registration)
     }
 
     fn sleep(&self, duration: Duration) -> tokio::time::Sleep {
@@ -131,23 +145,49 @@ impl traits::PollIo for Registration {
     }
 }
 
-/// A registration on Tokio's reactor, which [`Runtime::register_io_source`] never creates on
-/// Windows.
+/// A registration on Tokio's reactor.
 ///
-/// [`Runtime::register_io_source`]: traits::Runtime::register_io_source
+/// It holds the `TcpStream` made from a duplicate of the connection's socket handle, which is what
+/// Tokio watches.
 #[cfg(windows)]
 #[derive(Debug)]
-pub(crate) enum Registration {}
+pub(crate) struct Registration(tokio::net::TcpStream);
 
 #[cfg(windows)]
 impl traits::PollIo for Registration {
+    /// Waits for Tokio's readiness of the stream, then runs `operation` under its `try_io`.
+    ///
+    /// `try_io` runs the operation only while Tokio holds readiness for the interest, and clears
+    /// that readiness when the operation reports `WouldBlock`. The stream is mio's underneath, and
+    /// mio's poll of a Windows socket reports an event once: it is armed again by a `WouldBlock`
+    /// that goes through mio's own `try_io`, which Tokio's calls. Neither looks at which handle the
+    /// operation used. Here it reads or writes the connection's own handle, which refers to the
+    /// same socket as the stream's, so the readiness waited for is that socket's, and so is the
+    /// `WouldBlock` that clears it and arms mio again.
+    ///
+    /// A `WouldBlock` sends the loop back to wait for readiness, which is `Pending` until mio
+    /// reports some, so the loop does not spin.
     fn poll_io<T>(
         &self,
-        _cx: &mut Context<'_>,
-        _interest: Interest,
-        _operation: impl FnMut() -> io::Result<T>,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        mut operation: impl FnMut() -> io::Result<T>,
     ) -> Poll<io::Result<T>> {
-        match *self {}
+        let tokio_interest = match interest {
+            Interest::Readable => tokio::io::Interest::READABLE,
+            Interest::Writable => tokio::io::Interest::WRITABLE,
+        };
+
+        loop {
+            std::task::ready!(match interest {
+                Interest::Readable => self.0.poll_read_ready(cx),
+                Interest::Writable => self.0.poll_write_ready(cx),
+            })?;
+            match self.0.try_io(tokio_interest, &mut operation) {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                result => return Poll::Ready(result),
+            }
+        }
     }
 }
 

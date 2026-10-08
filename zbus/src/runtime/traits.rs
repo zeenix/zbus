@@ -146,11 +146,8 @@ pub trait PollIo: Send + Sync + 'static {
 
 /// A handle to a spawned task, which resolves to what that task produced.
 ///
-/// The output travels back through the handle so that the contract is the one a caller who
-/// wants it already has: the Tokio backend on Windows awaits the stream that a `tcp:` connect
-/// spawned on its runtime produces, and any other value zbus comes to want from a task reaches it
-/// the same way. The `Err` case is the runtime having lost the task, which only some runtimes can
-/// report.
+/// The output travels back through the handle, so a value a task produces reaches whoever awaits
+/// it. The `Err` case is the runtime having lost the task, which only some runtimes can report.
 ///
 /// Dropping the handle cancels the task. A Tokio implementation wraps its `JoinHandle` in a
 /// newtype that aborts on drop; an async-task style handle already behaves this way. A handle is
