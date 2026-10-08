@@ -8,7 +8,7 @@ use crate::{Error, Result};
 /// reasons are:
 ///
 /// * It drags the `sha1` crate as a dependency, which can be [problematic for some users].
-/// * It makes the handshake more complex, now allowing use to pipeline all the commands.
+/// * It makes the handshake more complex, not allowing us to pipeline all the commands.
 /// * It's not widely used. If `EXTERNAL` is not an option, you might as well just use `ANONYMOUS`.
 ///
 /// See <https://dbus.freedesktop.org/doc/dbus-specification.html#auth-mechanisms>

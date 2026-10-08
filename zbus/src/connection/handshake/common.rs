@@ -55,6 +55,8 @@ impl Common {
         )
     }
 
+    // Only the server writes a command on its own: the client sends all of its at once.
+    #[cfg(feature = "p2p")]
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     pub async fn write_command(&mut self, command: Command) -> Result<()> {
         self.write_commands(&[command], None).await

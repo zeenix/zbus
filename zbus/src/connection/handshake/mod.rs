@@ -173,6 +173,53 @@ mod tests {
 
     #[test]
     #[timeout(15000)]
+    fn pipelining_client() {
+        under_every_runtime(|runtime| async move {
+            let (client, server) = UnixStream::pair().unwrap();
+            let guid = OwnedGuid::from(Guid::generate());
+
+            // A server that only answers once it has read the whole of the client's side of the
+            // handshake, which a client waiting for an answer to `AUTH` would never send.
+            let server = std::thread::spawn({
+                let guid = guid.clone();
+
+                move || {
+                    let mut received = vec![];
+                    while !received.ends_with(b"BEGIN\r\n") {
+                        let mut buffer = [0; 1024];
+                        let read = std::io::Read::read(&mut &server, &mut buffer).unwrap();
+                        assert_ne!(read, 0, "the client hung up halfway through the handshake");
+                        received.extend_from_slice(&buffer[..read]);
+                    }
+                    (&server)
+                        .write_all(format!("OK {guid}\r\nAGREE_UNIX_FD\r\n").as_bytes())
+                        .unwrap();
+
+                    (received, server)
+                }
+            });
+
+            let client = Client::new(
+                registered(&runtime, client, UnixOps).unwrap().into(),
+                None,
+                Some(guid),
+                false,
+                None,
+            );
+            let authenticated = client.perform().await.unwrap();
+            let (received, _server) = server.join().unwrap();
+
+            let expected = format!(
+                "\0AUTH EXTERNAL {}\r\nNEGOTIATE_UNIX_FD\r\nBEGIN\r\n",
+                hex::encode(sasl_auth_id().unwrap()),
+            );
+            assert_eq!(received, expected.as_bytes());
+            assert!(authenticated.cap_unix_fd);
+        });
+    }
+
+    #[test]
+    #[timeout(15000)]
     fn separate_external_data() {
         let commands = format!(
             "\0AUTH EXTERNAL\r\nDATA {}\r\nBEGIN\r\n",
