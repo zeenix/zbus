@@ -549,6 +549,18 @@ impl crate::runtime::traits::Runtime for Watching {
     ) -> impl Future<Output = std::io::Result<IoSource>> + Send {
         crate::runtime::traits::Runtime::connect_unix(&self.inner, path)
     }
+
+    fn spawn_process(
+        &self,
+        command: std::process::Command,
+        stdin: std::process::Stdio,
+        stdout: std::process::Stdio,
+        stderr: std::process::Stdio,
+    ) -> std::io::Result<
+        crate::runtime::erased::BoxFuture<'static, std::io::Result<std::process::ExitStatus>>,
+    > {
+        crate::runtime::traits::Runtime::spawn_process(&self.inner, command, stdin, stdout, stderr)
+    }
 }
 
 /// A registration that records, as it goes, whether the source it was given is still open.

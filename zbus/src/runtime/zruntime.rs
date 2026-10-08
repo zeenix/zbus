@@ -1,5 +1,5 @@
-//! The zruntime backend: [zruntime]'s reactor for readiness, its timer, its tasks, its connects
-//! and the standard hook for blocking work.
+//! The zruntime backend: [zruntime]'s reactor for readiness, its timer, its tasks, its connects,
+//! its child processes and the standard hook for blocking work.
 //!
 //! A connection to a TCP or unix-domain socket is made by zruntime's own non-blocking connect,
 //! which waits on its reactor and so occupies no thread. The socket comes back as a std one, which
@@ -7,8 +7,17 @@
 //! unix-domain sockets on Windows, so a unix-domain connect there is a blocking one, made on a
 //! thread of the pool for blocking work.
 //!
+//! A helper process is spawned by zruntime's own [`Command`] and waited for by its reactor, which
+//! watches a pidfd on Linux and a kqueue of the process's own on Apple's platforms and the BSDs. A
+//! thread of a pool that zruntime keeps for the purpose waits where there is nothing to watch.
+//! zruntime itself collects a process whose wait is dropped while it runs, once it has exited, and
+//! does not kill it. zbus does not rely on that, as it awaits the wait on a task of the runtime.
+//!
 //! [zruntime]: https://docs.rs/zruntime
+//! [`Command`]: zruntime::process::Command
 
+#[cfg(unix)]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{
     borrow::Cow,
     fmt,
@@ -117,6 +126,32 @@ impl traits::Runtime for ZRuntime {
             super::io::connect_blocking(Domain::UNIX, &address)
         })
         .await
+    }
+
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<Pin<Box<dyn Future<Output = io::Result<ExitStatus>> + Send + 'static>>> {
+        // The streams go through zruntime's own builder: its `From<std::process::Command>` cannot
+        // see the ones set on the std command, and gives every stream that was not set through
+        // the builder the default of the method that spawns, which for `spawn` is to inherit it.
+        let mut command = zruntime::process::Command::from(command);
+        command.stdin(stdin).stdout(stdout).stderr(stderr);
+        let child = command.spawn(&self.0);
+        // The command holds the streams it was given for as long as it lives, which is longer
+        // than the process needs them: a copy of the write end of a pipe that stays open here is
+        // a pipe that never ends for whoever reads it.
+        drop(command);
+        let mut child = child?;
+
+        // None of the streams is `Stdio::piped()`, so the child has no pipes of its own for the
+        // wait to close or to read. zruntime collects a child dropped with the process still
+        // running once it exits, and does not kill it, as the command was not asked to.
+        Ok(Box::pin(async move { child.status().await }))
     }
 }
 

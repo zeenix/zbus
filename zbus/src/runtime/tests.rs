@@ -182,8 +182,8 @@ fn the_default_blocking_hook_runs_the_work_on_a_short_lived_thread() {
 /// Blocking work runs even when the future for it is let go of before it is ever polled.
 ///
 /// A runtime is free to queue the work rather than start it at once, and letting go of the
-/// future must not take it back out of that queue: work that owns something, such as a process
-/// to reap, would leave it behind for good.
+/// future must not take it back out of that queue: whoever hands work over does not have to
+/// keep waiting for its outcome for it to run.
 #[test]
 #[timeout(15000)]
 fn blocking_work_runs_even_when_its_future_is_dropped() {
@@ -206,9 +206,10 @@ fn blocking_work_runs_even_when_its_future_is_dropped() {
 /// The threads of this process that are running work of the default blocking hook.
 ///
 /// Linux truncates a thread's name to fifteen bytes, leaving only the start of it to match on:
-/// `zruntime blocki`, of the `zruntime blocking work` that zruntime names these threads.
+/// `zruntime blocki`, of the `zruntime blocking work` that zruntime names these threads. The
+/// pool is the one the test runtime waits for a child process on as well.
 #[cfg(target_os = "linux")]
-pub(super) fn blocking_threads() -> usize {
+fn blocking_threads() -> usize {
     std::fs::read_dir("/proc/self/task")
         .expect("a process on Linux can list its own threads")
         .filter_map(Result::ok)
@@ -265,6 +266,38 @@ fn an_external_runtimes_own_connects_are_not_bypassed() {
     assert_eq!(
         unix_error.to_string(),
         "a connect of its own to /nonexistent/zbus-own-connect",
+    );
+}
+
+/// The spawn of a process that an external runtime implements itself is the one a connection
+/// makes.
+///
+/// The runtime is boxed on its way in, and the box has to hand the spawn to the runtime it holds,
+/// rather than run the program some other way.
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+#[test]
+#[timeout(15000)]
+fn an_external_runtimes_own_spawn_process_is_not_bypassed() {
+    use std::process::{Command, Stdio};
+
+    use super::test_runtime::OwnSpawn;
+
+    let runtime = Runtime::from_external(OwnSpawn::new());
+
+    // A program that does not exist would fail to spawn as well, but with `NotFound` and not with
+    // this message.
+    let Err(error) = runtime.spawn_process(
+        Command::new("/nonexistent/zbus-own-spawn"),
+        Stdio::null(),
+        Stdio::null(),
+        Stdio::null(),
+    ) else {
+        panic!("the spawn of its own started a process");
+    };
+
+    assert_eq!(
+        error.to_string(),
+        "a spawn of its own for /nonexistent/zbus-own-spawn",
     );
 }
 
