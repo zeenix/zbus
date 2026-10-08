@@ -1,35 +1,36 @@
-//! An external runtime, in two layers.
+//! Every runtime, in two layers.
 //!
 //! [`Builder::runtime`] takes any implementation of the runtime traits and a connection must not
-//! be generic over it, so the implementation is boxed once behind the object-safe mirrors of
-//! those traits that make up the lower layer here: [`ErasedRuntime`] and one trait per thing a
-//! runtime hands out. Everything generic is erased on the way through: what a task produces
-//! becomes a `Box<dyn Any + Send>` and a future becomes a trait object of its own.
+//! be generic over it, so each runtime is boxed once behind the object-safe mirrors of those
+//! traits that make up the lower layer here: [`ErasedRuntime`] and one trait per thing a runtime
+//! hands out. Everything generic is erased on the way through: what a task produces becomes a
+//! `Box<dyn Any + Send>` and a future becomes a trait object of its own.
 //!
-//! The upper layer puts the public traits back on top of the boxed mirrors: [`ExternalTask`]
-//! carries the type of the value again, and [`Arc<dyn ErasedRuntime>`](ErasedRuntime) implements
-//! [`traits::Runtime`] itself. That is what lets the rest of the crate treat a runtime it was
-//! handed as one more implementation of the traits, reached exactly as the built-in backends are.
+//! The upper layer puts the public traits back on top of the boxed mirrors: the methods of
+//! [`Runtime`] box what they hand down and downcast what comes back, and [`Task`] carries the type
+//! of the value a task produces again. Every runtime takes this path, one of the built-in
+//! backends and one handed to the builder alike, so a connection reaches all of them the same way
+//! and nothing in the crate depends on which one it runs on.
 //!
-//! What the layers cost, all of it on this path alone. A registration costs one allocation and so
-//! does a sleep. A spawn costs two, the future and the handle, and a third as the task ends for
-//! the value it produced, which a task that produces nothing does not pay. A call to the blocking
-//! hook costs three — the work, the value it hands back and the future that downcasts that value
-//! — on top of the boxed future the hook returns whichever runtime it is called on.
+//! What the layers cost, for every runtime. A registration costs one allocation and so does a
+//! sleep. A spawn costs two, the future and the handle, and a third as the task ends for a value
+//! that is not zero-sized. A call to the blocking hook costs three — the work, the value it hands
+//! back and the future that downcasts that value — on top of the boxed future the hook itself
+//! returns.
 //!
 //! Readiness is mirrored without erasing anything: the operation a registration runs hands its
 //! result back through the caller's own captures, so an I/O call costs no allocation here.
 //!
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
+//! [`Runtime`]: super::Runtime
+//! [`Task`]: super::Task
 
 use std::{
     any::Any,
     fmt,
     future::Future,
     io,
-    marker::PhantomData,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -54,7 +55,7 @@ pub(crate) trait ErasedRuntime: Send + Sync {
 
 impl fmt::Debug for dyn ErasedRuntime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<external runtime>")
+        f.write_str("<runtime>")
     }
 }
 
@@ -87,53 +88,6 @@ where
     }
 }
 
-/// A boxed runtime is a runtime again, so that a connection on one dispatches as it does on a
-/// backend of its own: through [`traits::Runtime`], whichever runtime it was built with.
-impl traits::Runtime for Arc<dyn ErasedRuntime> {
-    type RegisteredIoSource = Box<dyn ErasedRegistration>;
-    type Sleep = BoxFuture<'static, ()>;
-    type Task<T>
-        = ExternalTask<T>
-    where
-        T: Send + 'static;
-
-    fn register_io_source(&self, source: IoSource) -> io::Result<Self::RegisteredIoSource> {
-        ErasedRuntime::register_io_source(&**self, source)
-    }
-
-    fn sleep(&self, duration: Duration) -> Self::Sleep {
-        ErasedRuntime::sleep(&**self, duration)
-    }
-
-    fn spawn<T>(
-        &self,
-        name: &str,
-        future: impl Future<Output = T> + Send + 'static,
-    ) -> ExternalTask<T>
-    where
-        T: Send + 'static,
-    {
-        ExternalTask::spawn(&**self, name, future)
-    }
-
-    fn spawn_blocking<T>(&self, work: impl FnOnce() -> T + Send + 'static) -> BoxFuture<'static, T>
-    where
-        T: Send + 'static,
-    {
-        // The erased runtime only takes work that produces an opaque value, so the result comes
-        // back to be downcast to what `work` returned.
-        let work = Box::new(move || Box::new(work()) as Box<dyn Any + Send>);
-        let outcome = ErasedRuntime::spawn_blocking(&**self, work);
-
-        Box::pin(async move {
-            *outcome
-                .await
-                .downcast()
-                .expect("blocking work hands back the value it produced")
-        })
-    }
-}
-
 /// The object-safe mirror of [`traits::PollIo`].
 ///
 /// The operation returns nothing, so that nothing has to be boxed for it: the typed caller wraps
@@ -149,7 +103,7 @@ pub(crate) trait ErasedRegistration: Send + Sync {
 
 impl fmt::Debug for dyn ErasedRegistration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<external registration>")
+        f.write_str("<registration>")
     }
 }
 
@@ -213,7 +167,7 @@ pub(crate) trait ErasedTask:
 
 impl fmt::Debug for dyn ErasedTask {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<external task>")
+        f.write_str("<task>")
     }
 }
 
@@ -225,66 +179,3 @@ where
         traits::TaskHandle::detach(*self)
     }
 }
-
-/// A task on an external runtime, carrying the type of what that task produces.
-///
-/// The mirror hands every output back as an opaque value, and this is where it becomes the type
-/// the caller spawned again.
-pub(crate) struct ExternalTask<T> {
-    inner: Box<dyn ErasedTask>,
-    // `fn() -> T` carries none of `T`'s auto traits, leaving them to `inner`; what makes that
-    // sound is `Runtime::spawn`'s `T: Send`.
-    value: PhantomData<fn() -> T>,
-}
-
-impl<T> ExternalTask<T>
-where
-    T: Send + 'static,
-{
-    /// Spawns `future` on `runtime`, boxing what it produces on the way out.
-    ///
-    /// That box is made as the task ends and undone as the output is read, so a spawn pays for
-    /// it once and a task that produces nothing does not pay for it at all.
-    pub(crate) fn spawn(
-        runtime: &dyn ErasedRuntime,
-        name: &str,
-        future: impl Future<Output = T> + Send + 'static,
-    ) -> Self {
-        let future = Box::pin(async move { Box::new(future.await) as Box<dyn Any + Send> });
-
-        Self {
-            inner: runtime.spawn(name, future),
-            value: PhantomData,
-        }
-    }
-}
-
-impl<T> fmt::Debug for ExternalTask<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.inner, f)
-    }
-}
-
-impl<T> Future for ExternalTask<T>
-where
-    T: 'static,
-{
-    type Output = io::Result<T>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.get_mut().inner)
-            .poll(cx)
-            .map_ok(|value| *value.downcast().expect(PRODUCED))
-    }
-}
-
-impl<T> traits::TaskHandle<T> for ExternalTask<T>
-where
-    T: Send + 'static,
-{
-    fn detach(self) {
-        ErasedTask::detach(self.inner)
-    }
-}
-
-const PRODUCED: &str = "a task hands back the value its future produced";

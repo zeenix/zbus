@@ -484,7 +484,7 @@ impl<'a> Builder<'a> {
     /// a build with neither feature, and in a `tokio` build without `default-rt` on a thread
     /// where no Tokio runtime is current.
     pub fn runtime(mut self, runtime: impl traits::Runtime) -> Self {
-        self.runtime = Some(Runtime::from_external(runtime));
+        self.runtime = Some(Runtime::new(runtime));
 
         self
     }

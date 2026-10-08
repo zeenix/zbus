@@ -1,4 +1,4 @@
-//! A runtime implemented over the dev-dependencies, for the tests of the external path.
+//! A runtime implemented over the dev-dependencies, standing in for one the caller supplies.
 //!
 //! It is a [`traits::Runtime`] over the smol crates, reached as dev-dependencies: those never
 //! enter a user's graph, so this runtime exists in every test build, including the one with no
@@ -45,12 +45,12 @@ where
     Fut: Future<Output = ()>,
 {
     #[cfg(feature = "default-rt")]
-    futures_lite::future::block_on(body(Runtime::ZRuntime(
+    futures_lite::future::block_on(body(Runtime::new(
         super::ZRuntime::new().expect("a runtime of zbus's own"),
     )));
 
-    futures_lite::future::block_on(body(Runtime::from_external(TestRuntime::new())));
-    futures_lite::future::block_on(body(Runtime::from_external(ReadinessFirst::new())));
+    futures_lite::future::block_on(body(Runtime::new(TestRuntime::new())));
+    futures_lite::future::block_on(body(Runtime::new(ReadinessFirst::new())));
 }
 
 /// Runs `body` inside a Tokio runtime of its own, which is where a Tokio user would poll it.
@@ -65,7 +65,7 @@ where
     tokio.block_on(async {
         let runtime = super::Tokio::current().expect("a Tokio runtime is current");
 
-        body(Runtime::Tokio(runtime)).await
+        body(Runtime::new(runtime)).await
     });
 }
 

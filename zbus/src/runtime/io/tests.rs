@@ -108,7 +108,7 @@ fn a_registration_is_dropped_before_its_source() {
         log: Arc::default(),
     };
     let log = runtime.log.clone();
-    let socket = half(&Runtime::from_external(runtime), left, UnixOps);
+    let socket = half(&Runtime::new(runtime), left, UnixOps);
 
     drop(socket);
 
@@ -466,7 +466,7 @@ impl Drop for WatchingRegistration {
 fn a_group_lookup_reaches_the_runtime_only_where_there_is_one() {
     let counting = TestRuntime::new();
     let (left, _peer) = UnixStream::pair().unwrap();
-    let mut socket = half(&Runtime::from_external(counting.clone()), left, UnixOps);
+    let mut socket = half(&Runtime::new(counting.clone()), left, UnixOps);
 
     futures_lite::future::block_on(ReadHalf::peer_credentials(&mut socket)).unwrap();
 

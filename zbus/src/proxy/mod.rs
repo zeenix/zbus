@@ -317,7 +317,7 @@ impl PropertiesCache {
             }
         }
         .instrument(info_span!("{}", task_name));
-        let task = runtime.spawn(task_name, proxy_caching);
+        let task = runtime.spawn(&task_name, proxy_caching);
 
         (cache, task)
     }

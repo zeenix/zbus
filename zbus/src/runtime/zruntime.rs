@@ -4,8 +4,6 @@
 //! [zruntime]: https://docs.rs/zruntime
 
 use std::{
-    borrow::Cow,
-    fmt,
     future::Future,
     io,
     pin::Pin,
@@ -16,7 +14,6 @@ use std::{
 use super::{Interest, IoSource, traits};
 
 /// The runtime zbus brings along by default: a thin wrapper around [`zruntime::SharedRuntime`].
-#[derive(Clone, Debug)]
 pub(crate) struct ZRuntime(zruntime::SharedRuntime);
 
 impl ZRuntime {
@@ -26,24 +23,6 @@ impl ZRuntime {
     /// What can fail is the reactor: it opens the channel a wait is broken through.
     pub(crate) fn new() -> io::Result<Self> {
         Ok(Self(zruntime::SharedRuntime::current()?))
-    }
-
-    /// Queues `future` under the diagnostic name `name` and hands back the task that joins or
-    /// cancels it.
-    ///
-    /// An inherent method rather than part of [`traits::Runtime`], whose `spawn` is public API
-    /// and takes `&str`: this one takes the `Cow` the crate-internal [`super::Runtime::spawn`]
-    /// already built, rather than making every caller pay for a fresh copy of a name it already
-    /// owns.
-    pub(super) fn spawn_named<T>(
-        &self,
-        name: Cow<'static, str>,
-        future: impl Future<Output = T> + Send + 'static,
-    ) -> Task<T>
-    where
-        T: Send + 'static,
-    {
-        Task(self.0.spawn(name, future))
     }
 }
 
@@ -67,9 +46,9 @@ impl traits::Runtime for ZRuntime {
     where
         T: Send + 'static,
     {
-        // A copy of its own: this signature is fixed by `traits::Runtime`, whose caller only
-        // hands out a borrow, while a task's cell keeps its name for as long as it lives.
-        self.spawn_named(name.to_owned().into(), future)
+        // zruntime keeps the name for as long as the task lives, and takes it as a
+        // `Cow<'static, str>`. The borrow this is handed does not live that long, so it is copied.
+        Task(self.0.spawn(name.to_owned(), future))
     }
 }
 
@@ -86,7 +65,6 @@ where
 /// A registration on [zruntime]'s reactor.
 ///
 /// [zruntime]: https://docs.rs/zruntime
-#[derive(Debug)]
 pub(crate) struct Registration(zruntime::Registration<zruntime::Shared>);
 
 impl traits::PollIo for Registration {
@@ -113,12 +91,6 @@ impl From<Interest> for zruntime::Interest {
 
 /// A task spawned on zruntime, which cancels that task when dropped.
 pub(crate) struct Task<T>(zruntime::Task<T, zruntime::Shared>);
-
-impl<T> fmt::Debug for Task<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Task").field(&self.0).finish()
-    }
-}
 
 impl<T> Future for Task<T> {
     type Output = io::Result<T>;

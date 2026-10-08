@@ -30,7 +30,6 @@ use super::{Interest, IoSource, traits};
 /// The handle is taken when the connection is built, so its tasks, timers and blocking work keep
 /// going to that runtime even where the connection is later polled from a thread with no Tokio
 /// runtime current.
-#[derive(Clone, Debug)]
 pub(crate) struct Tokio {
     handle: Handle,
 }
@@ -119,7 +118,6 @@ impl traits::Runtime for Tokio {
 
 /// A registration on Tokio's reactor.
 #[cfg(unix)]
-#[derive(Debug)]
 pub(crate) struct Registration(AsyncFd<IoSource>);
 
 #[cfg(unix)]
@@ -150,7 +148,6 @@ impl traits::PollIo for Registration {
 /// It holds the `TcpStream` made from a duplicate of the connection's socket handle, which is what
 /// Tokio watches.
 #[cfg(windows)]
-#[derive(Debug)]
 pub(crate) struct Registration(tokio::net::TcpStream);
 
 #[cfg(windows)]
@@ -218,7 +215,6 @@ where
 }
 
 /// A tokio task handle that aborts the task when dropped, matching `async_task::Task`.
-#[derive(Debug)]
 pub(crate) struct TokioTask<T>(Option<tokio::task::JoinHandle<T>>);
 
 impl<T> TokioTask<T> {

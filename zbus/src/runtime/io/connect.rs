@@ -1,12 +1,12 @@
 //! Opening a socket without ever waiting in the kernel.
 
-use std::io;
 #[cfg(unix)]
 use std::time::Duration;
+use std::{future::poll_fn, io};
 
 use socket2::{Domain, SockAddr, SockRef, Socket, Type};
 
-use crate::runtime::{Interest, IoSource, Runtime};
+use crate::runtime::{Interest, IoSource, Runtime, traits};
 
 /// A new socket of `domain` and `ty`, connected to `address`.
 ///
@@ -65,9 +65,10 @@ async fn attempt(
 
     let source = IoSource::from_socket(socket);
     let registration = runtime.register_io_source(source.clone())?;
-    let connected = registration
-        .io(Interest::Writable, || outcome(&source))
-        .await;
+    let mut attempt = || outcome(&source);
+    let connected =
+        poll_fn(|cx| traits::PollIo::poll_io(&registration, cx, Interest::Writable, &mut attempt))
+            .await;
     // The registration has no more to watch for, and the caller is about to register the source
     // again for the connection's own traffic.
     drop(registration);

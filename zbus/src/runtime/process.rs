@@ -386,7 +386,7 @@ mod tests {
     fn reaping_a_helper_process_leaves_no_thread_behind() {
         use crate::runtime::{test_runtime::DefaultBlocking, tests::blocking_threads};
 
-        let runtime = Runtime::External(Arc::new(DefaultBlocking::new()));
+        let runtime = Runtime::new(DefaultBlocking::new());
         // Other tests are free to run blocking work of their own alongside this one, so the
         // count this one has to come back to is the one it started from.
         let before = blocking_threads();
@@ -477,7 +477,7 @@ mod split_tests {
         // The runtime counts the blocking work it is handed, and the wait for a helper that is
         // still running is the only such work a pipe can lead to.
         let counting = TestRuntime::new();
-        let runtime = Runtime::from_external(counting.clone());
+        let runtime = Runtime::new(counting.clone());
 
         futures_lite::future::block_on(async {
             let child = spawn(&runtime, Command::new("cat")).unwrap();
@@ -526,7 +526,7 @@ mod split_tests {
         // The runtime counts the blocking work it is handed, and the wait for a helper that is
         // still running is the only such work a pipe can lead to.
         let counting = TestRuntime::new();
-        let runtime = Runtime::from_external(counting.clone());
+        let runtime = Runtime::new(counting.clone());
 
         futures_lite::future::block_on(async {
             let child = spawn(&runtime, Command::new("true")).unwrap();
@@ -564,7 +564,7 @@ mod split_tests {
         // The runtime counts the blocking work it is handed, and the wait for a helper that is
         // still running is the only such work a pipe can lead to.
         let counting = TestRuntime::new();
-        let runtime = Runtime::from_external(counting.clone());
+        let runtime = Runtime::new(counting.clone());
 
         futures_lite::future::block_on(async {
             let child = spawn(&runtime, Command::new("cat")).unwrap();
@@ -597,7 +597,7 @@ mod split_tests {
         use crate::runtime::test_runtime::DefaultBlocking;
 
         // The default hook is what a runtime that overrides nothing waits through.
-        let runtime = Runtime::External(Arc::new(DefaultBlocking::new()));
+        let runtime = Runtime::new(DefaultBlocking::new());
 
         let pid = futures_lite::future::block_on(async {
             let mut command = Command::new("sh");
@@ -637,7 +637,7 @@ mod split_tests {
         use crate::runtime::{test_runtime::DefaultBlocking, tests::blocking_threads};
 
         // The default hook is what a runtime that overrides nothing waits through.
-        let runtime = Runtime::External(Arc::new(DefaultBlocking::new()));
+        let runtime = Runtime::new(DefaultBlocking::new());
         // Other tests are free to run blocking work of their own alongside this one, so the
         // count this one has to come back to is the one it started from.
         let before = blocking_threads();
@@ -686,7 +686,7 @@ mod split_tests {
     #[test]
     #[timeout(15000)]
     fn a_write_to_a_closed_half_fails() {
-        let runtime = Runtime::from_external(TestRuntime::new());
+        let runtime = Runtime::new(TestRuntime::new());
 
         futures_lite::future::block_on(async {
             let (_stdout, mut stdin) = spawn(&runtime, Command::new("cat"))

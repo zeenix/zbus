@@ -2,19 +2,13 @@ use std::{future::Future, io::ErrorKind, time::Duration};
 
 use futures_lite::FutureExt;
 
-use super::{Runtime, traits};
+use super::Runtime;
 use crate::{Error, Result};
 
 impl Runtime {
     /// Sleeps for `duration` on this runtime's timer.
     pub(crate) async fn sleep(&self, duration: Duration) {
-        match self {
-            #[cfg(feature = "default-rt")]
-            Self::ZRuntime(runtime) => traits::Runtime::sleep(runtime, duration).await,
-            #[cfg(feature = "tokio")]
-            Self::Tokio(runtime) => traits::Runtime::sleep(runtime, duration).await,
-            Self::External(runtime) => traits::Runtime::sleep(runtime, duration).await,
-        }
+        self.0.sleep(duration).await
     }
 
     /// Awaits `fut`, failing with a timed-out error once `duration` has passed.
@@ -52,7 +46,7 @@ mod tests {
     #[timeout(15000)]
     async fn a_tokio_timeout_expires_on_the_tokio_clock() {
         tokio::time::advance(Duration::from_secs(60)).await;
-        let runtime = Runtime::Tokio(Tokio::current().expect("a Tokio runtime is current"));
+        let runtime = Runtime::new(Tokio::current().expect("a Tokio runtime is current"));
         let mut timing_out =
             pin!(runtime.timeout(std::future::pending::<Result<()>>(), Duration::from_secs(1)));
 

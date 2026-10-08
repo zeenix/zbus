@@ -1,25 +1,26 @@
 //! The handle to a task a connection spawned on its runtime.
 
 use std::{
+    fmt,
     future::Future,
     io,
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use super::erased::ExternalTask;
+use super::{erased::ErasedTask, traits};
 
-/// A spawned task. Dropping the handle cancels the task;
-/// [`TaskHandle::detach`](super::traits::TaskHandle::detach) lets it run on.
-#[derive(Debug)]
-pub(crate) enum Task<T> {
-    #[cfg(feature = "default-rt")]
-    ZRuntime(super::zruntime::Task<T>),
-    #[cfg(feature = "tokio")]
-    Tokio(super::tokio_rt::TokioTask<T>),
-    /// A task on a runtime the builder was handed, reached through the object-safe mirror of
-    /// the task trait.
-    External(ExternalTask<T>),
+/// A spawned task, carrying the type of what that task produces.
+///
+/// Dropping the handle cancels the task; [`TaskHandle::detach`](traits::TaskHandle::detach) lets
+/// it run on. The erased layer hands every output back as an opaque value, and this is where it
+/// becomes the type the caller spawned again.
+pub(crate) struct Task<T> {
+    inner: Box<dyn ErasedTask>,
+    // `fn() -> T` carries none of `T`'s auto traits, leaving them to `inner`; what makes that
+    // sound is `Runtime::spawn`'s `T: Send`.
+    value: PhantomData<fn() -> T>,
 }
 
 impl<T> Task<T>
@@ -28,34 +29,38 @@ where
 {
     /// Detaches the task to let it keep running in the background.
     pub(crate) fn detach(self) {
-        match self {
-            #[cfg(feature = "default-rt")]
-            Self::ZRuntime(task) => super::traits::TaskHandle::detach(task),
-            #[cfg(feature = "tokio")]
-            Self::Tokio(task) => super::traits::TaskHandle::detach(task),
-            Self::External(handle) => super::traits::TaskHandle::detach(handle),
+        ErasedTask::detach(self.inner)
+    }
+
+    /// The handle to `inner`, a task whose future boxes the `T` it produces.
+    pub(super) fn new(inner: Box<dyn ErasedTask>) -> Self {
+        Self {
+            inner,
+            value: PhantomData,
         }
+    }
+}
+
+impl<T> fmt::Debug for Task<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
     }
 }
 
 impl<T> Future for Task<T>
 where
-    T: Send + 'static,
+    T: 'static,
 {
     type Output = io::Result<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.get_mut() {
-            #[cfg(feature = "default-rt")]
-            Self::ZRuntime(task) => Pin::new(task).poll(cx),
-            #[cfg(feature = "tokio")]
-            Self::Tokio(task) => Pin::new(task).poll(cx),
-            Self::External(handle) => Pin::new(handle).poll(cx),
-        }
+        Pin::new(&mut self.get_mut().inner)
+            .poll(cx)
+            .map_ok(|value| *value.downcast().expect(PRODUCED))
     }
 }
 
-impl<T> super::traits::TaskHandle<T> for Task<T>
+impl<T> traits::TaskHandle<T> for Task<T>
 where
     T: Send + 'static,
 {
@@ -63,3 +68,5 @@ where
         Task::detach(self)
     }
 }
+
+const PRODUCED: &str = "a task hands back the value its future produced";

@@ -515,9 +515,7 @@ impl ObjectServer {
                 }
             }
             .instrument(trace_span!("{}", task_name));
-            // The span above is built from a borrow of `task_name`; moved in only now that it is
-            // no longer needed, so the runtime is handed the `String` instead of a copy of it.
-            runtime.spawn(task_name, dispatch).detach();
+            runtime.spawn(&task_name, dispatch).detach();
             Ok(())
         } else {
             self.dispatch_call_to_iface(iface, connection, msg, hdr)

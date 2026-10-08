@@ -29,7 +29,6 @@ use std::{
     io,
     net::Shutdown,
     sync::Arc,
-    task::{Context, Poll},
 };
 
 use socket2::SockRef;
@@ -99,16 +98,16 @@ where
         interest: Interest,
         mut operation: impl FnMut() -> io::Result<T>,
     ) -> io::Result<T> {
-        self.registration
-            .io(interest, move || {
-                loop {
-                    match operation() {
-                        Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                        result => return result,
-                    }
+        let mut attempt = move || {
+            loop {
+                match operation() {
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    result => return result,
                 }
-            })
-            .await
+            }
+        };
+
+        poll_fn(|cx| traits::PollIo::poll_io(&self.registration, cx, interest, &mut attempt)).await
     }
 }
 
@@ -207,48 +206,8 @@ pub(crate) trait SocketOps: fmt::Debug + Send + Sync + 'static {
     }
 }
 
-/// The readiness handle for one registered socket: one variant per runtime a connection runs on.
-#[derive(Debug)]
-pub(crate) enum Registration {
-    #[cfg(feature = "default-rt")]
-    ZRuntime(super::zruntime::Registration),
-    #[cfg(feature = "tokio")]
-    Tokio(super::tokio_rt::Registration),
-    External(Box<dyn ErasedRegistration>),
-}
-
-impl Registration {
-    /// Runs `operation` every time the source is ready for `interest`, until it no longer blocks.
-    pub(crate) async fn io<T>(
-        &self,
-        interest: Interest,
-        mut operation: impl FnMut() -> io::Result<T>,
-    ) -> io::Result<T> {
-        poll_fn(|cx| self.poll_io(cx, interest, &mut operation)).await
-    }
-
-    /// [`Registration::poll_io`] on the runtime this registration was made on.
-    pub(crate) fn poll_io<T>(
-        &self,
-        cx: &mut Context<'_>,
-        interest: Interest,
-        operation: impl FnMut() -> io::Result<T>,
-    ) -> Poll<io::Result<T>> {
-        match self {
-            #[cfg(feature = "default-rt")]
-            Self::ZRuntime(registration) => {
-                traits::PollIo::poll_io(registration, cx, interest, operation)
-            }
-            #[cfg(feature = "tokio")]
-            Self::Tokio(registration) => {
-                traits::PollIo::poll_io(registration, cx, interest, operation)
-            }
-            Self::External(registration) => {
-                traits::PollIo::poll_io(registration, cx, interest, operation)
-            }
-        }
-    }
-}
+/// The readiness handle for one registered socket, as the connection's runtime made it.
+pub(crate) type Registration = Box<dyn ErasedRegistration>;
 
 #[async_trait::async_trait]
 impl<O> ReadHalf for Arc<RegisteredIo<O>>

@@ -1,4 +1,4 @@
-//! Tests for the runtime a connection runs on, and for the external path in particular.
+//! Tests for the runtime a connection runs on, and for one the caller supplies in particular.
 
 use std::sync::Arc;
 
@@ -48,7 +48,6 @@ fn external_runtime_drives_a_channel_connection() {
             .build()
             .await
             .unwrap();
-        assert!(matches!(server.runtime(), Runtime::External(_)));
 
         // A method call round trip proves the reader task and the timeout both run on the
         // external runtime.
@@ -83,21 +82,22 @@ fn an_explicit_runtime_beats_tokio_detection() {
     let guid = crate::Guid::generate();
 
     let tokio = tokio::runtime::Runtime::new().unwrap();
-    let (server, _peer) = tokio.block_on(async {
+    let test_runtime = TestRuntime::new();
+    let (_server, _peer) = tokio.block_on(async {
         futures_util::try_join!(
             Builder::unix_stream(p0)
                 .server(guid)
                 .p2p()
-                .runtime(TestRuntime::new())
+                .runtime(test_runtime.clone())
                 .build(),
             Builder::unix_stream(p1).p2p().build(),
         )
         .unwrap()
     });
 
-    // A connection built with no runtime of its own latches the Tokio runtime it is built in,
-    // as the peer above did.
-    assert!(matches!(server.runtime(), Runtime::External(_)));
+    // A connection built with no runtime of its own latches the Tokio runtime it is built in, as
+    // the peer above did. This one has tasks on the runtime it was handed, so it did not.
+    assert!(!test_runtime.is_empty());
 }
 
 /// A connection on Tokio keeps the runtime it was built on, wherever it is polled.
@@ -137,7 +137,15 @@ fn a_tokio_connection_keeps_working_outside_the_runtime_context() {
         )
         .unwrap()
     });
-    assert!(matches!(client.runtime(), Runtime::Tokio(_)));
+
+    // A task of the connection's runtime runs inside a Tokio context if that runtime is Tokio's,
+    // and outside every one if it is not.
+    let probe = client
+        .runtime()
+        .spawn("a task that looks for Tokio", async {
+            tokio::runtime::Handle::try_current().is_ok()
+        });
+    assert!(tokio.block_on(probe).unwrap());
 
     // A thread of its own has no Tokio runtime to find, so both the tasks this call spawns and
     // the timer it arms have to go to the runtime the connection was built on.
@@ -161,7 +169,7 @@ fn a_tokio_connection_keeps_working_outside_the_runtime_context() {
 #[test]
 #[timeout(15000)]
 fn the_default_blocking_hook_runs_the_work_on_a_short_lived_thread() {
-    let runtime = Runtime::External(Arc::new(DefaultBlocking::new()));
+    let runtime = Runtime::new(DefaultBlocking::new());
     // Other tests are free to run blocking work of their own alongside this one, so the count
     // this one has to come back to is the one it started from.
     #[cfg(target_os = "linux")]
@@ -258,10 +266,10 @@ fn a_connection_without_a_runtime_is_unsupported() {
 
 #[test]
 #[timeout(15000)]
-fn an_external_task_runs_to_completion() {
-    let runtime = Runtime::External(Arc::new(TestRuntime::new()));
+fn a_spawned_task_runs_to_completion() {
+    let runtime = Runtime::new(TestRuntime::new());
     let (sender, receiver) = std::sync::mpsc::channel();
-    let task = runtime.spawn("an external task", async move {
+    let task = runtime.spawn("a task that sends a number", async move {
         sender.send(7).expect("the receiver is still alive");
     });
 
@@ -269,11 +277,15 @@ fn an_external_task_runs_to_completion() {
     assert_eq!(receiver.recv().unwrap(), 7);
 }
 
+/// What a task produces comes back through its handle as the type it was spawned with.
+///
+/// The runtime hands every output back as an opaque value, and the handle is what turns it into
+/// that type again.
 #[test]
 #[timeout(15000)]
-fn an_external_task_hands_its_output_back() {
-    let runtime = Runtime::External(Arc::new(TestRuntime::new()));
-    let task = runtime.spawn("an external task with an output", async { 42 });
+fn a_spawned_task_hands_its_output_back() {
+    let runtime = Runtime::new(TestRuntime::new());
+    let task = runtime.spawn("a task with an output", async { 42 });
 
     assert_eq!(futures_lite::future::block_on(task).unwrap(), 42);
 }
@@ -281,10 +293,10 @@ fn an_external_task_hands_its_output_back() {
 /// Dropping the handle to a task stops the task.
 #[test]
 #[timeout(15000)]
-fn dropping_an_external_task_cancels_it() {
+fn dropping_a_spawned_task_cancels_it() {
     let test_runtime = TestRuntime::new();
-    let runtime = Runtime::External(Arc::new(test_runtime.clone()));
-    let task = runtime.spawn("an idle external task", std::future::pending::<u8>());
+    let runtime = Runtime::new(test_runtime.clone());
+    let task = runtime.spawn("an idle task", std::future::pending::<u8>());
     assert!(!test_runtime.is_empty());
 
     drop(task);
@@ -297,13 +309,13 @@ fn dropping_an_external_task_cancels_it() {
     });
 }
 
-/// The `External` arm of [`Runtime::timeout`] runs on the runtime's own timer.
+/// [`Runtime::timeout`] runs on the runtime's own timer.
 #[test]
 #[timeout(15000)]
-fn an_external_timeout_expires_on_the_runtime_timer() {
+fn a_timeout_expires_on_the_runtimes_timer() {
     use std::{io::ErrorKind, time::Duration};
 
-    let runtime = Runtime::External(Arc::new(TestRuntime::new()));
+    let runtime = Runtime::new(TestRuntime::new());
 
     let error = futures_lite::future::block_on(runtime.timeout(
         std::future::pending::<crate::Result<()>>(),
@@ -319,8 +331,8 @@ fn an_external_timeout_expires_on_the_runtime_timer() {
 
 #[test]
 #[timeout(15000)]
-fn a_detached_external_task_runs_to_completion() {
-    let runtime = Runtime::External(Arc::new(TestRuntime::new()));
+fn a_detached_task_runs_to_completion() {
+    let runtime = Runtime::new(TestRuntime::new());
     let (sender, receiver) = std::sync::mpsc::channel();
     // The task only finishes after its handle is gone, so a cancelling `detach` would show up as
     // a receiver that never hears back.
@@ -328,7 +340,7 @@ fn a_detached_external_task_runs_to_completion() {
     let listener = handle_dropped.listen();
 
     runtime
-        .spawn("a detached external task", async move {
+        .spawn("a detached task", async move {
             listener.await;
             sender.send(()).expect("the receiver is still alive");
         })
@@ -336,16 +348,4 @@ fn a_detached_external_task_runs_to_completion() {
     handle_dropped.notify(1);
 
     receiver.recv().expect("the detached task sent nothing");
-}
-
-/// A task spawned through the erased mirror hands its output back to the typed handle.
-#[test]
-#[timeout(15000)]
-fn an_erased_task_hands_its_output_back() {
-    use super::{erased::ErasedRuntime, traits};
-
-    let runtime: Arc<dyn ErasedRuntime> = Arc::new(TestRuntime::new());
-    let task = traits::Runtime::spawn(&runtime, "an erased task", async { 42 });
-
-    assert_eq!(futures_lite::future::block_on(task).unwrap(), 42);
 }
