@@ -18,8 +18,6 @@ default = [
     "proxy",
     "service",
     "object-manager",
-    "unixexec",
-    "ibus",
     "tracing",
 ]
 
@@ -78,11 +76,9 @@ service = ["comms", "zbus_macros/service"]
 # The service-side `ObjectManager` implementation, along with the `InterfacesAdded` and
 # `InterfacesRemoved` signals the object server emits on its behalf (default).
 object-manager = ["service"]
-# The `unixexec:` transport, which runs a command and talks D-Bus over its standard I/O
-# (default).
+# The `unixexec:` transport, which runs a command and talks D-Bus over its standard I/O.
 unixexec = ["comms"]
-# The `ibus:` transport, which asks the IBus daemon for its bus address by running `ibus address`
-# (default).
+# The `ibus:` transport, which asks the IBus daemon for its bus address by running `ibus address`.
 ibus = ["comms"]
 # Enables API that is only needed for peer-to-peer (p2p) connections.
 p2p = ["comms", "uuid?/v4"]

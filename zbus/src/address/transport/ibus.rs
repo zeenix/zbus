@@ -12,6 +12,8 @@ use crate::{
 /// command. IBus (Intelligent Input Bus) is an input method framework used primarily on Linux
 /// systems for entering text in various languages.
 ///
+/// This type is only available when the `ibus` feature is enabled.
+///
 /// # Platform Support
 ///
 /// This transport is available on Unix-like systems where IBus is installed.

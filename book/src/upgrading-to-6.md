@@ -635,19 +635,20 @@ not do before. Everything else in the D-Bus API (`Connection`, `Message`, `Messa
 
 ### The `unixexec` and `ibus` transports are features
 
-The `unixexec:` and `ibus:` address transports run a command to reach the bus, which pulls the
-async runtime's process support into every binary. They are behind the `unixexec` and `ibus`
-features now, both default features, so a plain `zbus = "6"` dependency keeps them. A
-`default-features = false` build that connects through either has to name it:
+The `unixexec:` and `ibus:` address transports run a program to reach the bus, which links the
+code that spawns and waits on that program into every binary. They are behind the `unixexec` and
+`ibus` features now, neither of which is a default feature, so a build that connects through
+either has to name it:
 
 ```toml
 [dependencies]
-zbus = { version = "6", default-features = false, features = ["tokio", "proxy", "unixexec"] }
+zbus = { version = "6", features = ["unixexec"] }
 ```
 
 `Transport::Unixexec`, `Transport::Ibus`, `transport::Unixexec`, `transport::Ibus` and
 `connection::Builder::ibus` exist only with their feature, and `Address::from_str` rejects the
-address of a transport that was left out.
+address of a transport that was left out. That goes for an address in `DBUS_SESSION_BUS_ADDRESS`
+or `DBUS_SYSTEM_BUS_ADDRESS` too.
 
 ### The service-side `ObjectManager` is a feature
 

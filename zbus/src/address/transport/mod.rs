@@ -52,9 +52,13 @@ pub enum Transport {
     ///
     /// IBus (Intelligent Input Bus) is an input method framework. This transport queries the
     /// IBus daemon for its D-Bus address using the `ibus address` command.
+    ///
+    /// This variant is only available when the `ibus` feature is enabled.
     #[cfg(all(unix, feature = "ibus"))]
     Ibus(Ibus),
     /// A `unixexec` address.
+    ///
+    /// This variant is only available when the `unixexec` feature is enabled.
     #[cfg(all(unix, feature = "unixexec"))]
     Unixexec(Unixexec),
 }

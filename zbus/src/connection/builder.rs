@@ -129,6 +129,8 @@ impl<'a> Builder<'a> {
     /// IBus (Intelligent Input Bus) is an input method framework. This method creates a builder
     /// that will query the IBus daemon for its D-Bus address using the `ibus address` command.
     ///
+    /// This method is only available when the `ibus` feature is enabled.
+    ///
     /// # Platform Support
     ///
     /// This method is available on Unix-like systems where IBus is installed.

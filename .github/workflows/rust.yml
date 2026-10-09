@@ -91,6 +91,13 @@ jobs:
           cargo --locked clippy --target x86_64-unknown-netbsd
           cargo --locked clippy --target x86_64-pc-windows-gnu
           cargo --locked clippy --target aarch64-linux-android
+          # The unixexec and ibus transports are unix-only and not default features. The runs
+          # above only build them because zbus-xmlgen enables them, so each unix target also gets
+          # a run of zbus that enables them itself.
+          cargo --locked clippy -p zbus --features unixexec,ibus --target x86_64-apple-darwin
+          cargo --locked clippy -p zbus --features unixexec,ibus --target x86_64-unknown-freebsd
+          cargo --locked clippy -p zbus --features unixexec,ibus --target x86_64-unknown-netbsd
+          cargo --locked clippy -p zbus --features unixexec,ibus --target aarch64-linux-android
           # The wire-format-only build: the drop-in replacement for zvariant 5.
           cargo --locked clippy -p zbus --no-default-features --all-targets
           cargo --locked clippy -p zbus --no-default-features --target x86_64-apple-darwin
@@ -188,7 +195,7 @@ jobs:
         run: |
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test --release --verbose -p zbus \
-              --features uuid,url,time,chrono,option-as-array,bus-impl \
+              --features uuid,url,time,chrono,option-as-array,bus-impl,unixexec,ibus \
               -- --skip fdpass_systemd
       - name: Test the doc examples with the proxy or service API disabled
         if: matrix.suite == 'zruntime'
@@ -220,7 +227,7 @@ jobs:
         run: |
           # The features are additive, so the backend is then chosen at run time.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
-            cargo --locked test --release --verbose -p zbus --features tokio,p2p \
+            cargo --locked test --release --verbose -p zbus --features tokio,p2p,unixexec,ibus \
               -- --skip fdpass_systemd
       - name: Test the external-runtime-only build
         if: matrix.suite == 'external'

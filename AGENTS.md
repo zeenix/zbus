@@ -26,7 +26,7 @@ cargo test -p zbus --no-default-features
 
 # Test with specific features
 cargo test --no-default-features --features tokio
-cargo test --features uuid,url,time,chrono,option-as-array,bus-impl
+cargo test --features uuid,url,time,chrono,option-as-array,bus-impl,unixexec,ibus
 
 # Run single test
 cargo test basic_connection

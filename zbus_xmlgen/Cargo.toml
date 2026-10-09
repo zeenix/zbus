@@ -22,7 +22,8 @@ readme = "README.md"
 
 [features]
 default = ["cli"]
-cli = ["dep:clap"]
+# The `zbus-xmlgen` binary, which connects through the `unixexec:` and `ibus:` transports too.
+cli = ["dep:clap", "zbus/unixexec", "zbus/ibus"]
 
 [[bin]]
 name = "zbus-xmlgen"
