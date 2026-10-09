@@ -91,8 +91,9 @@ jobs:
           cargo --locked clippy --target x86_64-unknown-netbsd
           cargo --locked clippy --target x86_64-pc-windows-gnu
           cargo --locked clippy --target aarch64-linux-android
-          # The unixexec and ibus transports are unix-only and not default features, so the unix
-          # targets above need a run with them enabled too.
+          # The unixexec and ibus transports are unix-only and not default features. The runs
+          # above only build them because zbus-xmlgen enables them, so each unix target also gets
+          # a run of zbus that enables them itself.
           cargo --locked clippy -p zbus --features unixexec,ibus --target x86_64-apple-darwin
           cargo --locked clippy -p zbus --features unixexec,ibus --target x86_64-unknown-freebsd
           cargo --locked clippy -p zbus --features unixexec,ibus --target x86_64-unknown-netbsd
