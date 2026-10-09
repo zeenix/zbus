@@ -3,28 +3,32 @@
 //! Anything here that needs a runtime is run under every one this build can make, since the
 //! wrapper's whole purpose is to behave the same on all of them.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
-#[cfg(unix)]
 use std::{
     io::{Read, Write},
+    mem::MaybeUninit,
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs},
+    sync::Arc,
+};
+#[cfg(unix)]
+use std::{
     os::{fd::OwnedFd, unix::net::UnixStream},
-    sync::{Arc, Mutex},
+    sync::Mutex,
 };
 
 use ntest::timeout;
 
-use socket2::{Domain, SockAddr, Socket, Type};
+use socket2::{Domain, SockRef, Socket, Type};
 
-use super::connect::{connect, outcome};
 #[cfg(unix)]
-use super::{RegisteredIo, UnixOps};
+use super::UnixOps;
+#[cfg(all(unix, any(feature = "default-rt", feature = "tokio")))]
+use super::unix_socket_address;
+use super::{RegisteredIo, TcpOps};
 #[cfg(unix)]
-use crate::connection::socket::{ReadHalf, WriteHalf};
-use crate::runtime::{IoSource, test_runtime::under_every_watching_runtime};
-#[cfg(unix)]
-use crate::runtime::{
-    Runtime,
-    test_runtime::{TestRuntime, under_every_runtime},
+use crate::runtime::{Runtime, test_runtime::TestRuntime};
+use crate::{
+    connection::socket::{ReadHalf, WriteHalf},
+    runtime::{IoSource, test_runtime::under_every_runtime},
 };
 
 #[cfg(unix)]
@@ -122,124 +126,248 @@ fn a_registration_is_dropped_before_its_source() {
     );
 }
 
-/// A connection still being made reads as a would-block.
-///
-/// The socket here has had no connection asked for at all, which on unix is what one the kernel
-/// is still working on looks like to the predicate: no peer to name. Reporting that as a
-/// would-block is what lets the wait for a connection be a readiness wait like any other. Winsock
-/// is asked a question that only a connect it has taken over answers, so its side of the
-/// predicate is covered by the connect tests under both polling orders instead.
-#[cfg(unix)]
-#[test]
-fn a_socket_with_no_peer_reads_as_would_block() {
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
-
-    let error = outcome(&IoSource::from_socket(socket)).unwrap_err();
-
-    assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
-}
-
-/// A connection that has been made reads as made, on every platform.
+/// A TCP connect reaches the listener, and hands back a socket that no longer blocks.
 #[test]
 #[timeout(15000)]
-fn a_socket_with_a_peer_reads_as_connected() {
-    let listener = listening_socket();
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
-    socket.connect(&listener.local_addr().unwrap()).unwrap();
-
-    outcome(&IoSource::from_socket(socket)).unwrap();
-}
-
-/// A connection the kernel has not finished making is waited for, not reported.
-///
-/// Only unix can be made to hold a TCP connection this way: a listener whose backlog is full
-/// leaves a connection pending there, while Winsock refuses it outright instead. On unix the
-/// predicate's reading of a socket that has yet to reach a peer, which is what a connection under
-/// way looks like, is also covered by [`a_socket_with_no_peer_reads_as_would_block`]; on Windows
-/// the connect sweeps under both polling orders are what cover it.
-#[cfg(unix)]
-#[test]
-#[timeout(15000)]
-fn a_pending_connect_resolves_on_writable() {
+fn a_tcp_connect_reaches_the_listener_in_non_blocking_mode() {
     under_every_runtime(|runtime| async move {
-        let listener = listening_socket();
-        let address = listener.local_addr().unwrap();
-        // The queue holds this one, so the kernel has nowhere to put the next connection until
-        // the listener takes this one out.
-        let _queued = connect(&runtime, Domain::IPV4, Type::STREAM, &address)
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+
+        let source = runtime
+            .connect_tcp(listener.local_addr().unwrap())
             .await
             .unwrap();
 
-        let mut pending = std::pin::pin!(connect(&runtime, Domain::IPV4, Type::STREAM, &address));
+        // The address the listener sees the connection come from is the socket's own.
+        let (_accepted, peer) = listener.accept().unwrap();
+        assert_eq!(
+            SockRef::from(&source).local_addr().unwrap().as_socket(),
+            Some(peer),
+            "the connection reached some other socket",
+        );
+        assert_non_blocking(&source);
+    });
+}
+
+/// A TCP connect that is turned away reports why.
+#[test]
+#[timeout(15000)]
+fn a_refused_tcp_connect_reports_the_socket_error() {
+    under_every_runtime(|runtime| async move {
+        let refused = RefusedPort::on(Ipv4Addr::LOCALHOST.into());
+
+        let error = runtime.connect_tcp(refused.address()).await.unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
+    });
+}
+
+/// The socket a connect hands back is one the connection can register for its traffic.
+///
+/// A runtime that watched the socket to wait for the connect has to have let go of it by then, or
+/// it turns the connection's registration away.
+#[test]
+#[timeout(15000)]
+fn a_connected_socket_carries_traffic_once_registered() {
+    under_every_runtime(|runtime| async move {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let source = runtime
+            .connect_tcp(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (mut accepted, _) = listener.accept().unwrap();
+        let mut socket = Arc::new(RegisteredIo::new(&runtime, source, TcpOps).unwrap());
+
+        accepted.write_all(b"ping").unwrap();
+        let mut buffer = [0; 4];
+        let received = socket.recvmsg(&mut buffer).await.unwrap();
+        // Only unix sockets bring file descriptors along.
+        #[cfg(unix)]
+        let (received, _fds) = received;
+        assert_eq!(&buffer[..received], b"ping");
+
+        #[cfg(unix)]
+        socket.sendmsg(b"pong", &[]).await.unwrap();
+        #[cfg(not(unix))]
+        socket.sendmsg(b"pong").await.unwrap();
+        accepted.read_exact(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"pong");
+    });
+}
+
+/// A unix connect reaches the listener, and hands back a socket that no longer blocks.
+#[cfg(unix)]
+#[test]
+#[timeout(15000)]
+fn a_unix_connect_reaches_the_listener_in_non_blocking_mode() {
+    under_every_runtime(|runtime| async move {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("socket");
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+
+        let source = runtime.connect_unix(&path).await.unwrap();
+
+        // A byte written at the other end that comes out of the socket is what says the two ends
+        // are joined, since neither end of a connection to a path names the other.
+        let (mut accepted, _) = listener.accept().unwrap();
+        accepted.write_all(b"!").unwrap();
+        let mut byte = [MaybeUninit::uninit(); 1];
+        assert_eq!(SockRef::from(&source).recv(&mut byte).unwrap(), 1);
+        assert_non_blocking(&source);
+    });
+}
+
+/// A path too long to be a socket address is the connect's error, not a panic or a hang.
+#[cfg(unix)]
+#[test]
+#[timeout(15000)]
+fn a_unix_path_too_long_for_an_address_is_the_connects_error() {
+    under_every_runtime(|runtime| async move {
+        let path = "a".repeat(4096);
+
+        let error = runtime
+            .connect_unix(std::path::Path::new(&path))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    });
+}
+
+/// A path that starts with a zero byte names a socket in the abstract namespace by the rest of it.
+///
+/// The name may hold zero bytes of its own, and has no file behind it.
+#[cfg(all(target_os = "linux", any(feature = "default-rt", feature = "tokio")))]
+#[test]
+fn a_leading_zero_byte_makes_the_address_an_abstract_name() {
+    use std::{
+        ffi::OsStr,
+        os::{linux::net::SocketAddrExt, unix::ffi::OsStrExt},
+        path::Path,
+    };
+
+    let path = Path::new(OsStr::from_bytes(b"\0zbus\0name"));
+
+    let address = unix_socket_address(path).unwrap();
+
+    assert_eq!(address.as_abstract_name(), Some(&b"zbus\0name"[..]));
+    assert_eq!(address.as_pathname(), None);
+}
+
+/// Any other path is the path of the file the socket is bound to.
+#[cfg(all(unix, any(feature = "default-rt", feature = "tokio")))]
+#[test]
+fn a_path_makes_the_address_a_pathname() {
+    use std::path::Path;
+
+    let address = unix_socket_address(Path::new("/run/user/1000/bus")).unwrap();
+
+    assert_eq!(address.as_pathname(), Some(Path::new("/run/user/1000/bus")));
+}
+
+/// A zero byte anywhere but the start of a path, and a path too long for an address, are invalid
+/// input.
+#[cfg(all(unix, any(feature = "default-rt", feature = "tokio")))]
+#[test]
+fn a_path_that_cannot_be_an_address_is_invalid_input() {
+    use std::path::Path;
+
+    for path in [Path::new("/run/\0bus"), Path::new(&"a".repeat(4096))] {
+        let error = unix_socket_address(path).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+}
+
+/// A name in the abstract namespace is reached by a path that starts with a zero byte.
+#[cfg(target_os = "linux")]
+#[test]
+#[timeout(15000)]
+fn a_unix_connect_reaches_an_abstract_socket() {
+    use std::{
+        ffi::OsString,
+        os::{
+            linux::net::SocketAddrExt,
+            unix::{
+                ffi::OsStringExt,
+                net::{SocketAddr, UnixListener},
+            },
+        },
+        path::PathBuf,
+    };
+
+    under_every_runtime(|runtime| async move {
+        // A name of this process's own: the listener is gone before the next runtime's turn, but
+        // another test binary may well be running beside this one.
+        let name = format!("zbus-test-unix-connect-{}", std::process::id());
+        let listener =
+            UnixListener::bind_addr(&SocketAddr::from_abstract_name(&name).unwrap()).unwrap();
+        let mut path = vec![0];
+        path.extend_from_slice(name.as_bytes());
+
+        let source = runtime
+            .connect_unix(&PathBuf::from(OsString::from_vec(path)))
+            .await
+            .unwrap();
+
+        listener.accept().unwrap();
+        let peer = SockRef::from(&source).peer_addr().unwrap();
+        assert_eq!(peer.as_abstract_namespace(), Some(name.as_bytes()));
+    });
+}
+
+/// A unix connect to a listener with no room left for it is made once the listener has some.
+///
+/// A blocking connect waits in the kernel for that on Linux and Android, which is what makes the
+/// connect here pending in the meantime. Elsewhere the kernel turns the connection away instead.
+#[cfg(any(target_os = "android", target_os = "linux"))]
+#[test]
+#[timeout(15000)]
+fn a_unix_connect_to_a_full_backlog_is_made_once_the_listener_accepts() {
+    use socket2::SockAddr;
+
+    under_every_runtime(|runtime| async move {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("socket");
+        let listener = Socket::new(Domain::UNIX, Type::STREAM, None).unwrap();
+        listener.bind(&SockAddr::unix(&path).unwrap()).unwrap();
+        listener.listen(0).unwrap();
+
+        // The listener's one place is taken from here on, so a further connection has to wait
+        // until it accepts this one.
+        let _queued = runtime.connect_unix(&path).await.unwrap();
+        let mut pending = std::pin::pin!(runtime.connect_unix(&path));
         assert!(
             futures_lite::future::poll_once(pending.as_mut())
                 .await
                 .is_none(),
-            "the connection was reported before the listener had room for it",
+            "the connection was made before the listener had room for it",
         );
 
         let _accepted = listener.accept().unwrap();
         let source = pending.await.unwrap();
 
         assert!(
-            socket2::SockRef::from(&source).peer_addr().is_ok(),
+            SockRef::from(&source).peer_addr().is_ok(),
             "the connection was reported without a peer at the other end",
         );
     });
 }
 
-#[test]
-#[timeout(15000)]
-fn a_pending_connect_reports_the_socket_error() {
-    under_every_watching_runtime(|runtime| async move {
-        let refused = RefusedPort::on(Ipv4Addr::LOCALHOST.into());
-
-        let error = connect(
-            &runtime,
-            Domain::IPV4,
-            Type::STREAM,
-            &SockAddr::from(refused.address()),
-        )
-        .await
+/// Asserts that `source` is in non-blocking mode.
+///
+/// A read on a socket with nothing to read is how it shows: a socket that blocks would wait for
+/// something that never comes, and the test's timeout is what ends it.
+fn assert_non_blocking(source: &IoSource) {
+    let error = SockRef::from(source)
+        .recv(&mut [MaybeUninit::uninit(); 1])
         .unwrap_err();
 
-        assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
-    });
-}
-
-#[cfg(unix)]
-#[test]
-#[timeout(15000)]
-fn a_full_backlog_is_retried_until_accepted() {
-    under_every_runtime(|runtime| async move {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("socket");
-        let listener = Socket::new(Domain::UNIX, Type::STREAM, None).unwrap();
-        let address = SockAddr::unix(&path).unwrap();
-        listener.bind(&address).unwrap();
-        listener.listen(0).unwrap();
-
-        // The listener's one place is taken from here on, so a further connection is turned away
-        // until it accepts this one.
-        let _queued = connect(&runtime, Domain::UNIX, Type::STREAM, &address)
-            .await
-            .unwrap();
-
-        // A thread of its own is what accepts both connections, well after the connect below has
-        // had room to see the backlog full and retry at least once. The retry loop has no bound
-        // of its own, so this only changes how many times it retries before succeeding, never
-        // whether it does; the test's own timeout is what would catch it getting stuck.
-        let accepting = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            listener.accept().unwrap();
-            listener.accept().unwrap();
-        });
-
-        connect(&runtime, Domain::UNIX, Type::STREAM, &address)
-            .await
-            .unwrap();
-        accepting.join().unwrap();
-    });
+    assert_eq!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock,
+        "the connected socket is not in non-blocking mode",
+    );
 }
 
 /// A loopback TCP port that refuses every connection made to it.
@@ -353,20 +481,6 @@ fn bound(address: SocketAddr) -> std::io::Result<Socket> {
     socket.bind(&address.into()).map(|()| socket)
 }
 
-/// A socket listening on loopback with room for a single connection at a time.
-fn listening_socket() -> Socket {
-    let listener = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
-    listener
-        .bind(&SockAddr::from(std::net::SocketAddr::from((
-            [127, 0, 0, 1],
-            0,
-        ))))
-        .unwrap();
-    listener.listen(0).unwrap();
-
-    listener
-}
-
 /// `stream`, registered on `runtime` as one half of a socket with `ops`.
 #[cfg(unix)]
 fn half<S, O>(runtime: &Runtime, stream: S, ops: O) -> Arc<RegisteredIo<O>>
@@ -420,6 +534,32 @@ impl crate::runtime::traits::Runtime for Watching {
         T: Send + 'static,
     {
         crate::runtime::traits::Runtime::spawn(&self.inner, name, future)
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = std::io::Result<IoSource>> + Send {
+        crate::runtime::traits::Runtime::connect_tcp(&self.inner, address)
+    }
+
+    fn connect_unix(
+        &self,
+        path: &std::path::Path,
+    ) -> impl Future<Output = std::io::Result<IoSource>> + Send {
+        crate::runtime::traits::Runtime::connect_unix(&self.inner, path)
+    }
+
+    fn spawn_process(
+        &self,
+        command: std::process::Command,
+        stdin: std::process::Stdio,
+        stdout: std::process::Stdio,
+        stderr: std::process::Stdio,
+    ) -> std::io::Result<
+        crate::runtime::erased::BoxFuture<'static, std::io::Result<std::process::ExitStatus>>,
+    > {
+        crate::runtime::traits::Runtime::spawn_process(&self.inner, command, stdin, stdout, stderr)
     }
 }
 

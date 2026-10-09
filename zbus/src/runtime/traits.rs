@@ -6,9 +6,14 @@
 //! a Tokio runtime runs on it instead (the `tokio` feature), and any other runtime reaches a
 //! connection through whatever implements [`Runtime`] and is handed to [`Builder::runtime`].
 //! Implementing the trait takes a readiness registration, a timer and a task handle, all of which
-//! every async runtime already has, together with a hook for blocking work. Both built-in
-//! backends are implementations of these traits, and the polling-based runtime in zbus's
-//! integration tests is a worked example of the whole contract on a single thread.
+//! every async runtime already has, and the connects of TCP and unix-domain sockets and, on unix,
+//! the spawn of a child process, which a runtime makes with what it has: a non-blocking connect
+//! and a way to wait for a child to exit, or, for whichever of those it lacks, a thread for
+//! blocking work. Only the hook for blocking work comes with a default, which a runtime with a
+//! pool of threads for blocking work replaces. Both built-in backends are implementations of these
+//! traits, and the polling-based runtime in zbus's integration tests is a worked example of the
+//! whole contract on a single thread: it connects on its own poller, and waits for a child process
+//! by looking at it at an interval on its timer.
 //!
 //! The async locks a connection holds are not part of the trait: they come from zruntime, so no
 //! build needs a feature for them, whichever runtime it runs on, nor pulls in a lock crate of its
@@ -17,9 +22,13 @@
 //! [`Builder::runtime`]: crate::connection::Builder::runtime
 //! [zruntime]: https://docs.rs/zruntime
 
+#[cfg(unix)]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -79,6 +88,96 @@ pub trait Runtime: Send + Sync + 'static {
     where
         T: Send + 'static;
 
+    /// Connect a stream socket to the TCP endpoint at `address`.
+    ///
+    /// The future resolves to the connected socket in non-blocking mode, which the connection then
+    /// registers through [`Runtime::register_io_source`] as it does every socket it does I/O on.
+    /// So a runtime that watched the socket to wait for the connect must have stopped doing so by
+    /// then: a socket handed back out of the type the runtime wrapped it in, such as through
+    /// `into_std`, has. An [`IoSource`] is made from an owned descriptor with `From`: an
+    /// `OwnedFd` on unix, an `OwnedSocket` on Windows.
+    ///
+    /// `address` is an IP address and a port; a host name is resolved before this is called. A
+    /// connection that is refused, or that fails in any other way, is the future's `Err`.
+    ///
+    /// An implementation must not block the thread it is polled on. A runtime with a non-blocking
+    /// connect of its own uses it. One without makes a blocking `connect(2)` on a thread for
+    /// blocking work, such as one of those [`Runtime::spawn_blocking`] hands work to, and switches
+    /// the socket to non-blocking mode once it is connected. That occupies the thread for as long
+    /// as the kernel takes over the connection, which for a peer that does not answer is the
+    /// system's own connect timeout, and dropping the future does not stop that connect, only
+    /// discards the socket it makes.
+    fn connect_tcp(&self, address: SocketAddr)
+    -> impl Future<Output = io::Result<IoSource>> + Send;
+
+    /// Connect a stream socket to the unix-domain socket at `path`.
+    ///
+    /// The future resolves to the connected socket in non-blocking mode, which the connection then
+    /// registers through [`Runtime::register_io_source`] as it does every socket it does I/O on.
+    /// So a runtime that watched the socket to wait for the connect must have stopped doing so by
+    /// then: a socket handed back out of the type the runtime wrapped it in, such as through
+    /// `into_std`, has. An [`IoSource`] is made from an owned descriptor with `From`: an
+    /// `OwnedFd` on unix, an `OwnedSocket` on Windows.
+    ///
+    /// On Linux and Android, a `path` whose first byte is zero does not name a file. The rest of
+    /// it is a name in the abstract socket namespace instead. A `path` that is too long to make a
+    /// socket address of, a connection that is refused and any other failure to connect are the
+    /// future's `Err`.
+    ///
+    /// An implementation must not block the thread it is polled on, and has the same two ways of
+    /// connecting as [`Runtime::connect_tcp`]: a non-blocking connect of the runtime's own, or a
+    /// blocking one on a thread for blocking work. On Linux and Android, a listener whose backlog
+    /// is full turns a non-blocking connect away with a would-block error, where a blocking one
+    /// waits in the kernel until the listener accepts a connection. So a non-blocking
+    /// implementation waits a moment and tries again for as long as that lasts, rather than fail
+    /// the connect, and a blocking one holds its thread for as long as the listener takes.
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send;
+
+    /// Spawn `command` as a child process, and wait for it to exit.
+    ///
+    /// `stdin`, `stdout` and `stderr` are the standard streams of the process, and take the place
+    /// of whatever `command` was given for them. A failure to spawn the process is the method's
+    /// `Err`. Otherwise the process has been started by the time this returns, and the future
+    /// resolves to its exit status once it has exited, or to the error of a wait that failed. An
+    /// implementation must never kill the process, whatever becomes of the future.
+    ///
+    /// zbus runs a helper process this way: the program of a `unixexec:` address, which it speaks
+    /// D-Bus to over a pipe on the process's standard input and another on its standard output,
+    /// and the program that an `ibus:` address, and on macOS a `launchd:` one, runs to find out
+    /// where the bus is, whose output it reads to its end and whose exit status it checks.
+    ///
+    /// An implementation must not keep `command` or the streams once the process is spawned. What
+    /// zbus reads from a pipe to the process comes to its end only once every copy of the pipe's
+    /// write end is closed, and a [`Command`] and a [`Stdio`] each hold a copy for as long as they
+    /// live. So they are dropped before this returns, and not handed on to a task or a thread that
+    /// outlives the spawn.
+    ///
+    /// zbus awaits the future of the program of a `unixexec:` address, which nothing else waits
+    /// for, on a task of the runtime, so a runtime that keeps its tasks running collects every
+    /// such process as it exits. The call that runs an `ibus:` or `launchd:` program awaits the
+    /// future itself, and drops it unresolved if the read of the program's output fails or the
+    /// call is given up on. A future that is dropped before it resolves leaves the process to the
+    /// runtime, which may collect it once it exits, as zruntime does, collect it when it next gets
+    /// round to it, as Tokio does, or leave it uncollected.
+    ///
+    /// A runtime that can wait for a child to exit without a thread, through a pidfd, a kqueue or
+    /// a handler for `SIGCHLD`, does so. One that cannot waits for the child with a blocking
+    /// `wait` on a thread for blocking work, which it holds for as long as the process runs: a
+    /// `unixexec:` program runs until its input ends, so one that ignores the end of its input
+    /// keeps the thread. Or it looks at the child at an interval on its timer, as the example
+    /// runtime in zbus's integration tests does, which holds no thread but finds the exit only at
+    /// the next look. The future outlives the borrow of `self`, so a wait it starts later goes
+    /// through something it owns: a handle of the runtime's that it keeps, or a pool of threads it
+    /// reaches without one, such as the pool behind zruntime's `unblock`.
+    #[cfg(unix)]
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<Pin<Box<dyn Future<Output = io::Result<ExitStatus>> + Send + 'static>>>;
+
     /// Run `work` off the event loop.
     ///
     /// zbus asks for this for the operations it has no async form of:
@@ -87,31 +186,22 @@ pub trait Runtime: Send + Sync + 'static {
     /// * reading the file a `nonce-tcp:` address names,
     /// * the peer-credential lookups that go to the name service or to the operating system's table
     ///   of connections,
-    /// * reading the `autolaunch:` address on Windows, which takes a named mutex,
-    /// * waiting for the helper process of a `unixexec:`, `ibus:` or `launchd:` address to exit.
+    /// * reading the `autolaunch:` address on Windows, which takes a named mutex.
     ///
-    /// The default runs every call on a thread of its own, which exits with the work and whose
-    /// failure to start panics, so a runtime that keeps a pool of threads for blocking work
-    /// should hand the work to that pool instead. The wait for a helper process starts once the
-    /// connection has let go of the pipe it reads that process's output from. A program that has
-    /// exited by then is collected on the spot and the runtime is handed no work for it; one that
-    /// is still running occupies a worker until it is gone, which for a `unixexec:` program is
-    /// once its input ends — one that ignores the end of its input keeps that worker.
+    /// The default runs every call on a thread of zruntime's pool for blocking work, which starts
+    /// a thread where none is free and whose failure to start one panics, so a runtime that keeps
+    /// a pool of threads for blocking work should hand the work to that pool instead.
     ///
     /// Work that has been handed over has to run to completion whether or not the future this
-    /// returns is polled, and whether or not that future is dropped. A thread of its own runs
-    /// on regardless and so does Tokio's pool; a runtime that cancels a blocking task when its
-    /// handle drops has to detach it here instead. The wait for a helper process is why the
-    /// difference matters: that work owns the process, so a wait dropped along with its future
-    /// is a process nothing will ever reap, which is what a cancelled connection attempt, or a
-    /// connection let go of while one is under way, would leave behind.
+    /// returns is polled, and whether or not that future is dropped, as it may own something that
+    /// only running it to its end lets go of. A pool of zruntime's runs on regardless and so does
+    /// Tokio's; a runtime that cancels a blocking task when its handle drops has to detach it
+    /// here instead.
     ///
-    /// This and [`Runtime::spawn`] are called from whichever thread let go of the last thing
-    /// that needed them, and that includes the drop of a task the runtime itself was handed: the
-    /// pipe a connection reads a helper process's output from goes with the task that held it,
-    /// and the wait for that process starts there. So neither may require a task context of its
-    /// own, and a runtime that takes a lock to schedule has to tolerate being asked again while
-    /// it drops a task.
+    /// Like [`Runtime::spawn`], this is called from whichever thread let go of the last thing that
+    /// needed it, and that includes the drop of a task the runtime itself was handed. So it may
+    /// not require a task context of its own, and a runtime that takes a lock to schedule has to
+    /// tolerate being asked again while it drops a task.
     fn spawn_blocking<T>(
         &self,
         work: impl FnOnce() -> T + Send + 'static,
@@ -146,11 +236,8 @@ pub trait PollIo: Send + Sync + 'static {
 
 /// A handle to a spawned task, which resolves to what that task produced.
 ///
-/// The output travels back through the handle so that the contract is the one a caller who
-/// wants it already has: the Tokio backend on Windows awaits the stream that a `tcp:` connect
-/// spawned on its runtime produces, and any other value zbus comes to want from a task reaches it
-/// the same way. The `Err` case is the runtime having lost the task, which only some runtimes can
-/// report.
+/// The output travels back through the handle, so a value a task produces reaches whoever awaits
+/// it. The `Err` case is the runtime having lost the task, which only some runtimes can report.
 ///
 /// Dropping the handle cancels the task. A Tokio implementation wraps its `JoinHandle` in a
 /// newtype that aborts on drop; an async-task style handle already behaves this way. A handle is

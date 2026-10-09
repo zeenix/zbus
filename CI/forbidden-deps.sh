@@ -8,9 +8,11 @@
 # `Event`, and gets its async locks (where Tokio's do not stand in), broadcast channels and the
 # thread its default blocking-work hook runs on from zruntime too, so every tree with the `comms`
 # feature has the `zruntime` crate in it, with its `event`, `lock`, `broadcast` and `unblock`
-# features always, its `runtime` and `helper` features only where zbus's `default-rt` feature is
-# on and its `tracing` feature only where zbus's `tracing` is; it is expected there rather than
-# being on the forbidden list.
+# features always, its `runtime`, `helper`, `tcp`, `unix` and `process` features only where zbus's
+# `default-rt` feature is on and its `tracing` feature only where zbus's `tracing` is; it is
+# expected there rather than being on the forbidden list. So is `signal-hook-registry`, which
+# Tokio's `process` feature adds in the builds with the `tokio` feature and a transport that runs
+# a program (`unixexec`, `ibus`, or macOS, where `launchd:` does).
 #
 # Usage: forbidden-deps.sh <label> [cargo tree arguments...]
 #

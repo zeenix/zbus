@@ -1,25 +1,64 @@
-//! The Tokio backend: Tokio's reactor for readiness, its timer, its tasks and its thread pool
-//! for blocking work.
+//! The Tokio backend: Tokio's reactor for readiness, its timer, its tasks, its connects, its child
+//! processes and its thread pool for blocking work.
+//!
+//! A socket or a child process of Tokio's own belongs to the runtime that is current where it is
+//! made, and zbus may poll the future of a connect or of a wait from a thread with no Tokio
+//! runtime current: a program that drives zbus with an executor of its own does. So the runtime
+//! the connection was built on is entered for every poll of a connect and of a wait for a child
+//! process, and around the spawn of one, and what they make is that runtime's wherever it is
+//! polled from.
+//!
+//! A connect to a TCP or unix-domain socket is Tokio's own non-blocking connect. It waits on the
+//! reactor and so occupies no thread, and the socket comes back as a std one that Tokio no longer
+//! watches, for the connection to register for its traffic. Tokio turns a connection to a unix
+//! listener whose backlog is full away at once on Linux and Android, where a blocking connect
+//! would wait for room, so that connect tries again every 20 milliseconds, on Tokio's timer, for
+//! as long as the future is awaited.
+//!
+//! The socket a connection registers is watched through Tokio's `AsyncFd` on unix. On Windows
+//! Tokio watches only the sockets of its own types, each of which owns its socket, so the
+//! registration there is a `TcpStream` made from a duplicate of the connection's socket handle.
+//! The duplicate refers to the same socket as the handle the connection reads and writes through,
+//! and the stream is there to tell when that socket is ready. Tokio has no unix-domain sockets on
+//! Windows, and mio, which it watches sockets with, has none either. So a unix-domain connect
+//! there is `Unsupported`, and so is the registration of a unix-domain socket.
+//!
+//! A helper process is spawned by Tokio's own `Command` and waited for by Tokio's reactor, which
+//! watches a pidfd on Linux, or by its handler for `SIGCHLD` where there is none. Tokio collects a
+//! child whose wait is dropped while the process runs only when its driver next returns from
+//! waiting for events, on a best-effort basis, and a runtime with nothing else to wake it, a
+//! multi-threaded one that is idle, may not do that for as long as it stays so. zbus awaits the
+//! wait on a task of the runtime, so the process is collected as it exits. zbus turns Tokio's
+//! `process` feature on only where a transport runs a program, so in any other build the spawn is
+//! `Unsupported`, and nothing asks for it.
 
+#[cfg(unix)]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{
     future::Future,
     io,
+    net::SocketAddr,
+    path::Path,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
+#[cfg(windows)]
+use socket2::{Domain, SockRef};
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
 use tokio::runtime::Handle;
 
+#[cfg(unix)]
+use super::io::unix_socket_address;
 use super::{Interest, IoSource, traits};
 
 /// The Tokio runtime a connection runs on.
 ///
-/// The handle is taken when the connection is built, so its tasks, timers and blocking work keep
-/// going to that runtime even where the connection is later polled from a thread with no Tokio
-/// runtime current.
+/// The handle is taken when the connection is built, so its tasks, timers, blocking work,
+/// connects and child processes keep going to that runtime even where the connection is later
+/// polled from a thread with no Tokio runtime current.
 #[derive(Clone, Debug)]
 pub(crate) struct Tokio {
     handle: Handle,
@@ -29,15 +68,6 @@ impl Tokio {
     /// The runtime current on this thread, or `None` outside one.
     pub(crate) fn current() -> Option<Self> {
         Handle::try_current().ok().map(|handle| Self { handle })
-    }
-
-    /// Makes this runtime the current one for as long as the guard lives.
-    ///
-    /// A socket or timer of Tokio's own belongs to the runtime that is current where it is
-    /// created, so one built anywhere but in the methods below needs this guard around it.
-    #[cfg(windows)]
-    pub(crate) fn enter(&self) -> tokio::runtime::EnterGuard<'_> {
-        self.handle.enter()
     }
 }
 
@@ -59,10 +89,23 @@ impl traits::Runtime for Tokio {
     }
 
     #[cfg(windows)]
-    fn register_io_source(&self, _source: IoSource) -> io::Result<Registration> {
-        // Tokio watches a Windows socket through a type that owns the socket, so there is
-        // nothing to hand a descriptor of our own to.
-        Err(io::Error::from(io::ErrorKind::Unsupported))
+    fn register_io_source(&self, source: IoSource) -> io::Result<Registration> {
+        let socket = SockRef::from(&source);
+        // A socket's address says which kind of socket it is, and every socket zbus registers is
+        // connected, so it has one. Tokio cannot watch a unix-domain socket here: see the module
+        // documentation.
+        if socket.local_addr()?.domain() == Domain::UNIX {
+            return Err(io::Error::from(io::ErrorKind::Unsupported));
+        }
+        // Tokio's stream owns the socket it watches, so it is given a duplicate of the handle.
+        // The socket is in non-blocking mode already, and the mode belongs to the socket, which
+        // both handles refer to.
+        let stream = std::net::TcpStream::from(socket.try_clone()?);
+        // A registration is made on the runtime of the calling thread, which is not necessarily
+        // the one this connection belongs to.
+        let _guard = self.handle.enter();
+
+        tokio::net::TcpStream::from_std(stream).map(Registration)
     }
 
     fn sleep(&self, duration: Duration) -> tokio::time::Sleep {
@@ -80,6 +123,93 @@ impl traits::Runtime for Tokio {
         T: Send + 'static,
     {
         TokioTask::new(spawn_named(&self.handle, name, future))
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = io::Result<IoSource>> + Send {
+        entered(&self.handle, async move {
+            let stream = tokio::net::TcpStream::connect(address).await?.into_std()?;
+
+            Ok(IoSource::new(stream.into()))
+        })
+    }
+
+    #[cfg(unix)]
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        let address = unix_socket_address(path).map(tokio::net::unix::SocketAddr::from);
+
+        entered(&self.handle, async move {
+            let address = address?;
+            let stream = loop {
+                match tokio::net::UnixStream::connect_addr(&address).await {
+                    // A full backlog is turned away at once, where a blocking connect would wait
+                    // in the kernel for room in it, and Tokio does not wait for it: this does.
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        tokio::time::sleep(BACKLOG_INTERVAL).await;
+                    }
+                    result => break result?,
+                }
+            };
+
+            Ok(IoSource::new(stream.into_std()?.into()))
+        })
+    }
+
+    // Tokio has no unix-domain sockets on Windows: see the module documentation.
+    #[cfg(windows)]
+    fn connect_unix(&self, _path: &Path) -> impl Future<Output = io::Result<IoSource>> + Send {
+        std::future::ready(Err(io::Error::from(io::ErrorKind::Unsupported)))
+    }
+
+    #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+    fn spawn_process(
+        &self,
+        mut command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<Pin<Box<dyn Future<Output = io::Result<ExitStatus>> + Send + 'static>>> {
+        // Tokio's command is made from the std one and keeps the streams set on it.
+        command.stdin(stdin).stdout(stdout).stderr(stderr);
+        let mut command = tokio::process::Command::from(command);
+        // The spawn is where Tokio registers what watches for the exit of the process: a pidfd
+        // with the reactor on Linux, a handler for `SIGCHLD` with the signal driver elsewhere.
+        // Both belong to the runtime that is current.
+        let child = {
+            let _guard = self.handle.enter();
+            command.spawn()
+        };
+        // The command holds the streams it was given for as long as it lives, which is longer
+        // than the process needs them: a copy of the write end of a pipe that stays open here is
+        // a pipe that never ends for whoever reads it.
+        drop(command);
+        let mut child = child?;
+        let handle = self.handle.clone();
+
+        // The runtime is entered for every poll of the wait: see `entered`. None of the standard
+        // streams of the child is `Stdio::piped()`, so it has no pipes of its own for the wait to
+        // close or to read.
+        Ok(Box::pin(
+            async move { entered(&handle, child.wait()).await },
+        ))
+    }
+
+    // No transport of this build runs a program, so nothing asks for one, and zbus does not turn
+    // on Tokio's `process` feature, which the spawn needs.
+    #[cfg(all(
+        unix,
+        not(any(feature = "unixexec", feature = "ibus", target_os = "macos"))
+    ))]
+    fn spawn_process(
+        &self,
+        _command: Command,
+        _stdin: Stdio,
+        _stdout: Stdio,
+        _stderr: Stdio,
+    ) -> io::Result<Pin<Box<dyn Future<Output = io::Result<ExitStatus>> + Send + 'static>>> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 
     fn spawn_blocking<T>(
@@ -131,25 +261,79 @@ impl traits::PollIo for Registration {
     }
 }
 
-/// A registration on Tokio's reactor, which [`Runtime::register_io_source`] never creates on
-/// Windows.
+/// A registration on Tokio's reactor.
 ///
-/// [`Runtime::register_io_source`]: traits::Runtime::register_io_source
+/// It holds the `TcpStream` made from a duplicate of the connection's socket handle, which is what
+/// Tokio watches.
 #[cfg(windows)]
 #[derive(Debug)]
-pub(crate) enum Registration {}
+pub(crate) struct Registration(tokio::net::TcpStream);
 
 #[cfg(windows)]
 impl traits::PollIo for Registration {
+    /// Waits for Tokio's readiness of the stream, then runs `operation` under its `try_io`.
+    ///
+    /// `try_io` runs the operation only while Tokio holds readiness for the interest, and clears
+    /// that readiness when the operation reports `WouldBlock`. The stream is mio's underneath, and
+    /// mio's poll of a Windows socket reports an event once: it is armed again by a `WouldBlock`
+    /// that goes through mio's own `try_io`, which Tokio's calls. Neither looks at which handle the
+    /// operation used. Here it reads or writes the connection's own handle, which refers to the
+    /// same socket as the stream's, so the readiness waited for is that socket's, and so is the
+    /// `WouldBlock` that clears it and arms mio again.
+    ///
+    /// A `WouldBlock` sends the loop back to wait for readiness, which is `Pending` until mio
+    /// reports some, so the loop does not spin.
     fn poll_io<T>(
         &self,
-        _cx: &mut Context<'_>,
-        _interest: Interest,
-        _operation: impl FnMut() -> io::Result<T>,
+        cx: &mut Context<'_>,
+        interest: Interest,
+        mut operation: impl FnMut() -> io::Result<T>,
     ) -> Poll<io::Result<T>> {
-        match *self {}
+        let tokio_interest = match interest {
+            Interest::Readable => tokio::io::Interest::READABLE,
+            Interest::Writable => tokio::io::Interest::WRITABLE,
+        };
+
+        loop {
+            std::task::ready!(match interest {
+                Interest::Readable => self.0.poll_read_ready(cx),
+                Interest::Writable => self.0.poll_write_ready(cx),
+            })?;
+            match self.0.try_io(tokio_interest, &mut operation) {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                result => return Poll::Ready(result),
+            }
+        }
     }
 }
+
+/// Awaits `future`, polling it with the runtime of `handle` entered.
+///
+/// A socket, a timer or a child of Tokio's own belongs to the runtime that is current at the moment
+/// it is made, or registered again. For a connect that is the first poll, which makes the socket,
+/// and the poll after a connection that a full backlog turned away, which arms a timer. For a wait
+/// for a child it is a poll that finds the pidfd readable before the process can be collected,
+/// which registers the pidfd again. The guard lives for one poll and never across an await, so this
+/// future is `Send` whenever `future` is.
+async fn entered<F>(handle: &Handle, future: F) -> F::Output
+where
+    F: Future,
+{
+    use std::{future::poll_fn, pin::pin};
+
+    let mut future = pin!(future);
+
+    poll_fn(|cx| {
+        let _guard = handle.enter();
+
+        future.as_mut().poll(cx)
+    })
+    .await
+}
+
+/// How long a unix connect that a full listen backlog turned away waits before it is tried again.
+#[cfg(unix)]
+const BACKLOG_INTERVAL: Duration = Duration::from_millis(20);
 
 /// Spawns `future` on `handle`, named where Tokio has somewhere to keep a name.
 ///
@@ -241,5 +425,132 @@ mod tests {
         let task = runtime.spawn("a task with an output", async { 42 });
 
         assert_eq!(task.await.unwrap(), 42);
+    }
+
+    /// A TCP connect polled from a thread with no Tokio runtime current is made on the runtime the
+    /// backend belongs to.
+    ///
+    /// Tokio's own connect panics where it finds no runtime to register its socket with, so the
+    /// connect succeeding is what shows the runtime was entered for it.
+    #[test]
+    #[timeout(15000)]
+    fn a_tcp_connect_polled_outside_the_runtime_is_made_on_it() {
+        use std::net::{Ipv4Addr, TcpListener};
+
+        use socket2::SockRef;
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+
+        let source =
+            futures_lite::future::block_on(runtime.connect_tcp(listener.local_addr().unwrap()))
+                .unwrap();
+
+        // The address the listener sees the connection come from is the socket's own.
+        let (_accepted, peer) = listener.accept().unwrap();
+        assert_eq!(
+            SockRef::from(&source).local_addr().unwrap().as_socket(),
+            Some(peer),
+        );
+    }
+
+    /// A unix connect polled from a thread with no Tokio runtime current is made on the runtime
+    /// the backend belongs to.
+    #[cfg(unix)]
+    #[test]
+    #[timeout(15000)]
+    fn a_unix_connect_polled_outside_the_runtime_is_made_on_it() {
+        use std::{io::Write, mem::MaybeUninit, os::unix::net::UnixListener};
+
+        use socket2::SockRef;
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("socket");
+        let listener = UnixListener::bind(&path).unwrap();
+
+        let source = futures_lite::future::block_on(runtime.connect_unix(&path)).unwrap();
+
+        // A byte written at the other end that comes out of the socket is what says the two ends
+        // are joined, since neither end of a connection to a path names the other.
+        let (mut accepted, _) = listener.accept().unwrap();
+        accepted.write_all(b"!").unwrap();
+        let mut byte = [MaybeUninit::uninit(); 1];
+        assert_eq!(SockRef::from(&source).recv(&mut byte).unwrap(), 1);
+    }
+
+    /// A unix connect to a listener with no room left for it, polled from a thread with no Tokio
+    /// runtime current, waits on the timer of the runtime the backend belongs to.
+    ///
+    /// Tokio turns the connection away, and the backend arms a timer to try again: a timer, like a
+    /// socket, panics where it finds no runtime.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    #[test]
+    #[timeout(15000)]
+    fn a_unix_connect_to_a_full_backlog_polled_outside_the_runtime_waits_on_it() {
+        use socket2::{Domain, SockAddr, SockRef, Socket, Type};
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("socket");
+        let listener = Socket::new(Domain::UNIX, Type::STREAM, None).unwrap();
+        listener.bind(&SockAddr::unix(&path).unwrap()).unwrap();
+        listener.listen(0).unwrap();
+
+        // The listener's one place is taken from here on, so a further connection has to wait
+        // until it accepts this one.
+        let _queued = futures_lite::future::block_on(runtime.connect_unix(&path)).unwrap();
+        let mut pending = std::pin::pin!(runtime.connect_unix(&path));
+        assert!(
+            futures_lite::future::block_on(futures_lite::future::poll_once(pending.as_mut()))
+                .is_none(),
+            "the connection was made before the listener had room for it",
+        );
+
+        let _accepted = listener.accept().unwrap();
+        let source = futures_lite::future::block_on(pending).unwrap();
+
+        assert!(SockRef::from(&source).peer_addr().is_ok());
+    }
+
+    /// A process spawned, and waited for, from a thread with no Tokio runtime current is spawned
+    /// on the runtime the backend belongs to.
+    ///
+    /// The process runs for a moment, so the first poll of the wait finds it still running and the
+    /// runtime's reactor is what wakes the thread once it has exited.
+    #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+    #[test]
+    #[timeout(15000)]
+    fn a_process_spawned_and_waited_for_outside_the_runtime_is_made_on_it() {
+        use std::process::{Command, Stdio};
+
+        let (_tokio, runtime) = runtime_and_backend();
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 0.2; exit 3"]);
+
+        let exit = runtime
+            .spawn_process(command, Stdio::null(), Stdio::null(), Stdio::null())
+            .unwrap();
+        let status = futures_lite::future::block_on(exit).unwrap();
+
+        assert_eq!(status.code(), Some(3));
+    }
+
+    /// A Tokio runtime that runs with nothing inside `block_on`, and the backend for it.
+    ///
+    /// The thread of the test has no Tokio runtime current, which is what makes a future of the
+    /// backend polled on it one that runs outside the runtime, as a program that drives zbus with
+    /// an executor of its own polls it. The runtime has to be kept for as long as the backend is
+    /// used: its threads are what drive the reactor and the timer.
+    fn runtime_and_backend() -> (tokio::runtime::Runtime, Tokio) {
+        let tokio = tokio::runtime::Runtime::new().unwrap();
+        let backend =
+            tokio.block_on(async { Tokio::current().expect("a Tokio runtime is current") });
+        assert!(
+            Tokio::current().is_none(),
+            "the test's thread is inside a Tokio runtime",
+        );
+
+        (tokio, backend)
     }
 }

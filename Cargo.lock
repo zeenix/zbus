@@ -1284,6 +1284,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1506,6 +1516,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "tracing",
@@ -2151,10 +2162,12 @@ checksum = "e6d6085d62852e35540689d1f97ad663e3971fc19cf5eceab364d62c646ea167"
 [[package]]
 name = "zruntime"
 version = "0.1.0"
-source = "git+https://github.com/z-galaxy/zruntime?rev=1ef1a0cfbe0d4790c0230bbb6792885213da9e2a#1ef1a0cfbe0d4790c0230bbb6792885213da9e2a"
+source = "git+https://github.com/z-galaxy/zruntime?rev=1becd68a87d41d2efee99d78fa60ed7774eb0499#1becd68a87d41d2efee99d78fa60ed7774eb0499"
 dependencies = [
  "futures-core",
+ "futures-io",
  "rustix",
+ "socket2",
  "tracing",
  "windows-sys",
 ]

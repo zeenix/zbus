@@ -136,8 +136,9 @@ Any other executor can use the default `zruntime` backend as it is, with no inte
 needed: a connection built outside a `zbus::block_on` call is simply run by that backend's own
 helper thread. [`connection::Builder::runtime`] is there for an application that wants to hand a
 connection a runtime of its own instead — any implementation of [`runtime::traits::Runtime`], which
-documents the full contract, including the handful of calls with no async form that go through its
-`spawn_blocking` — not something every other executor needs.
+documents the full contract, the connects and the helper process of a `unixexec:` address
+included, and `spawn_blocking`, the one method with a default, which the handful of calls with no
+async form go through — not something every other executor needs.
 
 zbus's async locks come from zruntime; a build on zruntime or an external runtime needs no lock
 feature and pulls in no lock crate for them. A Tokio build uses Tokio's locks instead.

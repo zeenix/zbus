@@ -12,10 +12,14 @@ mod unix;
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 mod pipe;
 
-pub(crate) mod tcp;
+mod tcp;
 
+// A blocking connect is what reaches a unix-domain socket through the zruntime backend on
+// Windows, where zruntime has none of its own, and a socket through the test runtimes.
+#[cfg(any(test, all(windows, feature = "default-rt")))]
 mod connect;
-pub(crate) use connect::connect;
+#[cfg(any(test, all(windows, feature = "default-rt")))]
+pub(crate) use connect::connect_blocking;
 
 // `RefusedPort`, which reserves the port the connection tests aim at, lives here.
 #[cfg(all(test, any(unix, windows)))]
@@ -39,6 +43,8 @@ pub(crate) use pipe::PipeOps;
 pub(crate) use tcp::TcpOps;
 #[cfg(any(unix, windows))]
 pub(crate) use unix::UnixOps;
+#[cfg(all(unix, any(feature = "default-rt", feature = "tokio")))]
+pub(crate) use unix::unix_socket_address;
 
 use super::{Interest, IoSource, Runtime, erased::ErasedRegistration, traits};
 use crate::{
@@ -115,10 +121,10 @@ where
 /// Registers a descriptor zbus was handed, after switching it to non-blocking mode.
 ///
 /// The streams a builder is given and both pipes of a helper process come through here. The
-/// sockets zbus opens for a `unix:` or `tcp:` address do not: `connect` creates those
-/// non-blocking and registers them itself. A descriptor zbus did not open has to be switched
-/// over before it is watched: a runtime waits for readiness and then runs the operation, which
-/// would hold up the thread it is polled on if the descriptor still blocked.
+/// sockets a connection to a `unix:` or `tcp:` address opens do not: they come out of the connect
+/// non-blocking already and go to [`RegisteredIo::new`] as they are. A descriptor zbus did not
+/// open has to be switched over before it is watched: a runtime waits for readiness and then runs
+/// the operation, which would hold up the thread it is polled on if the descriptor still blocked.
 ///
 /// The bound is the standard library's own conversion into what a platform owns a descriptor as,
 /// which every stream involved has — bar one, `uds_windows::UnixStream`, handled where it is

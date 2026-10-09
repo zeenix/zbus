@@ -78,8 +78,7 @@ impl Unixexec {
 
     /// Runs the program and talks D-Bus over its standard input and output.
     ///
-    /// The pipes are watched by `runtime`, which also waits for the program to exit once the
-    /// connection lets go of them.
+    /// The pipes are watched by `runtime`, and a task of `runtime` waits for the program to exit.
     pub(super) async fn connect(&self, address: &Address, runtime: &Runtime) -> Result<BoxedSplit> {
         process::spawn(runtime, self.command())
             .map(process::Child::into_split)

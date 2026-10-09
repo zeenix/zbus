@@ -6,13 +6,6 @@ pub use channel::Channel;
 mod split;
 pub use split::{BoxedSplit, Split};
 
-// Tokio watches a Windows socket through a type that owns it, so a Tokio connection there cannot
-// hand its descriptor to the reactor the way it does everywhere else.
-#[cfg(all(windows, feature = "tokio"))]
-pub(crate) mod tokio_tcp;
-#[cfg(all(windows, feature = "tokio"))]
-pub(crate) use tokio_tcp::TokioTcp;
-
 use std::{io, mem};
 
 use crate::{

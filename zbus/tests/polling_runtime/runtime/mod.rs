@@ -5,16 +5,34 @@
 //! caller's own future, on the thread that calls it: nothing here starts a thread, so a thread the
 //! process gains while a connection is alive is a thread the connection asked for.
 //!
-//! [`traits::Runtime::spawn_blocking`] keeps its default, which runs each call on a std thread
-//! that exits with the work. On Linux and Android a connection looks its peer's supplementary
-//! groups up through it — [`zbus::Connection::peer_creds`] does, and so does the handshake of a
-//! peer-to-peer server, which `teardown` runs — and the default starts one short-lived thread
-//! per call. A runtime with a pool of its own should override the hook rather than copy this.
+//! [`traits::Runtime::connect_tcp`] and [`traits::Runtime::connect_unix`] are implemented here, on
+//! the runtime's own poller and timer: a connect that the kernel completes in the background is
+//! waited for as any other source is, and a unix connect turned away by a full backlog is tried
+//! again after a wait on the timer. A runtime with no non-blocking connect of its own connects on
+//! a thread for blocking work instead, and so starts one for the connection to a bus.
+//!
+//! [`traits::Runtime::spawn_process`] is implemented here too, on the runtime's own timer: a
+//! runtime with a pidfd, a kqueue or a handler for `SIGCHLD` is told when a child exits, and this
+//! one has nothing of the kind, so it looks at the child at an interval. A connection awaits the
+//! exit of a `unixexec:` child on a task of the runtime, which keeps looking until the child has
+//! exited, and a released runtime drops that task and leaves the child to the process's own exit.
+//! A runtime that waits for a child on a thread for blocking work instead starts one wherever a
+//! connection runs a program: on macOS the session bus is found through `launchd`, which does.
+//!
+//! [`traits::Runtime::spawn_blocking`] keeps its default, which hands each call to zruntime's
+//! pool of threads for blocking work. On Linux and Android a connection looks its peer's
+//! supplementary groups up through it — [`zbus::Connection::peer_creds`] does, and so does the
+//! handshake of a peer-to-peer server, which `teardown` runs — and the default may start a thread
+//! for each such call. A runtime with a pool of its own should override the hook rather than copy
+//! this.
 
 use std::{
     collections::VecDeque,
     future::Future,
-    pin::pin,
+    net::SocketAddr,
+    path::Path,
+    pin::{Pin, pin},
+    process::{Command, ExitStatus, Stdio},
     sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
     task::{Context, Poll, Wake, Waker},
     time::{Duration, Instant},
@@ -24,9 +42,11 @@ use async_task::Runnable;
 use polling::{Events, Poller};
 use zbus::runtime::{IoSource, traits};
 
+mod connect;
 mod io;
 pub use io::RegisteredIoSource;
 use io::Sources;
+mod process;
 mod task;
 use task::Detached;
 pub use task::Task;
@@ -249,6 +269,27 @@ impl traits::Runtime for Handle {
         runnable.schedule();
 
         Task::new(task, Arc::downgrade(&self.0))
+    }
+
+    fn connect_tcp(
+        &self,
+        address: SocketAddr,
+    ) -> impl Future<Output = std::io::Result<IoSource>> + Send {
+        connect::tcp(self, address)
+    }
+
+    fn connect_unix(&self, path: &Path) -> impl Future<Output = std::io::Result<IoSource>> + Send {
+        connect::unix(self, path)
+    }
+
+    fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> std::io::Result<Pin<Box<dyn Future<Output = std::io::Result<ExitStatus>> + Send>>> {
+        process::spawn(self, command, stdin, stdout, stderr)
     }
 }
 

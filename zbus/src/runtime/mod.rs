@@ -38,9 +38,15 @@ use tokio_rt::Tokio;
 // Only the `unixexec` and `ibus` transports and, on macOS, the `launchd` one run a program.
 #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
 pub(crate) mod process;
+#[cfg(all(test, target_os = "linux", feature = "unixexec"))]
+mod process_table;
 
-use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+use std::process::{Command, ExitStatus, Stdio};
+use std::{borrow::Cow, future::Future, net::SocketAddr, path::Path, pin::Pin, sync::Arc};
 
+#[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+use erased::BoxFuture;
 use erased::ErasedRuntime;
 
 use crate::Result;
@@ -141,6 +147,34 @@ impl Runtime {
         }
     }
 
+    /// Connects a stream socket to the TCP endpoint at `address`, the way this runtime does it.
+    ///
+    /// The socket comes back connected and non-blocking, and no longer watched by the runtime, so
+    /// that the connection can register it for its own traffic.
+    pub(crate) async fn connect_tcp(&self, address: SocketAddr) -> std::io::Result<IoSource> {
+        match self {
+            #[cfg(feature = "default-rt")]
+            Self::ZRuntime(runtime) => traits::Runtime::connect_tcp(runtime, address).await,
+            #[cfg(feature = "tokio")]
+            Self::Tokio(runtime) => traits::Runtime::connect_tcp(runtime, address).await,
+            Self::External(runtime) => traits::Runtime::connect_tcp(runtime, address).await,
+        }
+    }
+
+    /// Connects a stream socket to the unix-domain socket at `path`, the way this runtime does it.
+    ///
+    /// A path whose first byte is zero names an abstract socket on Linux and Android. The socket
+    /// comes back as [`Runtime::connect_tcp`]'s does.
+    pub(crate) async fn connect_unix(&self, path: &Path) -> std::io::Result<IoSource> {
+        match self {
+            #[cfg(feature = "default-rt")]
+            Self::ZRuntime(runtime) => traits::Runtime::connect_unix(runtime, path).await,
+            #[cfg(feature = "tokio")]
+            Self::Tokio(runtime) => traits::Runtime::connect_unix(runtime, path).await,
+            Self::External(runtime) => traits::Runtime::connect_unix(runtime, path).await,
+        }
+    }
+
     /// Runs `work` off the event loop, on whatever this runtime keeps for blocking work.
     ///
     /// The work is handed to the runtime here and not on the first poll, and the future this
@@ -159,6 +193,35 @@ impl Runtime {
             #[cfg(feature = "tokio")]
             Self::Tokio(runtime) => traits::Runtime::spawn_blocking(runtime, work),
             Self::External(runtime) => traits::Runtime::spawn_blocking(runtime, work),
+        }
+    }
+
+    /// Spawns `command` as a child process, the way this runtime does it, and waits for it.
+    ///
+    /// `stdin`, `stdout` and `stderr` are the standard streams of the process. The future this
+    /// hands back resolves to the exit status once the process has exited. One that is dropped
+    /// before it resolves leaves the process to the runtime: see
+    /// [`traits::Runtime::spawn_process`].
+    #[cfg(all(unix, any(feature = "unixexec", feature = "ibus", target_os = "macos")))]
+    pub(crate) fn spawn_process(
+        &self,
+        command: Command,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> std::io::Result<BoxFuture<'static, std::io::Result<ExitStatus>>> {
+        match self {
+            #[cfg(feature = "default-rt")]
+            Self::ZRuntime(runtime) => {
+                traits::Runtime::spawn_process(runtime, command, stdin, stdout, stderr)
+            }
+            #[cfg(feature = "tokio")]
+            Self::Tokio(runtime) => {
+                traits::Runtime::spawn_process(runtime, command, stdin, stdout, stderr)
+            }
+            Self::External(runtime) => {
+                traits::Runtime::spawn_process(runtime, command, stdin, stdout, stderr)
+            }
         }
     }
 }

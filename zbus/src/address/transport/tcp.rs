@@ -7,15 +7,13 @@ use std::{
     sync::Arc,
 };
 
-use socket2::{Domain, Type};
-
 use super::encode_percents;
 use crate::{
     Address, Error, Result,
     connection::socket::{BoxedSplit, WriteHalf},
     runtime::{
         Runtime,
-        io::{RegisteredIo, TcpOps, connect},
+        io::{RegisteredIo, TcpOps},
     },
 };
 
@@ -143,14 +141,8 @@ impl Tcp {
         let addresses = self.resolve(address, runtime).await?;
         let mut error = self.nothing_found(address);
 
-        #[cfg(all(windows, feature = "tokio"))]
-        if let Runtime::Tokio(_) = runtime {
-            return tokio_connect(&addresses, address, nonce.as_deref(), runtime, error).await;
-        }
-
         for socket_address in addresses {
-            let domain = Domain::for_address(socket_address);
-            match connect(runtime, domain, Type::STREAM, &socket_address.into()).await {
+            match runtime.connect_tcp(socket_address).await {
                 Ok(source) => {
                     let mut split = BoxedSplit::from(RegisteredIo::new(runtime, source, TcpOps)?);
                     if let Some(nonce) = nonce.as_deref() {
@@ -250,49 +242,6 @@ async fn write_all(half: &mut impl WriteHalf, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Connects to the first of `addresses` that answers, on a stream Tokio drives itself.
-///
-/// Each attempt is made as a task on the connection's own runtime, because a socket of Tokio's
-/// belongs to whichever runtime is current where it is created, and that is not something this
-/// future can tell from where it is polled: reading the nonce file and looking the host up have
-/// each given it a chance to move, and a host that drives zbus itself polls it outside Tokio
-/// altogether. The runtime the connection was built with is the one that has to end up watching
-/// the socket, so the connect goes to it rather than to whatever is current.
-///
-/// `error` is what a run out of addresses reports, unless one of them said something of its own.
-#[cfg(all(windows, feature = "tokio"))]
-async fn tokio_connect(
-    addresses: &[SocketAddr],
-    address: &Address,
-    nonce: Option<&[u8]>,
-    runtime: &Runtime,
-    mut error: Error,
-) -> Result<BoxedSplit> {
-    use crate::connection::socket::TokioTcp;
-
-    for &socket_address in addresses {
-        let connecting = runtime.spawn("tcp connect", async move {
-            tokio::net::TcpStream::connect(socket_address).await
-        });
-
-        // The outer result is the task's own, which a runtime that lost the task reports; the
-        // inner one is the connect's. Either failure is this address's to record.
-        match connecting.await.and_then(|connected| connected) {
-            Ok(stream) => {
-                let mut stream = TokioTcp::new(stream, runtime.clone());
-                if let Some(nonce) = nonce {
-                    stream.write_all(nonce).await?;
-                }
-
-                return Ok(stream.into());
-            }
-            Err(e) => error = Error::Connection(Arc::new(e), Box::new(address.clone())),
-        }
-    }
-
-    Err(error)
-}
-
 impl Display for Tcp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.nonce_file() {
@@ -349,48 +298,5 @@ impl Display for TcpTransportFamily {
             Self::Ipv4 => write!(f, "ipv4"),
             Self::Ipv6 => write!(f, "ipv6"),
         }
-    }
-}
-
-#[cfg(all(test, windows, feature = "tokio"))]
-mod tests {
-    use std::{net::TcpListener, str::FromStr};
-
-    use ntest::timeout;
-
-    use super::Tcp;
-    use crate::{Address, runtime::Runtime};
-
-    /// A Tokio connection reaches a `tcp:` address from a thread that knows nothing of Tokio.
-    ///
-    /// Tokio owns the socket behind this transport on Windows, and a socket of Tokio's belongs to
-    /// whichever runtime is current where it is created. The one that has to end up with it is
-    /// the connection's own, however the future that opens it is driven: a host with a runtime of
-    /// its own polls a connection from outside Tokio entirely.
-    #[test]
-    #[timeout(15000)]
-    fn a_connect_reaches_the_connections_own_runtime() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let tokio_runtime = tokio::runtime::Runtime::new().unwrap();
-        let runtime = {
-            let _guard = tokio_runtime.enter();
-
-            Runtime::default_for_build().unwrap()
-        };
-        assert!(
-            matches!(runtime, Runtime::Tokio(_)),
-            "the runtime taken from inside Tokio was not Tokio's",
-        );
-        let address = Address::from_str(&format!("tcp:host=127.0.0.1,port={port}")).unwrap();
-
-        // Nothing on this thread points at the runtime above, so a connect that went to whatever
-        // is current would find nothing to register the socket on.
-        let _split =
-            futures_lite::future::block_on(Tcp::new("127.0.0.1", port).connect(&address, &runtime))
-                .unwrap();
-
-        let (_accepted, peer) = listener.accept().unwrap();
-        assert_eq!(peer.ip(), std::net::Ipv4Addr::LOCALHOST);
     }
 }

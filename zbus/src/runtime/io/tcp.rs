@@ -74,7 +74,7 @@ async fn peer_credentials(
 
 /// The credentials of the process Windows has a TCP connection from `addr` registered to.
 #[cfg(windows)]
-pub(crate) fn credentials_from_addr(
+fn credentials_from_addr(
     addr: &std::net::SocketAddr,
 ) -> io::Result<crate::fdo::ConnectionCredentials> {
     use crate::win32::{ProcessToken, socket_addr_get_pid};
