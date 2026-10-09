@@ -52,10 +52,15 @@ jobs:
           # find the cache the x86_64 one saved under the same key, and never save its own.
           cache-extra-identifier: ${{ runner.arch }}
           bins: cargo-codspeed
-      # The features the bench targets need between them beyond the default ones, as their
-      # `required-features` say; each job builds its own targets only.
+      # The features the bench targets need between them beyond the default ones: those their
+      # `required-features` name, and those a `cfg(feature = ...)` in a bench's source gates
+      # benchmarks on (`serde_bytes` in `wire`). A required feature missing here fails the build,
+      # but a gating one leaves its benchmarks out of it, and so unmeasured, without an error. Each
+      # job builds its own targets only.
       - name: Build the benchmark target(s)
-        run: cargo codspeed build -m ${{ matrix.mode }} --features zbus/p2p ${{ matrix.benches }}
+        run: >-
+          cargo codspeed build -m ${{ matrix.mode }} --features zbus/p2p,zbus/serde_bytes
+          ${{ matrix.benches }}
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@v5
         with:

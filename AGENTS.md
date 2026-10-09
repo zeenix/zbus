@@ -72,6 +72,8 @@ On CodSpeed, `.github/workflows/bench.yml` measures each bench target in one of 
 simulation, on a GitHub-hosted runner, the targets that run on one thread and wait on no timer or
 socket; by the clock, on a CodSpeed macro runner, those that wait on timers, sockets or other
 threads. A target holds benchmarks of one kind only, and a new one goes in the list of its job.
+A feature that a benchmark needs, as a `required-features` of its target or a `cfg(feature = ...)`
+in its source, goes in the features that workflow builds with, or CodSpeed never measures it.
 
 ## Workspace Architecture
 
