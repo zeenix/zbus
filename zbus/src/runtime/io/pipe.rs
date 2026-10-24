@@ -1,6 +1,9 @@
 //! The operations of one end of a pipe to a helper process.
 
-use std::{io, os::fd::BorrowedFd};
+use std::{
+    io::{self, IoSlice},
+    os::fd::BorrowedFd,
+};
 
 use super::SocketOps;
 use crate::{connection::socket::RecvmsgResult, runtime::IoSource};
@@ -21,7 +24,12 @@ impl SocketOps for PipeOps {
         Ok((read, vec![]))
     }
 
-    fn send(&self, source: &IoSource, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::Result<usize> {
+    fn send(
+        &self,
+        source: &IoSource,
+        buffers: &[IoSlice<'_>],
+        fds: &[BorrowedFd<'_>],
+    ) -> io::Result<usize> {
         if !fds.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -29,7 +37,7 @@ impl SocketOps for PipeOps {
             ));
         }
 
-        Ok(rustix::io::write(source, buffer)?)
+        Ok(rustix::io::writev(source, buffers)?)
     }
 
     /// A pipe ends when the writer lets go of its end, which is also how the write half of one

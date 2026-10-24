@@ -30,7 +30,7 @@ use std::os::fd::BorrowedFd;
 use std::{
     fmt,
     future::{Future, poll_fn},
-    io,
+    io::{self, IoSlice},
     net::Shutdown,
     sync::Arc,
     task::{Context, Poll},
@@ -171,11 +171,11 @@ pub(crate) trait SocketOps: fmt::Debug + Send + Sync + 'static {
     /// Receives bytes, and on a unix socket the file descriptors that came with them.
     fn recv(&self, source: &IoSource, buffer: &mut [u8]) -> RecvmsgResult;
 
-    /// Sends bytes, and on a unix socket `fds` along with them.
+    /// Sends the bytes of `buffers`, in order, and on a unix socket `fds` along with them.
     fn send(
         &self,
         source: &IoSource,
-        buffer: &[u8],
+        buffers: &[IoSlice<'_>],
         #[cfg(unix)] fds: &[BorrowedFd<'_>],
     ) -> io::Result<usize>;
 
@@ -303,7 +303,7 @@ where
             .write_with(|| {
                 socket.ops.send(
                     &socket.source,
-                    buffer,
+                    &[IoSlice::new(buffer)],
                     #[cfg(unix)]
                     fds,
                 )
@@ -402,23 +402,30 @@ fn recv(source: &IoSource, buffer: &mut [u8]) -> RecvmsgResult {
     }
 }
 
-/// Sends bytes over a socket that carries no ancillary data of its own.
-fn send(source: &IoSource, buffer: &[u8]) -> io::Result<usize> {
+/// Sends the bytes of `buffers` over a socket that carries no ancillary data of its own.
+fn send(source: &IoSource, buffers: &[IoSlice<'_>]) -> io::Result<usize> {
     #[cfg(unix)]
     {
-        Ok(rustix::net::send(source, buffer, SEND_FLAGS)?)
+        let mut control = rustix::net::SendAncillaryBuffer::default();
+
+        Ok(rustix::net::sendmsg(
+            source,
+            buffers,
+            &mut control,
+            SEND_FLAGS,
+        )?)
     }
     #[cfg(windows)]
     {
         let socket = SockRef::from(source);
 
-        std::io::Write::write(&mut &*socket, buffer)
+        std::io::Write::write_vectored(&mut &*socket, buffers)
     }
     // As for `recv`. WASI has no signals, so a write to a peer that has gone away is an error
     // there whatever the flags.
     #[cfg(target_os = "wasi")]
     {
-        Ok(rustix::io::write(source, buffer)?)
+        Ok(rustix::io::writev(source, buffers)?)
     }
 }
 
