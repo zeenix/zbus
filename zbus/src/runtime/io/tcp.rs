@@ -1,6 +1,6 @@
 //! The operations of a TCP stream.
 
-use std::io;
+use std::io::{self, IoSlice};
 #[cfg(unix)]
 use std::os::fd::BorrowedFd;
 
@@ -19,7 +19,7 @@ impl SocketOps for TcpOps {
     fn send(
         &self,
         source: &IoSource,
-        buffer: &[u8],
+        buffers: &[IoSlice<'_>],
         #[cfg(unix)] fds: &[BorrowedFd<'_>],
     ) -> io::Result<usize> {
         #[cfg(unix)]
@@ -30,7 +30,7 @@ impl SocketOps for TcpOps {
             ));
         }
 
-        super::send(source, buffer)
+        super::send(source, buffers)
     }
 
     /// A TCP peer proves nothing about itself, so it authenticates anonymously.

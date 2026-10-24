@@ -2,7 +2,10 @@
 
 #[cfg(unix)]
 use std::os::fd::{AsFd, BorrowedFd};
-use std::{future::Future, io};
+use std::{
+    future::Future,
+    io::{self, IoSlice},
+};
 
 #[cfg(unix)]
 use rustix::net::{
@@ -38,13 +41,18 @@ impl SocketOps for UnixOps {
     }
 
     #[cfg(unix)]
-    fn send(&self, source: &IoSource, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::Result<usize> {
-        fd_sendmsg(source.as_fd(), buffer, fds)
+    fn send(
+        &self,
+        source: &IoSource,
+        buffers: &[IoSlice<'_>],
+        fds: &[BorrowedFd<'_>],
+    ) -> io::Result<usize> {
+        fd_sendmsg(source.as_fd(), buffers, fds)
     }
 
     #[cfg(windows)]
-    fn send(&self, source: &IoSource, buffer: &[u8]) -> io::Result<usize> {
-        super::send(source, buffer)
+    fn send(&self, source: &IoSource, buffers: &[IoSlice<'_>]) -> io::Result<usize> {
+        super::send(source, buffers)
     }
 
     /// Only a real `AF_UNIX` socket passes file descriptors; the Windows one cannot.
@@ -185,10 +193,13 @@ fn fd_recvmsg(fd: BorrowedFd<'_>, buffer: &mut [u8]) -> RecvmsgResult {
 }
 
 #[cfg(unix)]
-fn fd_sendmsg(fd: BorrowedFd<'_>, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::Result<usize> {
-    use std::{io::IoSlice, mem::MaybeUninit};
+fn fd_sendmsg(
+    fd: BorrowedFd<'_>,
+    buffers: &[IoSlice<'_>],
+    fds: &[BorrowedFd<'_>],
+) -> io::Result<usize> {
+    use std::mem::MaybeUninit;
 
-    let iov = [IoSlice::new(buffer)];
     let mut cmsg_buffer = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(FDS_MAX))];
     let mut ancillary = SendAncillaryBuffer::new(&mut cmsg_buffer);
 
@@ -199,7 +210,7 @@ fn fd_sendmsg(fd: BorrowedFd<'_>, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::
         ));
     }
 
-    let sent = sendmsg(fd, &iov, &mut ancillary, SEND_FLAGS)?;
+    let sent = sendmsg(fd, buffers, &mut ancillary, SEND_FLAGS)?;
     if sent == 0 {
         // can it really happen?
         return Err(io::Error::new(
