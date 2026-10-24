@@ -405,6 +405,26 @@ pub trait WriteHalf: std::fmt::Debug + Send + Sync + 'static {
         Ok(())
     }
 
+    /// Send several messages on the socket, in order.
+    ///
+    /// This is the higher-level method to send several full D-Bus messages, which a socket may hand
+    /// over with fewer writes than it takes to send them one by one.
+    ///
+    /// The default implementation sends them one by one with `send_message`. Implementers that can
+    /// write several messages at once should override it. File descriptors travel with the first
+    /// byte of the write they are sent with, so a message with file descriptors has to start a
+    /// write of its own, and the write sends them along.
+    ///
+    /// If this fails, the messages before the one that it failed on have been sent in full, and
+    /// that one may have been sent in part.
+    async fn send_messages(&mut self, msgs: &[Message]) -> crate::Result<()> {
+        for msg in msgs {
+            self.send_message(msg).await?;
+        }
+
+        Ok(())
+    }
+
     /// Attempt to send a message on the socket
     ///
     /// On success, return the number of bytes written. There may be a partial write, in
@@ -507,6 +527,10 @@ impl ReadHalf for Box<dyn ReadHalf> {
 impl WriteHalf for Box<dyn WriteHalf> {
     async fn send_message(&mut self, msg: &Message) -> crate::Result<()> {
         (**self).send_message(msg).await
+    }
+
+    async fn send_messages(&mut self, msgs: &[Message]) -> crate::Result<()> {
+        (**self).send_messages(msgs).await
     }
 
     async fn sendmsg(

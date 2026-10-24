@@ -32,6 +32,7 @@ use super::{
 use crate::connection::socket::ReadHalf;
 #[cfg(feature = "unixexec")]
 use crate::{
+    Message,
     connection::socket::{BoxedSplit, Split, WriteHalf},
     fdo::ConnectionCredentials,
 };
@@ -138,6 +139,10 @@ struct Stdin {
 #[cfg(feature = "unixexec")]
 #[async_trait::async_trait]
 impl WriteHalf for Stdin {
+    async fn send_messages(&mut self, msgs: &[Message]) -> crate::Result<()> {
+        WriteHalf::send_messages(self.pipe()?, msgs).await
+    }
+
     async fn sendmsg(&mut self, buffer: &[u8], fds: &[BorrowedFd<'_>]) -> io::Result<usize> {
         WriteHalf::sendmsg(self.pipe()?, buffer, fds).await
     }

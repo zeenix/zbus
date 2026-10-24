@@ -3,30 +3,37 @@
 //! Anything here that needs a runtime is run under every one this build can make, since the
 //! wrapper's whole purpose is to behave the same on all of them.
 
+#[cfg(unix)]
+use std::{
+    io::IoSlice,
+    os::{
+        fd::{AsFd, BorrowedFd, OwnedFd},
+        unix::net::UnixStream,
+    },
+    sync::Mutex,
+};
 use std::{
     io::{Read, Write},
     mem::MaybeUninit,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs},
     sync::Arc,
 };
-#[cfg(unix)]
-use std::{
-    os::{fd::OwnedFd, unix::net::UnixStream},
-    sync::Mutex,
-};
 
 use ntest::timeout;
 
 use socket2::{Domain, SockRef, Socket, Type};
 
-#[cfg(unix)]
-use super::UnixOps;
 #[cfg(all(unix, any(feature = "default-rt", feature = "tokio")))]
 use super::unix_socket_address;
 use super::{RegisteredIo, TcpOps};
 #[cfg(unix)]
+use super::{SocketOps, UnixOps};
+#[cfg(unix)]
 use crate::runtime::{Runtime, test_runtime::TestRuntime};
+#[cfg(unix)]
+use crate::{Fd, connection::socket::RecvmsgResult};
 use crate::{
+    Message,
     connection::socket::{ReadHalf, WriteHalf},
     runtime::{IoSource, test_runtime::under_every_runtime},
 };
@@ -81,6 +88,132 @@ fn file_descriptors_cross_a_unix_socket() {
             .read_to_string(&mut through)
             .unwrap();
         assert_eq!(through, "through the pipe");
+    });
+}
+
+/// A batch of messages goes in writes of several, each of which starts at a message, and a
+/// message with file descriptors starts one of its own, which they go with. Each message comes out
+/// of the other end in order, with its own descriptors and no others.
+#[cfg(unix)]
+#[test]
+#[timeout(15000)]
+fn a_message_with_descriptors_starts_a_write_of_its_own() {
+    under_every_runtime(|runtime| async move {
+        let (left, right) = UnixStream::pair().unwrap();
+        let ops = Recording::default();
+        let writes = ops.writes.clone();
+        let mut sender = half(&runtime, left, ops);
+        let mut receiver = half(&runtime, right, UnixOps);
+        // More messages without descriptors than a write takes, then one with, one without, and
+        // another with.
+        let (read_end, _write_end) = std::io::pipe().unwrap();
+        let msgs: Vec<_> = (0..21u32)
+            .map(|i| {
+                let builder = Message::method_call("/", "Test");
+                match i {
+                    18 | 20 => builder.build(&(i, Fd::from(read_end.as_fd()))),
+                    _ => builder.build(&i),
+                }
+                .unwrap()
+            })
+            .collect();
+
+        sender.send_messages(&msgs).await.unwrap();
+
+        assert_eq!(
+            *writes.lock().unwrap(),
+            [(16, 0), (2, 0), (2, 1), (1, 1)],
+            "the writes were not split as expected, as (messages, descriptors)",
+        );
+        for (seq, sent) in msgs.iter().enumerate() {
+            let received = receiver
+                .receive_message(seq as u64, &mut vec![], &mut vec![])
+                .await
+                .unwrap();
+            assert_eq!(&received.data()[..], &sent.data()[..]);
+            assert_eq!(
+                received.data().fds().len(),
+                sent.data().fds().len(),
+                "message {seq} came with descriptors other than its own",
+            );
+        }
+    });
+}
+
+/// A write takes the messages after its first only as long as they keep it within 16 KiB, so a
+/// message of that size or more goes in a write of its own.
+#[cfg(unix)]
+#[test]
+#[timeout(15000)]
+fn a_write_of_several_messages_stays_within_16_kib() {
+    under_every_runtime(|runtime| async move {
+        let (left, right) = UnixStream::pair().unwrap();
+        let ops = Recording::default();
+        let writes = ops.writes.clone();
+        let mut sender = half(&runtime, left, ops);
+        let mut receiver = half(&runtime, right, UnixOps);
+        let msgs: Vec<_> = [10, 4, 4, 10, 20, 1]
+            .into_iter()
+            .map(|kib| {
+                Message::method_call("/", "Test")
+                    .build(&vec![0u8; kib * 1024])
+                    .unwrap()
+            })
+            .collect();
+
+        // A runtime may wait for the socket to be writable before each write, which a unix socket
+        // only is while what it has queued is a quarter of its send buffer or less.
+        let receive = async {
+            for (seq, sent) in msgs.iter().enumerate() {
+                let received = receiver
+                    .receive_message(seq as u64, &mut vec![], &mut vec![])
+                    .await
+                    .unwrap();
+                assert_eq!(&received.data()[..], &sent.data()[..]);
+            }
+        };
+        let (sent, ()) = futures_util::join!(sender.send_messages(&msgs), receive);
+
+        sent.unwrap();
+        assert_eq!(
+            *writes.lock().unwrap(),
+            [(2, 0), (2, 0), (1, 0), (1, 0)],
+            "the writes were not split as expected, as (messages, descriptors)",
+        );
+    });
+}
+
+/// A batch the socket can't take in one write goes through all the same, the rest of each write
+/// in the next one, wherever in a message the socket stopped taking it.
+#[cfg(unix)]
+#[test]
+#[timeout(15000)]
+fn a_batch_larger_than_the_send_buffer_goes_through_in_order() {
+    under_every_runtime(|runtime| async move {
+        let (left, right) = UnixStream::pair().unwrap();
+        rustix::net::sockopt::set_socket_send_buffer_size(&left, 4096).unwrap();
+        let mut sender = half(&runtime, left, UnixOps);
+        let mut receiver = half(&runtime, right, UnixOps);
+        let msgs: Vec<_> = (0..40u8)
+            .map(|i| {
+                Message::method_call("/", "Test")
+                    .build(&vec![i; 1000])
+                    .unwrap()
+            })
+            .collect();
+
+        let receive = async {
+            for (seq, sent) in msgs.iter().enumerate() {
+                let received = receiver
+                    .receive_message(seq as u64, &mut vec![], &mut vec![])
+                    .await
+                    .unwrap();
+                assert_eq!(&received.data()[..], &sent.data()[..]);
+            }
+        };
+        let (sent, ()) = futures_util::join!(sender.send_messages(&msgs), receive);
+
+        sent.unwrap();
     });
 }
 
@@ -192,6 +325,31 @@ fn a_connected_socket_carries_traffic_once_registered() {
         socket.sendmsg(b"pong").await.unwrap();
         accepted.read_exact(&mut buffer).unwrap();
         assert_eq!(&buffer, b"pong");
+    });
+}
+
+/// A batch of messages crosses a TCP stream as it is.
+#[test]
+#[timeout(15000)]
+fn a_batch_of_messages_crosses_a_tcp_stream() {
+    under_every_runtime(|runtime| async move {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let source = runtime
+            .connect_tcp(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (mut accepted, _) = listener.accept().unwrap();
+        let mut socket = Arc::new(RegisteredIo::new(&runtime, source, TcpOps).unwrap());
+        let msgs: Vec<_> = (0..20u32)
+            .map(|i| Message::method_call("/", "Test").build(&i).unwrap())
+            .collect();
+
+        socket.send_messages(&msgs).await.unwrap();
+
+        let sent: Vec<u8> = msgs.iter().flat_map(|msg| msg.data().to_vec()).collect();
+        let mut received = vec![0; sent.len()];
+        accepted.read_exact(&mut received).unwrap();
+        assert_eq!(received, sent);
     });
 }
 
@@ -486,9 +644,41 @@ fn bound(address: SocketAddr) -> std::io::Result<Socket> {
 fn half<S, O>(runtime: &Runtime, stream: S, ops: O) -> Arc<RegisteredIo<O>>
 where
     S: Into<OwnedFd>,
-    O: super::SocketOps,
+    O: SocketOps,
 {
     Arc::new(super::registered(runtime, stream, ops).unwrap())
+}
+
+/// The operations of a unix socket, which note the messages and descriptors of each write.
+///
+/// A message is a buffer of a write of its own, so the buffers are the messages.
+#[cfg(unix)]
+#[derive(Debug, Default)]
+struct Recording {
+    writes: Arc<Mutex<Vec<(usize, usize)>>>,
+}
+
+#[cfg(unix)]
+impl SocketOps for Recording {
+    fn recv(&self, source: &IoSource, buffer: &mut [u8]) -> RecvmsgResult {
+        UnixOps.recv(source, buffer)
+    }
+
+    fn send(
+        &self,
+        source: &IoSource,
+        buffers: &[IoSlice<'_>],
+        fds: &[BorrowedFd<'_>],
+    ) -> std::io::Result<usize> {
+        let written = UnixOps.send(source, buffers, fds)?;
+        self.writes.lock().unwrap().push((buffers.len(), fds.len()));
+
+        Ok(written)
+    }
+
+    fn can_pass_unix_fd(&self) -> bool {
+        true
+    }
 }
 
 /// A runtime whose registrations keep no source of their own.

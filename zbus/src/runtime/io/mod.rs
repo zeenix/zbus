@@ -26,7 +26,7 @@ pub(crate) use connect::connect_blocking;
 pub(crate) mod tests;
 
 #[cfg(unix)]
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::{
     fmt,
     future::{Future, poll_fn},
@@ -49,9 +49,11 @@ pub(crate) use unix::unix_socket_address;
 
 use super::{Interest, IoSource, Runtime, erased::ErasedRegistration, traits};
 use crate::{
+    Message,
     conn::AuthMechanism,
     connection::socket::{ReadHalf, RecvmsgResult, Socket, Split, WriteHalf},
     fdo::ConnectionCredentials,
+    log::trace,
 };
 
 /// A socket the connection's runtime watches, together with the one path its I/O takes.
@@ -292,6 +294,68 @@ impl<O> WriteHalf for Arc<RegisteredIo<O>>
 where
     O: SocketOps,
 {
+    /// Sends `msgs` with as few writes as the socket takes.
+    ///
+    /// Each write starts at a message, and sends its file descriptors, if any, which travel with
+    /// the first byte of the write. It takes as many of the messages after that one as carry no
+    /// file descriptors and keep it within [`BYTES_PER_WRITE`], up to [`MESSAGES_PER_WRITE`] in
+    /// all. Whatever part of it the socket doesn't take goes in the next write, without the
+    /// descriptors.
+    async fn send_messages(&mut self, mut msgs: &[Message]) -> crate::Result<()> {
+        let socket = &**self;
+
+        while !msgs.is_empty() {
+            let mut bytes = msgs[0].data().len();
+            let len = 1 + msgs[1..]
+                .iter()
+                .take(MESSAGES_PER_WRITE - 1)
+                .take_while(|msg| {
+                    bytes += msg.data().len();
+
+                    bytes <= BYTES_PER_WRITE && !carries_fds(msg)
+                })
+                .count();
+            let (write, rest) = msgs.split_at(len);
+            let mut buffers = [IoSlice::new(&[]); MESSAGES_PER_WRITE];
+            for (buffer, msg) in buffers.iter_mut().zip(write) {
+                trace!("Sending message: {:?}", msg);
+                *buffer = IoSlice::new(msg.data());
+            }
+            let mut buffers = &mut buffers[..len];
+            #[cfg(unix)]
+            let fds: Vec<_> = write[0].data().fds().iter().map(|fd| fd.as_fd()).collect();
+            #[cfg(unix)]
+            let mut fds = &fds[..];
+
+            while !buffers.is_empty() {
+                let written = socket
+                    .write_with(|| {
+                        socket.ops.send(
+                            &socket.source,
+                            buffers,
+                            #[cfg(unix)]
+                            fds,
+                        )
+                    })
+                    .await?;
+                #[cfg(unix)]
+                {
+                    fds = &[];
+                }
+                IoSlice::advance_slices(&mut buffers, written);
+            }
+            for msg in write {
+                trace!(
+                    "Sent message with serial: {}",
+                    msg.primary_header().serial_num()
+                );
+            }
+            msgs = rest;
+        }
+
+        Ok(())
+    }
+
     async fn sendmsg(
         &mut self,
         buffer: &[u8],
@@ -339,6 +403,32 @@ where
         self.ops.peer_credentials(&self.source, &self.runtime).await
     }
 }
+
+/// Whether `msg` carries file descriptors, which only a message on unix can.
+#[cfg(unix)]
+fn carries_fds(msg: &Message) -> bool {
+    !msg.data().fds().is_empty()
+}
+
+/// Whether `msg` carries file descriptors, which only a message on unix can.
+#[cfg(not(unix))]
+fn carries_fds(_msg: &Message) -> bool {
+    false
+}
+
+/// The most messages a write of several takes.
+///
+/// Each message is a buffer of its own in the write, and 16 buffers are as many as POSIX lets a
+/// platform limit a write to.
+const MESSAGES_PER_WRITE: usize = 16;
+
+/// The most bytes of messages a write of several takes.
+///
+/// Small messages, for which a write each costs the most, still go a dozen or more at a time, while
+/// a message of this size or more takes a write of its own. On Linux, the kernel queues the bytes
+/// of a bigger write to a unix socket in bigger buffers, and writes of several messages of 16 KiB
+/// at a time took both ends up to twice the system time of a write for each.
+const BYTES_PER_WRITE: usize = 16 * 1024;
 
 impl<O> Socket for RegisteredIo<O>
 where
