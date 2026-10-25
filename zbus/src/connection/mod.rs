@@ -271,6 +271,35 @@ impl Connection {
         write.send_message(msg).await
     }
 
+    /// Send `msgs` to the peer, in order, with as few writes as the socket allows.
+    ///
+    /// [`Connection::send`] makes at least one write for each message. This hands all of `msgs` to
+    /// the socket at once instead, through [`WriteHalf::send_messages`], and the sockets that zbus
+    /// creates write several messages at a time. No other message is sent on the connection in
+    /// between.
+    ///
+    /// If any of `msgs` carries file descriptors and the connection can't pass them, this fails
+    /// with [`Error::Unsupported`] before it sends anything. If it fails after that, the messages
+    /// before the one that it failed on have been sent in full, and that one may have been sent in
+    /// part, which leaves the peer unable to make sense of anything sent on the connection after
+    /// it, as with `send`.
+    ///
+    /// [`WriteHalf::send_messages`]: socket::WriteHalf::send_messages
+    pub async fn send_all(&self, msgs: &[Message]) -> Result<()> {
+        #[cfg(unix)]
+        if !self.inner.cap_unix_fd && msgs.iter().any(|msg| !msg.data().fds().is_empty()) {
+            return Err(Error::Unsupported);
+        }
+        if msgs.is_empty() {
+            return Ok(());
+        }
+
+        self.inner.socket_status.activity_event.notify(usize::MAX);
+        let mut write = self.inner.socket_write.lock().await;
+
+        write.send_messages(msgs).await
+    }
+
     /// Send a method call.
     ///
     /// Create a method-call message, send it over the connection, then wait for the reply.
@@ -1971,5 +2000,148 @@ mod p2p_tests {
             .unwrap();
 
         (conn1, conn2)
+    }
+
+    /// The messages of a `send_all` reach the peer in order, each with its own file descriptors,
+    /// over a unix socket, whose write half sends several at once, and over a channel, whose write
+    /// half sends them one by one.
+    #[cfg(unix)]
+    #[test]
+    #[timeout(15000)]
+    fn send_all() {
+        crate::utils::block_on(async {
+            let (server, client) = unix_p2p_pipe().await?;
+            assert_sent_all(&client, &server).await?;
+            let (server, client) = create_channel_pair().await;
+            assert_sent_all(&client, &server).await
+        })
+        .unwrap();
+    }
+
+    /// Has `sender` send 20 messages at once, every seventh of which, from the fourth on, carries
+    /// a file descriptor, and checks that `receiver` gets them as they were sent.
+    #[cfg(unix)]
+    async fn assert_sent_all(sender: &Connection, receiver: &Connection) -> Result<()> {
+        let mut stream = MessageStream::from(receiver);
+        let stdout = std::io::stdout();
+        let msgs = (0..20u32)
+            .map(|i| {
+                let builder = Message::signal("/", "org.zbus.p2p", "Batch");
+                if i % 7 == 3 {
+                    builder.build(&(i, crate::Fd::from(&stdout)))
+                } else {
+                    builder.build(&i)
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        sender.send_all(&msgs).await?;
+
+        for sent in &msgs {
+            let received = stream.try_next().await?.unwrap();
+            assert_eq!(
+                received.primary_header().serial_num(),
+                sent.primary_header().serial_num(),
+            );
+            assert_eq!(received.data().fds().len(), sent.data().fds().len());
+        }
+
+        Ok(())
+    }
+
+    /// A `send_all` over a connection that can't pass file descriptors fails if any of its
+    /// messages carries some, before it sends anything.
+    #[cfg(unix)]
+    #[test]
+    #[timeout(15000)]
+    fn send_all_of_fds_without_fd_passing() {
+        crate::utils::block_on(async {
+            let (server, client) = tcp_p2p_pipe().await?;
+            let mut stream = MessageStream::from(&server);
+            let stdout = std::io::stdout();
+            let msgs = [
+                Message::signal("/", "org.zbus.p2p", "First").build(&())?,
+                Message::signal("/", "org.zbus.p2p", "WithFd").build(&crate::Fd::from(&stdout))?,
+            ];
+
+            let error = client.send_all(&msgs).await.unwrap_err();
+            assert!(
+                matches!(error, crate::Error::Unsupported),
+                "the messages failed with `{error}` rather than as unsupported",
+            );
+
+            // Nothing went out: the next message is the first one that the peer gets.
+            let next = Message::signal("/", "org.zbus.p2p", "Next").build(&())?;
+            client.send_all(std::slice::from_ref(&next)).await?;
+            let received = stream.try_next().await?.unwrap();
+            assert_eq!(
+                received.primary_header().serial_num(),
+                next.primary_header().serial_num(),
+            );
+
+            Result::Ok(())
+        })
+        .unwrap();
+    }
+
+    /// `send_all` hands its messages to the write half of the socket all at once.
+    #[test]
+    #[timeout(15000)]
+    fn send_all_hands_the_messages_over_at_once() {
+        /// A write half that only takes several messages at a time.
+        #[derive(Debug)]
+        struct AtOnce(socket::channel::Writer);
+
+        #[async_trait::async_trait]
+        impl socket::WriteHalf for AtOnce {
+            async fn send_message(&mut self, _msg: &Message) -> Result<()> {
+                panic!("a message was handed over on its own");
+            }
+
+            async fn send_messages(&mut self, msgs: &[Message]) -> Result<()> {
+                for msg in msgs {
+                    self.0.send_message(msg).await?;
+                }
+
+                Ok(())
+            }
+
+            async fn close(&mut self) -> std::io::Result<()> {
+                self.0.close().await
+            }
+        }
+
+        crate::utils::block_on(async {
+            let (a, b) = socket::Channel::pair();
+            let (read, write) = socket::Socket::split(a).take();
+            let a = socket::Split::new(
+                Box::new(read) as Box<dyn socket::ReadHalf>,
+                Box::new(AtOnce(write)) as Box<dyn socket::WriteHalf>,
+            );
+            let guid = Guid::generate();
+            let sender = Builder::authenticated_socket(a, guid.clone())
+                .p2p()
+                .build()
+                .await?;
+            let receiver = Builder::authenticated_socket(b, guid).p2p().build().await?;
+            let mut stream = MessageStream::from(&receiver);
+            let msgs = [
+                Message::signal("/", "org.zbus.p2p", "First").build(&())?,
+                Message::signal("/", "org.zbus.p2p", "Second").build(&())?,
+            ];
+
+            sender.send_all(&msgs).await?;
+
+            for sent in &msgs {
+                let received = stream.try_next().await?.unwrap();
+                assert_eq!(
+                    received.primary_header().serial_num(),
+                    sent.primary_header().serial_num(),
+                );
+            }
+
+            Result::Ok(())
+        })
+        .unwrap();
     }
 }
