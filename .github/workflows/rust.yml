@@ -403,6 +403,9 @@ jobs:
             > /dev/null
           cargo install cargo-fuzz
           cargo --locked fuzz run --fuzz-dir zbus/fuzz dbus -- -max_total_time=30 -max_len=100M
+      - name: Fuzz the parser of message headers against decoding them through serde
+        run: |
+          cargo --locked fuzz run --fuzz-dir zbus/fuzz header -- -max_total_time=30 -max_len=4096
 
   doc_build:
     runs-on: ubuntu-latest
