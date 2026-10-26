@@ -126,6 +126,28 @@ fn signature_parse(c: &mut Criterion) {
     });
 }
 
+/// Benchmark parsing and checking short signatures.
+///
+/// Short signatures are what message bodies and variants carry, and they are parsed each time a
+/// message is received. This is unlike the single, long signature that `signature_parse` parses.
+fn signature_parse_short(c: &mut Criterion) {
+    const SIGNATURES: [&str; 5] = ["s", "us", "a{sv}", "sa{sv}as", "a{oa{sa{sv}}}"];
+
+    let mut group = c.benchmark_group("signature-short");
+    for signature in SIGNATURES {
+        // Parsing, which also includes dropping the parsed signature.
+        group.bench_function(format!("parse/{signature}"), |b| {
+            b.iter(|| zbus::Signature::try_from(black_box(signature)).unwrap())
+        });
+
+        // Checking only.
+        group.bench_function(format!("validate/{signature}"), |b| {
+            b.iter(|| zbus::wire::signature::validate(black_box(signature.as_bytes())).unwrap())
+        });
+    }
+    group.finish();
+}
+
 fn object_path_parse(c: &mut Criterion) {
     const PATH: &str = "/a/very/very_very/veeeeeeeeeeeeeery/long/long_long/long/long/\
         _/long_path/to_test_parsing_of/paths/you/see";
@@ -173,6 +195,7 @@ criterion_group!(
     byte_array,
     fixed_size_array,
     signature_parse,
+    signature_parse_short,
     object_path_parse
 );
 #[cfg(not(feature = "serde_bytes"))]
@@ -181,6 +204,7 @@ criterion_group!(
     big_array,
     fixed_size_array,
     signature_parse,
+    signature_parse_short,
     object_path_parse
 );
 criterion_main!(benches);
