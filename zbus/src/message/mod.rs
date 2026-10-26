@@ -16,14 +16,15 @@ pub(crate) use field_code::FieldCode;
 
 mod fields;
 pub(crate) use fields::Fields;
-use fields::QuickFields;
 
 mod body;
 pub use body::Body;
 
 pub(crate) mod header;
 pub use header::{EndianSig, Flags, Header, NATIVE_ENDIAN_SIG, PrimaryHeader, Type};
-use header::{MIN_MESSAGE_SIZE, PRIMARY_HEADER_SIZE};
+
+pub(crate) mod parser;
+use parser::QuickFields;
 
 /// A position in the stream of [`Message`] objects received by a single [`zbus::Connection`].
 ///
@@ -145,19 +146,13 @@ impl Message {
         bytes: serialized::Data<'static, 'static>,
         recv_seq: u64,
     ) -> Result<Self> {
-        let endian = Endian::from(EndianSig::try_from(bytes[0])?);
-        if endian != bytes.context().endian() {
+        let (primary_header, header_len, quick_fields) = parser::parse(&bytes)?;
+        if Endian::from(primary_header.endian_sig()) != bytes.context().endian() {
             return Err(Error::IncorrectEndian);
         }
 
-        let (primary_header, fields_len) = PrimaryHeader::read_from_data(&bytes)?;
-        let fields_bytes = bytes.slice(PRIMARY_HEADER_SIZE..);
-        let (fields, _) = fields_bytes.deserialize()?;
-        let header = Header::new(primary_header.clone(), fields);
-
-        let header_len = MIN_MESSAGE_SIZE + fields_len as usize;
         let body_offset = header_len + padding_for_8_bytes(header_len);
-        let quick_fields = QuickFields::new(&bytes, &header).into();
+        let quick_fields = quick_fields.into();
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -242,13 +237,14 @@ impl Message {
     }
 
     fn quick_fields(&self) -> &QuickFields {
+        // Only a message that zbus built has its header parsed this late, and its header is valid,
+        // unless it was built with a name or path from an unchecked constructor, such as
+        // `ObjectPath::from_str_unchecked`.
         self.inner.quick_fields.get_or_init(|| {
-            let bytes = &self.inner.bytes;
-            // SAFETY: We ensure that by the time `quick_fields` is called, the header has already
-            // been checked.
-            let (header, _): (Header<'_>, _) = bytes.deserialize().unwrap();
+            let (_, _, quick_fields) =
+                parser::parse(&self.inner.bytes).expect("Invalid field in a built message");
 
-            QuickFields::new(bytes, &header)
+            quick_fields
         })
     }
 }
@@ -405,6 +401,6 @@ mod tests {
         let data = Data::new(bytes, m.data().context());
 
         let error = Message::from_raw_parts(data, 0).unwrap_err();
-        assert_eq!(error, Error::Failure("Invalid object path".into()));
+        assert_eq!(error, Error::InvalidObjectPath);
     }
 }
