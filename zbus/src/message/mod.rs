@@ -1,5 +1,5 @@
 //! D-Bus Message.
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use crate::{
     Error, ObjectPath, Result,
@@ -60,7 +60,8 @@ pub struct Message {
 
 pub(super) struct Inner {
     pub(crate) primary_header: PrimaryHeader,
-    pub(crate) quick_fields: std::sync::OnceLock<QuickFields>,
+    /// The fields of the header, as found in `bytes`, once they've been looked for.
+    quick_fields: std::sync::OnceLock<QuickFields>,
     pub(crate) bytes: serialized::Data<'static, 'static>,
     pub(crate) body_offset: usize,
     pub(crate) recv_seq: Sequence,
@@ -179,18 +180,8 @@ impl Message {
 
     /// The message header.
     pub fn header(&self) -> Header<'_> {
-        let quick_fields = self.quick_fields();
-        let fields = Fields {
-            path: quick_fields.path(self),
-            interface: quick_fields.interface(self),
-            member: quick_fields.member(self),
-            error_name: quick_fields.error_name(self),
-            reply_serial: quick_fields.reply_serial(),
-            destination: quick_fields.destination(self),
-            sender: quick_fields.sender(self),
-            signature: Cow::Borrowed(quick_fields.signature()),
-            unix_fds: quick_fields.unix_fds(),
-        };
+        // SAFETY: The quick fields of a message are only ever created from its own bytes.
+        let fields = unsafe { self.quick_fields().fields(&self.inner.bytes) };
 
         Header::new(self.inner.primary_header.clone(), fields)
     }

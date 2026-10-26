@@ -3,12 +3,12 @@ use serde::{
     de::{Error, SeqAccess, Visitor},
     ser::{SerializeSeq, SerializeStruct},
 };
-use std::{borrow::Cow, num::NonZeroU32};
+use std::{borrow::Cow, num::NonZeroU32, ops::Range, str};
 
 use crate::{
     ObjectPath, Signature, Type, Variant,
-    message::{FieldCode, Header, Message},
-    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
+    message::{FieldCode, Header},
+    names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName, WellKnownName},
 };
 use zbus_utils::object_path;
 
@@ -203,28 +203,14 @@ impl FieldPos {
             .unwrap_or_else(Self::new_not_present)
     }
 
-    /// Reassemble a previously cached field.
-    ///
-    /// **NOTE**: The caller must ensure that the `msg_buff` is the same one `build` was called for.
-    /// Otherwise, you'll get a panic.
-    pub fn read<'m, T>(&self, msg_buf: &'m [u8]) -> Option<T>
-    where
-        T: TryFrom<&'m str>,
-        T::Error: std::fmt::Debug,
-    {
+    /// The byte range of the field in the message, if it's present.
+    fn range(self) -> Option<Range<usize>> {
         match self {
             Self {
                 start: 0..=1,
                 end: 0,
             } => None,
-            Self { start, end } => {
-                let s = std::str::from_utf8(&msg_buf[(*start as usize)..(*end as usize)])
-                    .expect("Invalid utf8 when reconstructing string");
-                // We already check the fields during the construction of `Self`.
-                T::try_from(s)
-                    .map(Some)
-                    .expect("Invalid field reconstruction")
-            }
+            Self { start, end } => Some(start as usize..end as usize),
         }
     }
 }
@@ -238,6 +224,8 @@ pub(crate) struct QuickFields {
     error_name: FieldPos,
     reply_serial: Option<NonZeroU32>,
     destination: FieldPos,
+    /// Whether the destination is a unique name, rather than a well-known one.
+    unique_destination: bool,
     sender: FieldPos,
     signature: Signature,
     unix_fds: Option<u32>,
@@ -252,45 +240,49 @@ impl QuickFields {
             error_name: FieldPos::new(buf, header.error_name()),
             reply_serial: header.reply_serial(),
             destination: FieldPos::new(buf, header.destination()),
+            unique_destination: matches!(header.destination(), Some(BusName::Unique(_))),
             sender: FieldPos::new(buf, header.sender()),
             signature: header.signature().clone(),
             unix_fds: header.unix_fds(),
         }
     }
 
-    pub fn path<'m>(&self, msg: &'m Message) -> Option<ObjectPath<'m>> {
-        self.path.read(msg.data())
-    }
+    /// The fields, borrowed from the bytes of the message.
+    ///
+    /// The fields were checked when they were decoded, so they're not checked again.
+    ///
+    /// # Safety
+    ///
+    /// `bytes` must be the bytes of the message that `self` was created for.
+    pub unsafe fn fields<'m>(&'m self, bytes: &'m [u8]) -> Fields<'m> {
+        let read = |pos: FieldPos| {
+            pos.range().map(|range| {
+                // SAFETY: The caller ensures that `bytes` are those that `pos` was created
+                // for, from a string of them.
+                unsafe { str::from_utf8_unchecked(&bytes[range]) }
+            })
+        };
 
-    pub fn interface<'m>(&self, msg: &'m Message) -> Option<InterfaceName<'m>> {
-        self.interface.read(msg.data())
-    }
-
-    pub fn member<'m>(&self, msg: &'m Message) -> Option<MemberName<'m>> {
-        self.member.read(msg.data())
-    }
-
-    pub fn error_name<'m>(&self, msg: &'m Message) -> Option<ErrorName<'m>> {
-        self.error_name.read(msg.data())
-    }
-
-    pub fn reply_serial(&self) -> Option<NonZeroU32> {
-        self.reply_serial
-    }
-
-    pub fn destination<'m>(&self, msg: &'m Message) -> Option<BusName<'m>> {
-        self.destination.read(msg.data())
-    }
-
-    pub fn sender<'m>(&self, msg: &'m Message) -> Option<UniqueName<'m>> {
-        self.sender.read(msg.data())
+        Fields {
+            path: read(self.path).map(ObjectPath::from_str_unchecked),
+            interface: read(self.interface).map(InterfaceName::from_str_unchecked),
+            member: read(self.member).map(MemberName::from_str_unchecked),
+            error_name: read(self.error_name).map(ErrorName::from_str_unchecked),
+            reply_serial: self.reply_serial,
+            destination: read(self.destination).map(|name| {
+                if self.unique_destination {
+                    BusName::Unique(UniqueName::from_str_unchecked(name))
+                } else {
+                    BusName::WellKnown(WellKnownName::from_str_unchecked(name))
+                }
+            }),
+            sender: read(self.sender).map(UniqueName::from_str_unchecked),
+            signature: Cow::Borrowed(&self.signature),
+            unix_fds: self.unix_fds,
+        }
     }
 
     pub fn signature(&self) -> &Signature {
         &self.signature
-    }
-
-    pub fn unix_fds(&self) -> Option<u32> {
-        self.unix_fds
     }
 }
