@@ -2,7 +2,7 @@
 
 use zbus::{
     Message,
-    message::Header,
+    message::{Header, Type},
     wire::{
         BE, Endian, LE,
         serialized::{Context, Data},
@@ -49,8 +49,13 @@ fn check(data: &[u8], endian: Endian) {
 
     // The body of a message isn't looked at, as it may be shorter than its header says.
     let (received, decoded) = match (received, decoded) {
-        (Ok(received), Ok((decoded, _))) => (received, decoded),
+        (Ok(received), Ok((decoded, len))) => {
+            assert!(whole(&decoded, len, data));
+
+            (received, decoded)
+        }
         (Err(_), Err(_)) => return,
+        (Err(_), Ok((decoded, len))) if !whole(&decoded, len, data) => return,
         (received, decoded) => panic!(
             "decoded as a message: {:?}, as a header: {:?}",
             received.map(|_| ()),
@@ -80,6 +85,27 @@ fn check(data: &[u8], endian: Endian) {
     assert_eq!(header.sender(), decoded.sender());
     assert_eq!(header.signature(), decoded.signature());
     assert_eq!(header.unix_fds(), decoded.unix_fds());
+}
+
+/// Whether a message whose header, `len` bytes long, decodes to `header` from the start of `data`
+/// is whole, as a received message has to be beyond the fields of its header: of the only version
+/// of the protocol, with the fields that its type requires, with padding of 0s after its header,
+/// and with the file descriptors that its header says it brought, of which `data` has none.
+fn whole(header: &Header<'_>, len: usize, data: &[u8]) -> bool {
+    let required = match header.message_type() {
+        Type::MethodCall => header.path().is_some() && header.member().is_some(),
+        Type::MethodReturn => header.reply_serial().is_some(),
+        Type::Error => header.error_name().is_some() && header.reply_serial().is_some(),
+        Type::Signal => {
+            header.path().is_some() && header.interface().is_some() && header.member().is_some()
+        }
+    };
+    let padded = data
+        .get(len..len.next_multiple_of(8))
+        .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
+    let fds = !cfg!(unix) || header.unix_fds().unwrap_or(0) == 0;
+
+    header.primary().protocol_version() == 1 && required && padded && fds
 }
 
 /// Where the length of the header fields lies in a message, which is followed by the fields.

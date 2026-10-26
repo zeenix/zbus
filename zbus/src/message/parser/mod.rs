@@ -12,7 +12,8 @@
 //! one that runs past the end of its bytes, which serde takes if all that's missing is the byte
 //! that ends its last string. Like serde, it rejects a field with an unknown code, rather than
 //! ignoring it as the specification asks, and it checks neither the byte that ends a string nor
-//! the padding after the header.
+//! the padding after the header. That padding is checked as a message is received, along with the
+//! rest of what makes a message whole, such as the fields that its type requires.
 //!
 //! It's made of winnow's combinators, but for the `u32`s, which are taken as 4 bytes and converted
 //! at once: winnow's parsers of integers build them a byte at a time, which takes more

@@ -1,5 +1,5 @@
 //! D-Bus Message.
-use std::{fmt, sync::Arc};
+use std::{fmt, ops::Range, sync::Arc};
 
 use crate::{
     Error, ObjectPath, Result,
@@ -21,6 +21,7 @@ mod body;
 pub use body::Body;
 
 pub(crate) mod header;
+use header::PROTOCOL_VERSION;
 pub use header::{EndianSig, Flags, Header, NATIVE_ENDIAN_SIG, PrimaryHeader, Type};
 
 pub(crate) mod parser;
@@ -152,6 +153,12 @@ impl Message {
         }
 
         let body_offset = header_len + padding_for_8_bytes(header_len);
+        check_whole(
+            &primary_header,
+            &quick_fields,
+            &bytes,
+            header_len..body_offset,
+        )?;
         let quick_fields = quick_fields.into();
 
         Ok(Self {
@@ -249,6 +256,37 @@ impl Message {
     }
 }
 
+/// Check what makes the message in `bytes` whole, beyond each field of its header, which parsing
+/// the header checks: its protocol version, the fields that its type requires, the padding between
+/// its header and its body, at `padding`, which must be 0, and, on Unix, that it brought as many
+/// file descriptors as its header says.
+///
+/// Only a received message is checked so: one that zbus builds may lack a field that the
+/// specification requires, if it was built so.
+fn check_whole(
+    primary_header: &PrimaryHeader,
+    quick_fields: &QuickFields,
+    bytes: &serialized::Data<'static, 'static>,
+    padding: Range<usize>,
+) -> Result<()> {
+    if primary_header.protocol_version() != PROTOCOL_VERSION {
+        return Err(Error::InvalidField);
+    }
+    quick_fields.check_required(primary_header.msg_type())?;
+    let Some(padding) = bytes.get(padding) else {
+        return Err(Error::OutOfBounds);
+    };
+    if let Some(byte) = padding.iter().find(|byte| **byte != 0) {
+        return Err(Error::PaddingNot0(*byte));
+    }
+    #[cfg(unix)]
+    if bytes.fds().len() < quick_fields.unix_fds().unwrap_or(0) as usize {
+        return Err(Error::MissingParameter("Missing file descriptors"));
+    }
+
+    Ok(())
+}
+
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut msg = f.debug_struct("Msg");
@@ -341,7 +379,7 @@ mod tests {
     use std::os::fd::{AsFd, AsRawFd};
     use test_log::test;
 
-    use super::Message;
+    use super::{Message, Type, parser};
     use crate::{Error, wire::serialized::Data};
 
     #[test]
@@ -402,5 +440,91 @@ mod tests {
 
         let error = Message::from_raw_parts(data, 0).unwrap_err();
         assert_eq!(error, Error::InvalidObjectPath);
+    }
+
+    #[test]
+    fn protocol_version() {
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&())
+            .unwrap();
+        let mut bytes = m.data().bytes().to_vec();
+        bytes[3] = 2;
+        let data = Data::new(bytes, m.data().context());
+
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::InvalidField);
+    }
+
+    #[test]
+    fn required_fields() {
+        // A method call with only the fields that it requires, which aren't those that another
+        // type of message requires.
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&())
+            .unwrap();
+        Message::from_raw_parts(m.data().clone(), 0).unwrap();
+        for msg_type in [Type::MethodReturn, Type::Error, Type::Signal] {
+            let mut bytes = m.data().bytes().to_vec();
+            bytes[1] = msg_type as u8;
+            let data = Data::new(bytes, m.data().context());
+
+            let error = Message::from_raw_parts(data, 0).unwrap_err();
+            assert_eq!(error, Error::MissingField, "{msg_type:?}");
+        }
+
+        // The builder makes a reply without a reply serial, if asked to.
+        let reply = Message::method_return(&m.header())
+            .reply_serial(None)
+            .build(&())
+            .unwrap();
+        let error = Message::from_raw_parts(reply.data().clone(), 0).unwrap_err();
+        assert_eq!(error, Error::MissingField);
+    }
+
+    #[test]
+    fn body_padding() {
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&"Pong")
+            .unwrap();
+        let (_, header_len, _) = parser::parse(m.data()).unwrap();
+        assert_ne!(
+            header_len, m.inner.body_offset,
+            "the header needs no padding"
+        );
+
+        let mut bytes = m.data().bytes().to_vec();
+        bytes[header_len] = 7;
+        let data = Data::new(bytes, m.data().context());
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::PaddingNot0(7));
+
+        // Bytes that end with the header, without the padding after it.
+        let bytes = m.data().bytes()[..header_len].to_vec();
+        let data = Data::new(bytes, m.data().context());
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::OutOfBounds);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_fds() {
+        let stdout = std::io::stdout();
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&(Fd::from(&stdout), Fd::from(&stdout)))
+            .unwrap();
+        let fds = m
+            .data()
+            .fds()
+            .iter()
+            .map(|fd| fd.try_clone().unwrap())
+            .collect::<Vec<_>>();
+        let bytes = m.data().bytes().to_vec();
+        let data = Data::new_fds(bytes.clone(), m.data().context(), fds);
+        Message::from_raw_parts(data, 0).unwrap();
+
+        let fds = vec![m.data().fds()[0].try_clone().unwrap()];
+        let data = Data::new_fds(bytes, m.data().context(), fds);
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert!(matches!(error, Error::MissingParameter(_)), "{error:?}");
     }
 }

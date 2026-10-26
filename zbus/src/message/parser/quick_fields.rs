@@ -6,8 +6,8 @@ use std::{borrow::Cow, num::NonZeroU32, str};
 use winnow::stream::Accumulate;
 
 use crate::{
-    ObjectPath, Signature,
-    message::Fields,
+    Error, ObjectPath, Signature,
+    message::{Fields, Type},
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName, WellKnownName},
 };
 
@@ -35,6 +35,24 @@ impl QuickFields {
     #[cfg(unix)]
     pub(crate) fn unix_fds(&self) -> Option<u32> {
         self.unix_fds
+    }
+
+    /// Check that the fields that a message of type `msg_type` requires are all there.
+    pub(crate) fn check_required(&self, msg_type: Type) -> Result<(), Error> {
+        let present = match msg_type {
+            Type::MethodCall => self.path.is_some() && self.member.is_some(),
+            Type::MethodReturn => self.reply_serial.is_some(),
+            Type::Error => self.error_name.is_some() && self.reply_serial.is_some(),
+            Type::Signal => {
+                self.path.is_some() && self.interface.is_some() && self.member.is_some()
+            }
+        };
+
+        if present {
+            Ok(())
+        } else {
+            Err(Error::MissingField)
+        }
     }
 
     /// The fields, borrowed from the bytes of the message.

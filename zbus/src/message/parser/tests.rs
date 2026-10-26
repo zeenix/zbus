@@ -120,7 +120,8 @@ fn primary_header() {
     let mut bytes = raw_header(&[]);
     assert_eq!(header(&bytes).message_type(), Type::MethodCall);
 
-    // Unknown flags are kept, and any protocol version is taken.
+    // Unknown flags are kept, and any protocol version is taken, which only a received message
+    // is checked for.
     bytes[2] = 0x9;
     bytes[3] = 2;
     let primary = header(&bytes).into_primary();
