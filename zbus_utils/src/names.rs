@@ -5,6 +5,13 @@
 //!
 //! [spec]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names
 
+use winnow::{
+    Parser,
+    combinator::{alt, separated},
+    stream::AsChar,
+    token::{one_of, take_while},
+};
+
 /// Which kind of bus name a string turned out to be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BusNameKind {
@@ -65,12 +72,6 @@ pub fn validate_property_name(bytes: &[u8]) -> Result<(), &'static str> {
 }
 
 fn parse_unique_name(bytes: &[u8]) -> Result<(), ()> {
-    use winnow::{
-        Parser,
-        combinator::{alt, separated},
-        stream::AsChar,
-        token::take_while,
-    };
     // Rules
     //
     // * Only ASCII alphanumeric, `_` or '-'
@@ -78,10 +79,10 @@ fn parse_unique_name(bytes: &[u8]) -> Result<(), ()> {
     // * Must contain at least one `.`.
     // * Each element must be 1 character (so name must be minimum 4 characters long).
     // * <= 255 characters.
-    let element = take_while::<_, _, ()>(1.., (AsChar::is_alphanum, b'_', b'-'));
-    let peer_name = (b':', (separated(2.., element, b'.'))).map(|_: (_, ())| ());
+    let peer_name = (b':', (separated(2.., unique_element, b'.'))).map(|_: (_, ())| ());
     let bus_name = b"org.freedesktop.DBus".map(|_| ());
-    let mut unique_name = alt((bus_name, peer_name));
+    // The name of a peer is by far the likeliest, so it's tried first.
+    let mut unique_name = alt((peer_name, bus_name));
 
     unique_name.parse(bytes).map_err(|_| ()).and_then(|_: ()| {
         // Least likely scenario so we check this last.
@@ -94,12 +95,6 @@ fn parse_unique_name(bytes: &[u8]) -> Result<(), ()> {
 }
 
 fn parse_well_known_name(bytes: &[u8]) -> Result<(), ()> {
-    use winnow::{
-        Parser,
-        combinator::separated,
-        stream::AsChar,
-        token::{one_of, take_while},
-    };
     // Rules
     //
     // * Only ASCII alphanumeric, `_` or '-'.
@@ -109,10 +104,7 @@ fn parse_well_known_name(bytes: &[u8]) -> Result<(), ()> {
     //  * not begin with a digit.
     //  * be 1 character (so name must be minimum 3 characters long).
     // * <= 255 characters.
-    let first_element_char = one_of((AsChar::is_alpha, b'_', b'-'));
-    let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_', b'-'));
-    let element = (first_element_char, subsequent_element_chars);
-    let mut well_known_name = separated(2.., element, b'.');
+    let mut well_known_name = separated(2.., well_known_element, b'.');
 
     well_known_name
         .parse(bytes)
@@ -128,12 +120,6 @@ fn parse_well_known_name(bytes: &[u8]) -> Result<(), ()> {
 }
 
 fn parse_interface_name(bytes: &[u8]) -> Result<(), ()> {
-    use winnow::{
-        Parser,
-        combinator::separated,
-        stream::AsChar,
-        token::{one_of, take_while},
-    };
     // Rules
     //
     // * Only ASCII alphanumeric and `_`
@@ -145,10 +131,7 @@ fn parse_interface_name(bytes: &[u8]) -> Result<(), ()> {
     // * <= 255 characters.
     //
     // Note: A `-` not allowed, which is why we can't use the same parser as for `WellKnownName`.
-    let first_element_char = one_of((AsChar::is_alpha, b'_'));
-    let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_'));
-    let element = (first_element_char, subsequent_element_chars);
-    let mut interface_name = separated(2.., element, b'.');
+    let mut interface_name = separated(2.., interface_element, b'.');
 
     interface_name
         .parse(bytes)
@@ -164,19 +147,15 @@ fn parse_interface_name(bytes: &[u8]) -> Result<(), ()> {
 }
 
 fn parse_member_name(bytes: &[u8]) -> Result<(), ()> {
-    use winnow::{
-        Parser,
-        stream::AsChar,
-        token::{one_of, take_while},
-    };
     // Rules
     //
     // * Only ASCII alphanumeric or `_`.
     // * Must not begin with a digit.
     // * Must contain at least 1 character.
     // * <= 255 characters.
-    let first_element_char = one_of((AsChar::is_alpha, b'_'));
-    let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_'));
+    let first_element_char = one_of(|byte: u8| byte.is_alpha() || byte == b'_');
+    let subsequent_element_chars =
+        take_while::<_, _, ()>(0.., |byte: u8| byte.is_alphanum() || byte == b'_');
     let mut member_name = (first_element_char, subsequent_element_chars);
 
     member_name.parse(bytes).map_err(|_| ()).and_then(|_| {
@@ -187,6 +166,43 @@ fn parse_member_name(bytes: &[u8]) -> Result<(), ()> {
 
         Ok(())
     })
+}
+
+// Each element of a name is parsed by a function of its own, which builds the parser of the
+// element where it runs, from sets of bytes that are closures of their own. That makes each
+// `take_while` a parser of a type of its own, which the compiler inlines with its range of
+// occurrences known, so that a whole name is checked in a single loop that keeps its state in
+// registers. With a `take_while` that parsers share, or a parser built ahead and handed to
+// `separated`, the loop goes through memory for each element, more than twice as often in all.
+
+/// An element of a unique name.
+#[inline(always)]
+fn unique_element(input: &mut &[u8]) -> Result<(), ()> {
+    let element_char = |byte: u8| byte.is_alphanum() || byte == b'_' || byte == b'-';
+
+    take_while(1.., element_char).void().parse_next(input)
+}
+
+/// An element of a well-known name.
+#[inline(always)]
+fn well_known_element(input: &mut &[u8]) -> Result<(), ()> {
+    let first_char = |byte: u8| byte.is_alpha() || byte == b'_' || byte == b'-';
+    let subsequent_char = |byte: u8| byte.is_alphanum() || byte == b'_' || byte == b'-';
+
+    (one_of(first_char), take_while(0.., subsequent_char))
+        .void()
+        .parse_next(input)
+}
+
+/// An element of an interface or an error name.
+#[inline(always)]
+fn interface_element(input: &mut &[u8]) -> Result<(), ()> {
+    let first_char = |byte: u8| byte.is_alpha() || byte == b'_';
+    let subsequent_char = |byte: u8| byte.is_alphanum() || byte == b'_';
+
+    (one_of(first_char), take_while(0.., subsequent_char))
+        .void()
+        .parse_next(input)
 }
 
 const UNIQUE_NAME_ERROR: &str = "Invalid unique name. See \
@@ -216,6 +232,33 @@ const PROPERTY_NAME_TOO_LONG_ERROR: &str =
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_strings;
+
+    #[test]
+    fn same_as_reference() {
+        test_strings::for_each(|name| {
+            assert_eq!(
+                parse_unique_name(name),
+                reference::parse_unique_name(name),
+                "{name:?}"
+            );
+            assert_eq!(
+                parse_well_known_name(name),
+                reference::parse_well_known_name(name),
+                "{name:?}"
+            );
+            assert_eq!(
+                parse_interface_name(name),
+                reference::parse_interface_name(name),
+                "{name:?}"
+            );
+            assert_eq!(
+                parse_member_name(name),
+                reference::parse_member_name(name),
+                "{name:?}"
+            );
+        });
+    }
 
     #[test]
     fn unique_names() {
@@ -429,5 +472,98 @@ mod tests {
             PROPERTY_NAME_TOO_LONG_ERROR,
             "Invalid property name. It can not be longer than 255 characters."
         );
+    }
+
+    /// The rules of each name, written with winnow's combinators as they are in the specification,
+    /// for the validators, which are written for speed, to be checked against.
+    mod reference {
+        pub(super) fn parse_unique_name(bytes: &[u8]) -> Result<(), ()> {
+            use winnow::{
+                Parser,
+                combinator::{alt, separated},
+                stream::AsChar,
+                token::take_while,
+            };
+            let element = take_while::<_, _, ()>(1.., (AsChar::is_alphanum, b'_', b'-'));
+            let peer_name = (b':', (separated(2.., element, b'.'))).map(|_: (_, ())| ());
+            let bus_name = b"org.freedesktop.DBus".map(|_| ());
+            let mut unique_name = alt((bus_name, peer_name));
+
+            unique_name.parse(bytes).map_err(|_| ()).and_then(|_: ()| {
+                if bytes.len() > 255 {
+                    return Err(());
+                }
+
+                Ok(())
+            })
+        }
+
+        pub(super) fn parse_well_known_name(bytes: &[u8]) -> Result<(), ()> {
+            use winnow::{
+                Parser,
+                combinator::separated,
+                stream::AsChar,
+                token::{one_of, take_while},
+            };
+            let first_element_char = one_of((AsChar::is_alpha, b'_', b'-'));
+            let subsequent_element_chars =
+                take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_', b'-'));
+            let element = (first_element_char, subsequent_element_chars);
+            let mut well_known_name = separated(2.., element, b'.');
+
+            well_known_name
+                .parse(bytes)
+                .map_err(|_| ())
+                .and_then(|_: ()| {
+                    if bytes.len() > 255 {
+                        return Err(());
+                    }
+
+                    Ok(())
+                })
+        }
+
+        pub(super) fn parse_interface_name(bytes: &[u8]) -> Result<(), ()> {
+            use winnow::{
+                Parser,
+                combinator::separated,
+                stream::AsChar,
+                token::{one_of, take_while},
+            };
+            let first_element_char = one_of((AsChar::is_alpha, b'_'));
+            let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_'));
+            let element = (first_element_char, subsequent_element_chars);
+            let mut interface_name = separated(2.., element, b'.');
+
+            interface_name
+                .parse(bytes)
+                .map_err(|_| ())
+                .and_then(|_: ()| {
+                    if bytes.len() > 255 {
+                        return Err(());
+                    }
+
+                    Ok(())
+                })
+        }
+
+        pub(super) fn parse_member_name(bytes: &[u8]) -> Result<(), ()> {
+            use winnow::{
+                Parser,
+                stream::AsChar,
+                token::{one_of, take_while},
+            };
+            let first_element_char = one_of((AsChar::is_alpha, b'_'));
+            let subsequent_element_chars = take_while::<_, _, ()>(0.., (AsChar::is_alphanum, b'_'));
+            let mut member_name = (first_element_char, subsequent_element_chars);
+
+            member_name.parse(bytes).map_err(|_| ()).and_then(|_| {
+                if bytes.len() > 255 {
+                    return Err(());
+                }
+
+                Ok(())
+            })
+        }
     }
 }

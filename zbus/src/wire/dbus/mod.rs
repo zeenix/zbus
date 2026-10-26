@@ -39,7 +39,8 @@ pub(crate) fn reject_maybe_in_signature_str(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn maybe_not_in_dbus() -> Error {
+/// The error of finding a maybe type where a D-Bus type is expected.
+pub(crate) fn maybe_not_in_dbus() -> Error {
     Error::Failure(
         "GVariant `Maybe` types are not valid in the D-Bus format; use the `zgvariant` crate \
          for GVariant serialization"

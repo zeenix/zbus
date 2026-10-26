@@ -1,5 +1,5 @@
 //! D-Bus Message.
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use crate::{
     Error, ObjectPath, Result,
@@ -16,14 +16,15 @@ pub(crate) use field_code::FieldCode;
 
 mod fields;
 pub(crate) use fields::Fields;
-use fields::QuickFields;
 
 mod body;
 pub use body::Body;
 
 pub(crate) mod header;
 pub use header::{EndianSig, Flags, Header, NATIVE_ENDIAN_SIG, PrimaryHeader, Type};
-use header::{MIN_MESSAGE_SIZE, PRIMARY_HEADER_SIZE};
+
+pub(crate) mod parser;
+use parser::QuickFields;
 
 /// A position in the stream of [`Message`] objects received by a single [`zbus::Connection`].
 ///
@@ -60,7 +61,8 @@ pub struct Message {
 
 pub(super) struct Inner {
     pub(crate) primary_header: PrimaryHeader,
-    pub(crate) quick_fields: std::sync::OnceLock<QuickFields>,
+    /// The fields of the header, as found in `bytes`, once they've been looked for.
+    quick_fields: std::sync::OnceLock<QuickFields>,
     pub(crate) bytes: serialized::Data<'static, 'static>,
     pub(crate) body_offset: usize,
     pub(crate) recv_seq: Sequence,
@@ -144,19 +146,13 @@ impl Message {
         bytes: serialized::Data<'static, 'static>,
         recv_seq: u64,
     ) -> Result<Self> {
-        let endian = Endian::from(EndianSig::try_from(bytes[0])?);
-        if endian != bytes.context().endian() {
+        let (primary_header, header_len, quick_fields) = parser::parse(&bytes)?;
+        if Endian::from(primary_header.endian_sig()) != bytes.context().endian() {
             return Err(Error::IncorrectEndian);
         }
 
-        let (primary_header, fields_len) = PrimaryHeader::read_from_data(&bytes)?;
-        let fields_bytes = bytes.slice(PRIMARY_HEADER_SIZE..);
-        let (fields, _) = fields_bytes.deserialize()?;
-        let header = Header::new(primary_header.clone(), fields);
-
-        let header_len = MIN_MESSAGE_SIZE + fields_len as usize;
         let body_offset = header_len + padding_for_8_bytes(header_len);
-        let quick_fields = QuickFields::new(&bytes, &header).into();
+        let quick_fields = quick_fields.into();
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -179,18 +175,8 @@ impl Message {
 
     /// The message header.
     pub fn header(&self) -> Header<'_> {
-        let quick_fields = self.quick_fields();
-        let fields = Fields {
-            path: quick_fields.path(self),
-            interface: quick_fields.interface(self),
-            member: quick_fields.member(self),
-            error_name: quick_fields.error_name(self),
-            reply_serial: quick_fields.reply_serial(),
-            destination: quick_fields.destination(self),
-            sender: quick_fields.sender(self),
-            signature: Cow::Borrowed(quick_fields.signature()),
-            unix_fds: quick_fields.unix_fds(),
-        };
+        // SAFETY: The quick fields of a message are only ever created from its own bytes.
+        let fields = unsafe { self.quick_fields().fields(&self.inner.bytes) };
 
         Header::new(self.inner.primary_header.clone(), fields)
     }
@@ -251,13 +237,14 @@ impl Message {
     }
 
     fn quick_fields(&self) -> &QuickFields {
+        // Only a message that zbus built has its header parsed this late, and its header is valid,
+        // unless it was built with a name or path from an unchecked constructor, such as
+        // `ObjectPath::from_str_unchecked`.
         self.inner.quick_fields.get_or_init(|| {
-            let bytes = &self.inner.bytes;
-            // SAFETY: We ensure that by the time `quick_fields` is called, the header has already
-            // been checked.
-            let (header, _): (Header<'_>, _) = bytes.deserialize().unwrap();
+            let (_, _, quick_fields) =
+                parser::parse(&self.inner.bytes).expect("Invalid field in a built message");
 
-            QuickFields::new(bytes, &header)
+            quick_fields
         })
     }
 }
@@ -355,7 +342,7 @@ mod tests {
     use test_log::test;
 
     use super::Message;
-    use crate::Error;
+    use crate::{Error, wire::serialized::Data};
 
     #[test]
     fn test() {
@@ -396,5 +383,24 @@ mod tests {
             .build(&("kaboom!", 32))
             .unwrap();
         assert_eq!(e.to_string(), "Error org.freedesktop.zbus.Error: kaboom!");
+    }
+
+    #[test]
+    fn invalid_path_field() {
+        // `/org.zbus/Test` is not a valid object path, so a message with it as its path is
+        // rejected as it's received, rather than reading its header failing later.
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&())
+            .unwrap();
+        let mut bytes = m.data().bytes().to_vec();
+        let path = bytes
+            .windows(14)
+            .position(|w| w == b"/org/zbus/Test")
+            .unwrap();
+        bytes[path + 4] = b'.';
+        let data = Data::new(bytes, m.data().context());
+
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::InvalidObjectPath);
     }
 }

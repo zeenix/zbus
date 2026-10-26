@@ -7,9 +7,10 @@ use std::{borrow::Cow, num::NonZeroU32};
 
 use crate::{
     ObjectPath, Signature, Type, Variant,
-    message::{FieldCode, Header, Message},
+    message::FieldCode,
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
 };
+use zbus_utils::object_path;
 
 /// A collection of [`Field`] instances.
 ///
@@ -123,7 +124,11 @@ impl<'de> Visitor<'de> for FieldsVisitor {
         while let Some((code, value)) = visitor.next_element::<(FieldCode, Variant<'de>)>()? {
             match code {
                 FieldCode::Path => {
-                    fields.path = Some(ObjectPath::try_from(value).map_err(V::Error::custom)?)
+                    let path = ObjectPath::try_from(value).map_err(V::Error::custom)?;
+                    // A variant doesn't check the object path it holds, unlike the name fields.
+                    object_path::validate(path.as_bytes())
+                        .map_err(|_| V::Error::custom(crate::Error::InvalidObjectPath))?;
+                    fields.path = Some(path)
                 }
                 FieldCode::Interface => {
                     fields.interface =
@@ -158,134 +163,5 @@ impl<'de> Visitor<'de> for FieldsVisitor {
         }
 
         Ok(fields)
-    }
-}
-
-/// A byte range of a field in a Message, used in [`QuickFields`].
-///
-/// Some invalid encodings (end = 0) are used to indicate "not cached" and "not present".
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct FieldPos {
-    start: u32,
-    end: u32,
-}
-
-impl FieldPos {
-    pub fn new_not_present() -> Self {
-        Self { start: 1, end: 0 }
-    }
-
-    pub fn build(msg_buf: &[u8], field_buf: &str) -> Option<Self> {
-        let buf_start = msg_buf.as_ptr() as usize;
-        let field_start = field_buf.as_ptr() as usize;
-        let offset = field_start.checked_sub(buf_start)?;
-        if offset <= msg_buf.len() && offset + field_buf.len() <= msg_buf.len() {
-            Some(Self {
-                start: offset.try_into().ok()?,
-                end: (offset + field_buf.len()).try_into().ok()?,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn new<T>(msg_buf: &[u8], field: Option<&T>) -> Self
-    where
-        T: std::ops::Deref<Target = str>,
-    {
-        field
-            .and_then(|f| Self::build(msg_buf, f.deref()))
-            .unwrap_or_else(Self::new_not_present)
-    }
-
-    /// Reassemble a previously cached field.
-    ///
-    /// **NOTE**: The caller must ensure that the `msg_buff` is the same one `build` was called for.
-    /// Otherwise, you'll get a panic.
-    pub fn read<'m, T>(&self, msg_buf: &'m [u8]) -> Option<T>
-    where
-        T: TryFrom<&'m str>,
-        T::Error: std::fmt::Debug,
-    {
-        match self {
-            Self {
-                start: 0..=1,
-                end: 0,
-            } => None,
-            Self { start, end } => {
-                let s = std::str::from_utf8(&msg_buf[(*start as usize)..(*end as usize)])
-                    .expect("Invalid utf8 when reconstructing string");
-                // We already check the fields during the construction of `Self`.
-                T::try_from(s)
-                    .map(Some)
-                    .expect("Invalid field reconstruction")
-            }
-        }
-    }
-}
-
-/// A cache of the Message header fields.
-#[derive(Debug, Default, Clone)]
-pub(crate) struct QuickFields {
-    path: FieldPos,
-    interface: FieldPos,
-    member: FieldPos,
-    error_name: FieldPos,
-    reply_serial: Option<NonZeroU32>,
-    destination: FieldPos,
-    sender: FieldPos,
-    signature: Signature,
-    unix_fds: Option<u32>,
-}
-
-impl QuickFields {
-    pub fn new(buf: &[u8], header: &Header<'_>) -> Self {
-        Self {
-            path: FieldPos::new(buf, header.path()),
-            interface: FieldPos::new(buf, header.interface()),
-            member: FieldPos::new(buf, header.member()),
-            error_name: FieldPos::new(buf, header.error_name()),
-            reply_serial: header.reply_serial(),
-            destination: FieldPos::new(buf, header.destination()),
-            sender: FieldPos::new(buf, header.sender()),
-            signature: header.signature().clone(),
-            unix_fds: header.unix_fds(),
-        }
-    }
-
-    pub fn path<'m>(&self, msg: &'m Message) -> Option<ObjectPath<'m>> {
-        self.path.read(msg.data())
-    }
-
-    pub fn interface<'m>(&self, msg: &'m Message) -> Option<InterfaceName<'m>> {
-        self.interface.read(msg.data())
-    }
-
-    pub fn member<'m>(&self, msg: &'m Message) -> Option<MemberName<'m>> {
-        self.member.read(msg.data())
-    }
-
-    pub fn error_name<'m>(&self, msg: &'m Message) -> Option<ErrorName<'m>> {
-        self.error_name.read(msg.data())
-    }
-
-    pub fn reply_serial(&self) -> Option<NonZeroU32> {
-        self.reply_serial
-    }
-
-    pub fn destination<'m>(&self, msg: &'m Message) -> Option<BusName<'m>> {
-        self.destination.read(msg.data())
-    }
-
-    pub fn sender<'m>(&self, msg: &'m Message) -> Option<UniqueName<'m>> {
-        self.sender.read(msg.data())
-    }
-
-    pub fn signature(&self) -> &Signature {
-        &self.signature
-    }
-
-    pub fn unix_fds(&self) -> Option<u32> {
-        self.unix_fds
     }
 }

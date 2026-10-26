@@ -7,3 +7,6 @@ pub mod macros;
 pub mod names;
 pub mod object_path;
 pub mod signature;
+
+#[cfg(test)]
+mod test_strings;

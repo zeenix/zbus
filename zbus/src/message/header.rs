@@ -12,10 +12,7 @@ use crate::{
     message::Fields,
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
     utils::fmt_bitflags,
-    wire::{
-        Endian,
-        serialized::{self, Context},
-    },
+    wire::Endian,
 };
 
 pub(crate) const PRIMARY_HEADER_SIZE: usize = 12;
@@ -173,21 +170,28 @@ impl PrimaryHeader {
         }
     }
 
-    pub(crate) fn read(buf: &[u8]) -> Result<(PrimaryHeader, u32), Error> {
-        let endian = Endian::from(EndianSig::try_from(buf[0])?);
-        let ctx = Context::new(endian, 0);
-        let data = serialized::Data::new(buf, ctx);
-
-        Self::read_from_data(&data)
+    /// A primary header with the given contents.
+    pub(super) fn from_parts(
+        endian_sig: EndianSig,
+        msg_type: Type,
+        flags: Flags,
+        protocol_version: u8,
+        body_len: u32,
+        serial_num: NonZeroU32,
+    ) -> Self {
+        Self {
+            endian_sig,
+            msg_type,
+            flags,
+            protocol_version,
+            body_len,
+            serial_num,
+        }
     }
 
-    pub(crate) fn read_from_data(
-        data: &serialized::Data<'_, '_>,
-    ) -> Result<(PrimaryHeader, u32), Error> {
-        let (primary_header, size) = data.deserialize()?;
-        assert_eq!(size, PRIMARY_HEADER_SIZE);
-        let (fields_len, _) = data.slice(PRIMARY_HEADER_SIZE..).deserialize()?;
-        Ok((primary_header, fields_len))
+    /// Read the primary header at the start of `buf`, and the length of the header fields after it.
+    pub(crate) fn read(buf: &[u8]) -> Result<(PrimaryHeader, u32), Error> {
+        super::parser::parse_primary_header(buf)
     }
 
     /// D-Bus code for endian encoding of the message.

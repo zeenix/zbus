@@ -5,4 +5,6 @@ inputs to make sure it doesn't crash. This directory contains targets to test zb
 [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz).
 
 Run `cargo install cargo-fuzz` to install the fuzzer, then run `cargo +nightly fuzz run dbus` from
-the `zbus` directory to fuzz the D-Bus deserializer.
+the `zbus` directory to fuzz the D-Bus deserializer, and `cargo +nightly fuzz run header` to check
+that the parser of message headers accepts the headers that decoding them through serde does, and
+finds the same fields in them.
