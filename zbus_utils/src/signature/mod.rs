@@ -4,6 +4,7 @@ mod fields;
 pub use fields::Fields;
 mod error;
 pub use error::Error;
+mod parser;
 
 use serde::{Deserialize, Serialize};
 
@@ -186,7 +187,7 @@ impl Signature {
 
     /// Parse signature from a byte slice.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        parse(bytes, false)
+        parser::parse(bytes)
     }
 
     /// Create a `Signature::Structure` for a given set of field signatures.
@@ -408,7 +409,7 @@ impl FromStr for Signature {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse(s.as_bytes(), false)
+        parser::parse(s.as_bytes())
     }
 }
 
@@ -424,216 +425,13 @@ impl TryFrom<&[u8]> for Signature {
     type Error = Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        parse(value, false)
+        parser::parse(value)
     }
 }
 
 /// Validate the given signature string.
 pub fn validate(bytes: &[u8]) -> Result<(), Error> {
-    parse(bytes, true).map(|_| ())
-}
-
-/// Parse a signature string into a `Signature`.
-///
-/// When `check_only` is true, the function will not allocate memory for the dynamic types.
-/// Instead it will return dummy values in the parsed Signature.
-fn parse(bytes: &[u8], check_only: bool) -> Result<Signature, Error> {
-    use winnow::{
-        Parser,
-        combinator::{alt, delimited, empty, eof, fail, repeat},
-        dispatch,
-        token::any,
-    };
-
-    let unit = eof.map(|_| Signature::Unit);
-
-    // `many1` allocates so we only want to use it when `check_only == false`
-    type ManyError = winnow::error::ErrMode<()>;
-
-    // The maximum struct- and array-nesting depths a signature may use, matching the limits
-    // zbus enforces when (de)serializing (see its `wire::container_depths` module). This also
-    // bounds the recursion below, so a hostile signature string — e.g. tens of thousands of `(`
-    // — cannot exhaust the stack. `maybe` (gvariant) is deliberately not bounded, to stay no
-    // stricter than what the (de)serializer accepts.
-    const MAX_STRUCT_DEPTH: u8 = 32;
-    const MAX_ARRAY_DEPTH: u8 = 32;
-
-    /// The struct- and array-nesting depth at a point in a signature, used to bound the recursion.
-    #[derive(Debug, Default, Clone, Copy)]
-    struct Depth {
-        structure: u8,
-        array: u8,
-    }
-
-    impl Depth {
-        fn inc_structure(mut self) -> Self {
-            self.structure += 1;
-            self
-        }
-
-        fn inc_array(mut self) -> Self {
-            self.array += 1;
-            self
-        }
-
-        /// Whether either nesting limit has been exceeded.
-        fn exceeded(self) -> bool {
-            self.structure > MAX_STRUCT_DEPTH || self.array > MAX_ARRAY_DEPTH
-        }
-    }
-
-    fn many(
-        bytes: &mut &[u8],
-        check_only: bool,
-        top_level: bool,
-        depth: Depth,
-    ) -> Result<Signature, ManyError> {
-        let parser = |s: &mut _| parse_signature(s, check_only, depth);
-        if check_only {
-            return repeat(1.., parser)
-                .map(|_: ()| Signature::Unit)
-                .parse_next(bytes);
-        }
-
-        // Avoid the allocation of `Vec<Signature>` in case of a single signature on the top-level.
-        // This is a a very common case, especially in variants, where the signature needs to be
-        // parsed at runtime.
-        enum SignatureList {
-            Unit,
-            One(Signature),
-            Structure(Vec<Signature>),
-        }
-
-        repeat(1.., parser)
-            .fold(
-                || SignatureList::Unit,
-                |acc, signature| match acc {
-                    // On the top-level, we want to return the signature directly if there is only
-                    // one.
-                    SignatureList::Unit if top_level => SignatureList::One(signature),
-                    SignatureList::Unit => SignatureList::Structure(vec![signature]),
-                    SignatureList::One(one) => SignatureList::Structure(vec![one, signature]),
-                    SignatureList::Structure(mut signatures) => {
-                        signatures.push(signature);
-                        SignatureList::Structure(signatures)
-                    }
-                },
-            )
-            .map(|sig_list| match sig_list {
-                SignatureList::Unit => Signature::Unit,
-                SignatureList::One(sig) => sig,
-                SignatureList::Structure(signatures) => Signature::structure(signatures),
-            })
-            .parse_next(bytes)
-    }
-
-    fn parse_signature(
-        bytes: &mut &[u8],
-        check_only: bool,
-        depth: Depth,
-    ) -> Result<Signature, ManyError> {
-        // Reject types nested past the container-depth limits. Besides matching what zbus can
-        // actually encode, this keeps the recursion below — and hence the stack usage —
-        // bounded on adversarial input.
-        if depth.exceeded() {
-            return fail.parse_next(bytes);
-        }
-        let array_depth = depth.inc_array();
-        let struct_depth = depth.inc_structure();
-
-        let simple_type = dispatch! {any;
-            b'y' => empty.value(Signature::U8),
-            b'b' => empty.value(Signature::Bool),
-            b'n' => empty.value(Signature::I16),
-            b'q' => empty.value(Signature::U16),
-            b'i' => empty.value(Signature::I32),
-            b'u' => empty.value(Signature::U32),
-            b'x' => empty.value(Signature::I64),
-            b't' => empty.value(Signature::U64),
-            b'd' => empty.value(Signature::F64),
-            b's' => empty.value(Signature::Str),
-            b'g' => empty.value(Signature::Signature),
-            b'o' => empty.value(Signature::ObjectPath),
-            b'v' => empty.value(Signature::Variant),
-            _ => fail,
-        };
-
-        let dict = (
-            b'a',
-            delimited(
-                b'{',
-                (
-                    move |s: &mut _| parse_signature(s, check_only, array_depth),
-                    move |s: &mut _| parse_signature(s, check_only, array_depth),
-                ),
-                b'}',
-            ),
-        )
-            .map(|(_, (key, value))| {
-                if check_only {
-                    return Signature::Dict {
-                        key: Signature::Unit.into(),
-                        value: Signature::Unit.into(),
-                    };
-                }
-
-                Signature::Dict {
-                    key: key.into(),
-                    value: value.into(),
-                }
-            });
-
-        let array = (b'a', move |s: &mut _| {
-            parse_signature(s, check_only, array_depth)
-        })
-            .map(|(_, child)| {
-                if check_only {
-                    return Signature::Array(Signature::Unit.into());
-                }
-
-                Signature::Array(child.into())
-            });
-
-        let structure = delimited(
-            b'(',
-            move |s: &mut _| many(s, check_only, false, struct_depth),
-            b')',
-        );
-
-        // `maybe` does not count toward the depth limits (see `Depth`), so its child is parsed
-        // at the same depth.
-        #[cfg(feature = "gvariant")]
-        let maybe =
-            (b'm', move |s: &mut _| parse_signature(s, check_only, depth)).map(|(_, child)| {
-                if check_only {
-                    return Signature::Maybe(Signature::Unit.into());
-                }
-
-                Signature::Maybe(child.into())
-            });
-
-        alt((
-            simple_type,
-            dict,
-            array,
-            structure,
-            #[cfg(feature = "gvariant")]
-            maybe,
-            // FIXME: Should be part of `simple_type` but that's not possible right now:
-            // https://github.com/winnow-rs/winnow/issues/609
-            #[cfg(unix)]
-            b'h'.map(|_| Signature::Fd),
-        ))
-        .parse_next(bytes)
-    }
-
-    let signature = alt((unit, |s: &mut _| {
-        many(s, check_only, true, Depth::default())
-    }))
-    .parse(bytes)
-    .map_err(|_| Error::InvalidSignature)?;
-
-    Ok(signature)
+    parser::validate(bytes)
 }
 
 impl PartialEq for Signature {
