@@ -105,15 +105,22 @@ impl Output for Signature {
     where
         E: Parser<&'i [u8], (), ()>,
     {
-        // Allocate the first two fields at once, with their exact number, which is all that most
-        // structures have, before growing the vector for any more.
+        // Most structures have one or two fields, which are parsed as they come. Any more are
+        // checked first, which counts them, so that all of them are allocated at once, with their
+        // exact number.
         let second = match opt(end.by_ref()).parse_next(input)? {
             Some(()) => return Ok(Signature::structure(vec![first])),
             None => single_type(depth).parse_next(input)?,
         };
-        let mut fields = vec![first, second];
+        if opt(end.by_ref()).parse_next(input)?.is_some() {
+            return Ok(Signature::structure(vec![first, second]));
+        }
+        let (rest, ()): (usize, _) =
+            peek(repeat_till(1.., single_type::<()>(depth), end.by_ref())).parse_next(input)?;
+        let mut fields = Vec::with_capacity(2 + rest);
+        fields.extend([first, second]);
         terminated(
-            repeat(0.., single_type(depth)).fold(|| (), |(), field| fields.push(field)),
+            repeat(rest, single_type(depth)).fold(|| (), |(), field| fields.push(field)),
             end,
         )
         .parse_next(input)?;

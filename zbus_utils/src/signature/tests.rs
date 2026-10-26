@@ -44,6 +44,8 @@ fn validate_strings() {
         "o" => Signature::ObjectPath,
         "v" => Signature::Variant,
         "xs" => Signature::structure(&[&Signature::I64, &Signature::Str][..]),
+        "xsy" => Signature::structure(&[&Signature::I64, &Signature::Str, &Signature::U8][..]),
+        "(xsy)" => Signature::static_structure(&[&Signature::I64, &Signature::Str, &Signature::U8]),
         "(ysa{sd})" => Signature::static_structure(
             &[
                 &Signature::U8,
@@ -147,6 +149,10 @@ fn invalid_strings() {
         "(xa(s)",
         "(xs",
         "xs)",
+        "(xsy",
+        "xsy)",
+        "(xsyz)",
+        "xsyz",
         "s/",
         "a{yz}"
     );
