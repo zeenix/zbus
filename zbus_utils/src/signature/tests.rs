@@ -179,6 +179,41 @@ fn recursion_limits() {
 }
 
 #[test]
+fn static_basic_children() {
+    // A child of a basic type points at a static signature, rather than being boxed, while one of
+    // a container type is boxed.
+    let parsed = Signature::from_str("a{sv}").unwrap();
+    assert!(matches!(
+        parsed,
+        Signature::Dict {
+            key: Child::Static {
+                child: Signature::Str
+            },
+            value: Child::Static {
+                child: Signature::Variant
+            },
+        }
+    ));
+    let parsed = Signature::from_str("aas").unwrap();
+    let Signature::Array(Child::Dynamic { child }) = parsed else {
+        panic!("the child of `aas` isn't boxed: {parsed:?}");
+    };
+    assert!(matches!(
+        *child,
+        Signature::Array(Child::Static {
+            child: Signature::Str
+        })
+    ));
+    #[cfg(feature = "gvariant")]
+    assert!(matches!(
+        Signature::from_str("ms").unwrap(),
+        Signature::Maybe(Child::Static {
+            child: Signature::Str
+        })
+    ));
+}
+
+#[test]
 fn hash() {
     // We need to test if all variants of Signature hold this invariant:
     test_hash(&Signature::U16, &Signature::U16);

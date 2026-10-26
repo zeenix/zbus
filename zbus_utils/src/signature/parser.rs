@@ -13,7 +13,7 @@ use winnow::{
     token::any,
 };
 
-use super::{Error, Signature};
+use super::{Child, Error, Signature};
 
 /// Parse a signature string.
 pub(super) fn parse(mut bytes: &[u8]) -> Result<Signature, Error> {
@@ -81,19 +81,19 @@ impl Output for Signature {
     }
 
     fn array(child: Self) -> Self {
-        Signature::Array(child.into())
+        Signature::Array(into_child(child))
     }
 
     fn dict(key: Self, value: Self) -> Self {
         Signature::Dict {
-            key: key.into(),
-            value: value.into(),
+            key: into_child(key),
+            value: into_child(value),
         }
     }
 
     #[cfg(feature = "gvariant")]
     fn maybe(child: Self) -> Self {
-        Signature::Maybe(child.into())
+        Signature::Maybe(into_child(child))
     }
 
     fn structure<'i, E>(
@@ -243,6 +243,33 @@ where
 #[cfg(not(feature = "gvariant"))]
 fn maybe<'i, T>(_depth: Depth) -> impl Parser<&'i [u8], T, ()> {
     fail
+}
+
+/// A child signature, which points at a static signature when it's that of a basic type, rather
+/// than boxing it.
+fn into_child(signature: Signature) -> Child {
+    let child = match signature {
+        Signature::U8 => &Signature::U8,
+        Signature::Bool => &Signature::Bool,
+        Signature::I16 => &Signature::I16,
+        Signature::U16 => &Signature::U16,
+        Signature::I32 => &Signature::I32,
+        Signature::U32 => &Signature::U32,
+        Signature::I64 => &Signature::I64,
+        Signature::U64 => &Signature::U64,
+        Signature::F64 => &Signature::F64,
+        Signature::Str => &Signature::Str,
+        Signature::Signature => &Signature::Signature,
+        Signature::ObjectPath => &Signature::ObjectPath,
+        Signature::Variant => &Signature::Variant,
+        #[cfg(unix)]
+        Signature::Fd => &Signature::Fd,
+        signature => return Child::from(signature),
+    };
+    // As in `<() as Output>::basic`, there's nothing to drop.
+    mem::forget(signature);
+
+    Child::Static { child }
 }
 
 /// A parser result. Its error is `()`, as there's only one way for a signature to be invalid.
