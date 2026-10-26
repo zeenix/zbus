@@ -355,7 +355,7 @@ mod tests {
     use test_log::test;
 
     use super::Message;
-    use crate::Error;
+    use crate::{Error, wire::serialized::Data};
 
     #[test]
     fn test() {
@@ -396,5 +396,24 @@ mod tests {
             .build(&("kaboom!", 32))
             .unwrap();
         assert_eq!(e.to_string(), "Error org.freedesktop.zbus.Error: kaboom!");
+    }
+
+    #[test]
+    fn invalid_path_field() {
+        // `/org.zbus/Test` is not a valid object path, so a message with it as its path is
+        // rejected as it's received, rather than reading its header failing later.
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&())
+            .unwrap();
+        let mut bytes = m.data().bytes().to_vec();
+        let path = bytes
+            .windows(14)
+            .position(|w| w == b"/org/zbus/Test")
+            .unwrap();
+        bytes[path + 4] = b'.';
+        let data = Data::new(bytes, m.data().context());
+
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::Failure("Invalid object path".into()));
     }
 }

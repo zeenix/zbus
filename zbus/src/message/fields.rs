@@ -10,6 +10,7 @@ use crate::{
     message::{FieldCode, Header, Message},
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName},
 };
+use zbus_utils::object_path;
 
 /// A collection of [`Field`] instances.
 ///
@@ -123,7 +124,11 @@ impl<'de> Visitor<'de> for FieldsVisitor {
         while let Some((code, value)) = visitor.next_element::<(FieldCode, Variant<'de>)>()? {
             match code {
                 FieldCode::Path => {
-                    fields.path = Some(ObjectPath::try_from(value).map_err(V::Error::custom)?)
+                    let path = ObjectPath::try_from(value).map_err(V::Error::custom)?;
+                    // A variant doesn't check the object path it holds, unlike the name fields.
+                    object_path::validate(path.as_bytes())
+                        .map_err(|_| V::Error::custom(crate::Error::InvalidObjectPath))?;
+                    fields.path = Some(path)
                 }
                 FieldCode::Interface => {
                     fields.interface =
