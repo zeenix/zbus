@@ -168,6 +168,8 @@ where
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+        // The bytes are the elements of an array, which nests as any other does.
+        self.0.container_depths.inc_array(&Signature::U8)?;
         self.0.add_padding(ARRAY_ALIGNMENT_DBUS)?;
         self.0
             .write_u32(self.0.ctxt.endian(), v.len() as u32)
@@ -262,9 +264,18 @@ where
 
         // D-Bus expects us to add padding for the first element even when there is no first
         // element (i-e empty array) so we add padding already.
-        let (alignment, child_signature) = match self.0.signature {
-            Signature::Array(child) => (child.alignment_dbus(), child.signature()),
-            Signature::Dict { key, .. } => (DICT_ENTRY_ALIGNMENT_DBUS, key.signature()),
+        let container_depths = self.0.container_depths;
+        let (alignment, child_signature, element_depths) = match self.0.signature {
+            Signature::Array(child) => (
+                child.alignment_dbus(),
+                child.signature(),
+                container_depths.inc_array(child.signature())?,
+            ),
+            Signature::Dict { key, .. } => (
+                DICT_ENTRY_ALIGNMENT_DBUS,
+                key.signature(),
+                container_depths.inc_dict()?,
+            ),
             _ => {
                 return Err(Error::signature_mismatch(
                     self.0.signature,
@@ -281,13 +292,14 @@ where
         self.0.signature = child_signature;
         let first_padding = self.0.add_padding(alignment)?;
         let start = self.0.bytes_written;
-        self.0.container_depths = self.0.container_depths.inc_array()?;
+        self.0.container_depths = element_depths;
 
         Ok(SeqSerializer {
             ser: self,
             start,
             first_padding,
             array_signature,
+            container_depths,
         })
     }
 
@@ -333,7 +345,7 @@ where
     fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         self.0.add_padding(self.0.signature.alignment_dbus())?;
         match &self.0.signature {
-            Signature::Variant => StructSerializer::variant(self).map(StructSeqSerializer::Struct),
+            Signature::Variant => Ok(StructSeqSerializer::Struct(StructSerializer::variant(self))),
             Signature::Array(_) => self.serialize_seq(Some(len)).map(StructSeqSerializer::Seq),
             Signature::U8 => StructSerializer::unit(self).map(StructSeqSerializer::Struct),
             Signature::Structure(_) => {
@@ -369,6 +381,8 @@ pub struct SeqSerializer<'ser, 'b, W> {
     // First element's padding
     first_padding: usize,
     array_signature: &'ser Signature,
+    // The container depths of the array itself. We restore to that at the end.
+    container_depths: ContainerDepths,
 }
 
 impl<W> SeqSerializer<'_, '_, W>
@@ -378,6 +392,11 @@ where
     pub(self) fn end_seq(self) -> Result<()> {
         // Set size of array in bytes
         let array_len = self.ser.0.bytes_written - self.start;
+        // The elements count toward the limit of nesting only if there are any, unless
+        // `inc_array` has counted them already. Each element takes a byte at least.
+        if array_len > 0 {
+            self.ser.0.container_depths.check()?;
+        }
         let len = usize_to_u32(array_len);
         let total_array_len = (array_len + self.first_padding + 4) as i64;
         self.ser
@@ -396,7 +415,7 @@ where
             .seek(std::io::SeekFrom::Current(total_array_len - 4))
             .map_err(|e| Error::InputOutput(e.into()))?;
 
-        self.ser.0.container_depths = self.ser.0.container_depths.dec_array();
+        self.ser.0.container_depths = self.container_depths;
         self.ser.0.signature = self.array_signature;
 
         Ok(())
@@ -435,15 +454,15 @@ impl<'ser, 'b, W> StructSerializer<'ser, 'b, W>
 where
     W: Write + Seek,
 {
-    fn variant(ser: &'b mut Serializer<'ser, W>) -> Result<Self> {
+    fn variant(ser: &'b mut Serializer<'ser, W>) -> Self {
+        // The depths of the value are known once its signature is.
         let container_depths = ser.0.container_depths;
-        ser.0.container_depths = ser.0.container_depths.inc_variant()?;
 
-        Ok(Self {
+        Self {
             ser,
             container_depths,
             field_idx: 0,
-        })
+        }
     }
 
     fn structure(ser: &'b mut Serializer<'ser, W>) -> Result<Self> {
@@ -497,12 +516,17 @@ where
         T: ?Sized + Serialize,
     {
         let signature = self.ser.0.signature;
+        let mut container_depths = self.ser.0.container_depths;
         let field_signature = match signature {
             Signature::Variant => {
                 match &self.ser.0.value_sign {
                     // Serializing the value of a Variant, which means signature was serialized
                     // already, and also put aside for us to be picked here.
-                    Some(signature) => signature,
+                    Some(signature) => {
+                        container_depths = container_depths.inc_variant(signature)?;
+
+                        signature
+                    }
                     // Serializing the signature of a Variant.
                     None => &Signature::Variant,
                 }
@@ -526,7 +550,7 @@ where
             fds: self.ser.0.fds,
             bytes_written,
             value_sign: None,
-            container_depths: self.ser.0.container_depths,
+            container_depths,
         });
 
         value.serialize(&mut ser)?;

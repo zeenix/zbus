@@ -9,6 +9,7 @@ use crate::{
     Error, Result,
     wire::{
         Basic, ObjectPath, Signature,
+        container_depths::ContainerDepths,
         de::{DeserializerCommon, ValueParseStage},
         serialized::Context,
         utils::*,
@@ -257,13 +258,14 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
             let ad = ArrayDeserializer::new(self)?;
             let len = ad.len;
             let array_signature = ad.array_signature;
+            let container_depths = ad.container_depths;
 
             let v = if len == 0 {
                 visitor.visit_none()
             } else {
                 visitor.visit_some(&mut *self)
             };
-            self.0.container_depths = self.0.container_depths.dec_array();
+            self.0.container_depths = container_depths;
             self.0.signature = array_signature;
 
             v
@@ -318,11 +320,13 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> de::Deserializer<'de>
             Signature::U8 => {
                 // Empty struct: encoded as a `0u8`.
                 let _: u8 = serde::Deserialize::deserialize(&mut *self)?;
+                let container_depths = self.0.container_depths;
 
                 visitor.visit_seq(StructureDeserializer {
                     de: self,
                     field_idx: 0,
                     num_fields: 0,
+                    container_depths,
                 })
             }
             _ => Err(Error::signature_mismatch(
@@ -399,6 +403,8 @@ struct ArrayDeserializer<'d, 'de, 'sig, 'f, F> {
     // alignment of element
     element_alignment: usize,
     array_signature: &'sig Signature,
+    // The container depths of the array itself. We restore to that at the end.
+    container_depths: ContainerDepths,
 }
 
 impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
@@ -406,15 +412,21 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
 {
     fn new(de: &'d mut Deserializer<'de, 'sig, 'f, F>) -> Result<Self> {
         de.0.parse_padding(ARRAY_ALIGNMENT_DBUS)?;
-        de.0.container_depths = de.0.container_depths.inc_array()?;
 
         let len = de.0.ctxt.endian().read_u32(de.0.next_slice(4)?) as usize;
 
-        // D-Bus expects us to add padding for the first element even when there is no first
-        // element (i-e empty array) so we parse padding already.
-        let (element_alignment, child_signature) = match de.0.signature {
-            Signature::Array(child) => (child.alignment_dbus(), child.signature()),
-            Signature::Dict { key, .. } => (DICT_ENTRY_ALIGNMENT_DBUS, key.signature()),
+        let container_depths = de.0.container_depths;
+        let (element_alignment, child_signature, element_depths) = match de.0.signature {
+            Signature::Array(child) => (
+                child.alignment_dbus(),
+                child.signature(),
+                container_depths.inc_array(child.signature())?,
+            ),
+            Signature::Dict { key, .. } => (
+                DICT_ENTRY_ALIGNMENT_DBUS,
+                key.signature(),
+                container_depths.inc_dict()?,
+            ),
             _ => {
                 return Err(Error::signature_mismatch(
                     de.0.signature,
@@ -422,6 +434,13 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
                 ));
             }
         };
+        // The elements count toward the limit of nesting only if there are any, unless `inc_array`
+        // has counted them already.
+        if len > 0 {
+            element_depths.check()?;
+        }
+        // D-Bus expects us to add padding for the first element even when there is no first
+        // element (i-e empty array) so we parse padding already.
         de.0.parse_padding(element_alignment)?;
 
         // In case of an array, we'll only be serializing the array's child elements from now on and
@@ -430,6 +449,7 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
         // We restore the original signature at the end of deserialization.
         let array_signature = de.0.signature;
         de.0.signature = child_signature;
+        de.0.container_depths = element_depths;
         let start = de.0.pos;
 
         Ok(Self {
@@ -438,6 +458,7 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
             start,
             element_alignment,
             array_signature,
+            container_depths,
         })
     }
 
@@ -477,7 +498,7 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
     }
 
     fn end(&mut self) {
-        self.de.0.container_depths = self.de.0.container_depths.dec_array();
+        self.de.0.container_depths = self.container_depths;
         self.de.0.signature = self.array_signature;
     }
 }
@@ -567,6 +588,8 @@ struct StructureDeserializer<'d, 'de, 'sig, 'f, F> {
     field_idx: usize,
     /// The number of fields in the structure.
     num_fields: usize,
+    /// The container depths of the fields.
+    container_depths: ContainerDepths,
 }
 
 impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
@@ -578,12 +601,13 @@ impl<'d, 'de, 'sig, 'f, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F>
             _ => unreachable!("Incorrect signature for struct"),
         };
         de.0.parse_padding(STRUCT_ALIGNMENT_DBUS)?;
-        de.0.container_depths = de.0.container_depths.inc_structure()?;
+        let container_depths = de.0.container_depths.inc_structure()?;
 
         Ok(Self {
             de,
             field_idx: 0,
             num_fields,
+            container_depths,
         })
     }
 }
@@ -620,15 +644,10 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
             fds: self.de.0.fds,
             bytes: self.de.0.bytes,
             pos: self.de.0.pos,
-            container_depths: self.de.0.container_depths,
+            container_depths: self.container_depths,
         });
         let v = seed.deserialize(&mut de)?;
         self.de.0.pos = de.0.pos;
-
-        if self.field_idx == self.num_fields {
-            // All fields have been deserialized.
-            self.de.0.container_depths = self.de.0.container_depths.dec_structure();
-        }
 
         Ok(Some(v))
     }
@@ -698,7 +717,7 @@ impl<'de, #[cfg(unix)] F: AsFd, #[cfg(not(unix))] F> SeqAccess<'de>
                     bytes: subslice(self.de.0.bytes, value_start..)?,
                     fds: self.de.0.fds,
                     pos: 0,
-                    container_depths: self.de.0.container_depths.inc_variant()?,
+                    container_depths: self.de.0.container_depths.inc_variant(&signature)?,
                 });
 
                 let v = seed.deserialize(&mut de).map(Some);
