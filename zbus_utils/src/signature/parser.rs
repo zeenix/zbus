@@ -217,10 +217,37 @@ where
 {
     // No type starts with a `{`, so one after the `a` is that of a dict.
     dispatch! {peek(any);
-        b'{' => delimited(b'{', (single_type(depth), single_type(depth)), b'}')
+        b'{' => delimited(b'{', (key, single_type(depth)), b'}')
             .map(|(key, value)| T::dict(key, value)),
         _ => single_type(depth).map(T::array),
     }
+}
+
+/// The key of a dict, which is of a basic type: neither a container nor a variant.
+///
+/// A basic type is a single code, with nothing nested in it, so the limits of nesting are left to
+/// the value of the dict, which is at the same depth.
+fn key<T>(input: &mut &[u8]) -> PResult<T>
+where
+    T: Output,
+{
+    dispatch! {any;
+        b'y' => empty.map(|()| T::basic(Signature::U8)),
+        b'b' => empty.map(|()| T::basic(Signature::Bool)),
+        b'n' => empty.map(|()| T::basic(Signature::I16)),
+        b'q' => empty.map(|()| T::basic(Signature::U16)),
+        b'i' => empty.map(|()| T::basic(Signature::I32)),
+        b'u' => empty.map(|()| T::basic(Signature::U32)),
+        b'x' => empty.map(|()| T::basic(Signature::I64)),
+        b't' => empty.map(|()| T::basic(Signature::U64)),
+        b'd' => empty.map(|()| T::basic(Signature::F64)),
+        b's' => empty.map(|()| T::basic(Signature::Str)),
+        b'g' => empty.map(|()| T::basic(Signature::Signature)),
+        b'o' => empty.map(|()| T::basic(Signature::ObjectPath)),
+        b'h' => fd,
+        _ => fail,
+    }
+    .parse_next(input)
 }
 
 /// What follows the `(` of a structure, whose fields are at the depth `depth`: its fields, and the
