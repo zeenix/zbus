@@ -1,13 +1,13 @@
 //! What the parser finds of the header fields: where each string field lies in the message, and
 //! the other fields.
 
-use std::{borrow::Cow, num::NonZeroU32, str};
+use std::{borrow::Cow, num::NonZeroU32, ops::Range, str};
 
 use winnow::stream::Accumulate;
 
 use crate::{
     Error, ObjectPath, Signature,
-    message::{Fields, Type},
+    message::{Fields, Type, header::PRIMARY_HEADER_SIZE},
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName, WellKnownName},
 };
 
@@ -65,7 +65,7 @@ impl QuickFields {
             pos.map(|pos| {
                 // SAFETY: The caller ensures that `bytes` are those that `pos` was parsed from, as
                 // the position of a name or a path, which the parser checked, and those are ASCII.
-                unsafe { str::from_utf8_unchecked(&bytes[pos.start as usize..pos.end as usize]) }
+                unsafe { str::from_utf8_unchecked(&bytes[pos.range()]) }
             })
         };
 
@@ -137,19 +137,30 @@ pub(super) enum Field {
 }
 
 /// The byte range of a string field in the bytes of its message.
+///
+/// A field comes after the primary header, so it never starts at 0, which leaves room in a
+/// `FieldPos` for `None`: an `Option<FieldPos>` takes no more bytes than a `FieldPos` does.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FieldPos {
-    start: u32,
+    start: NonZeroU32,
     end: u32,
 }
 
 impl FieldPos {
     /// The field at `start..end` in the bytes of the message, which the length of the fields
-    /// ensured fits in a `u32`.
+    /// ensured fits in a `u32`, and which comes after the primary header.
     pub(super) fn new(start: usize, end: usize) -> Self {
+        debug_assert!(start >= PRIMARY_HEADER_SIZE);
+
         Self {
-            start: start as u32,
+            // SAFETY: The field comes after the primary header, so it doesn't start at 0.
+            start: unsafe { NonZeroU32::new_unchecked(start as u32) },
             end: end as u32,
         }
+    }
+
+    /// The byte range of the field.
+    fn range(self) -> Range<usize> {
+        self.start.get() as usize..self.end as usize
     }
 }
