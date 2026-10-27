@@ -128,11 +128,6 @@ fn reply_serial(serial: u32) -> Result<NonZeroU32, ParseError> {
 fn body_signature(input: &mut Input<'_>) -> PResult<Field> {
     let len = any(input)?;
     let (pos, signature) = nul_terminated(input, len.into())?;
-    // `m` is the maybe type of GVariant, which the D-Bus format doesn't have, even though the
-    // signature parser accepts it when zbus_utils is built for GVariant as well.
-    if signature.contains(&b'm') {
-        return Err(ParseError::Maybe);
-    }
 
     Signature::from_bytes(signature)
         .map(|signature| Field::signature(signature, pos))

@@ -257,8 +257,8 @@ jobs:
           # `gvariant` feature on, and Cargo unification hands zbus the extra signature and
           # format variants it must keep rejecting.
           cargo --locked test -p zbus --no-default-features --features zbus_utils/gvariant
-          # The same graph with the D-Bus API on: the message header carries a body signature
-          # that must be rejected too.
+          # The same graph with the D-Bus API on: the body of a message whose header carries such
+          # a body signature must be rejected too.
           dbus-run-session --config-file /tmp/dbus-session.conf -- \
             cargo --locked test -p zbus --no-default-features \
               --features zbus_utils/gvariant,default-rt -- --skip fdpass_systemd

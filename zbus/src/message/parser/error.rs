@@ -29,8 +29,6 @@ pub(super) enum ParseError {
     ObjectPath,
     /// The signature of the body is invalid.
     Signature,
-    /// The signature of the body has a maybe type, which the D-Bus format doesn't have.
-    Maybe,
 }
 
 impl ParserError<Input<'_>> for ParseError {
@@ -67,7 +65,6 @@ impl From<ParseError> for Error {
             ParseError::Signature => {
                 Error::SignatureParse(wire::signature::Error::InvalidSignature)
             }
-            ParseError::Maybe => wire::dbus::maybe_not_in_dbus(),
         }
     }
 }
