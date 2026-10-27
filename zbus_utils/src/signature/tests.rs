@@ -154,7 +154,12 @@ fn invalid_strings() {
         "(xsyz)",
         "xsyz",
         "s/",
-        "a{yz}"
+        "a{yz}",
+        // The key of a dict is of a basic type.
+        "a{vs}",
+        "a{ays}",
+        "a{(y)s}",
+        "a{a{ys}s}"
     );
 }
 
@@ -356,11 +361,11 @@ where
 /// Call `check` with signatures nested 30 to 34 deep, either side of the limits of 32 structs and
 /// of 32 arrays, and with each prefix of them.
 ///
-/// There are arrays, structs, dicts (whose key and value are one array deeper), maybes (which are
-/// not limited), and mixes of them, as the structs and the arrays are counted separately: 32 of
-/// each, nested together, are accepted. Each is also made the second of two types, to check that
-/// the types of the top level of a signature, which are those of an implicit structure, are not
-/// counted as one.
+/// There are arrays, structs, dicts (whose value is one array deeper, as is their key, which is
+/// rejected for being a container), maybes (which are not limited), and mixes of them, as the
+/// structs and the arrays are counted separately: 32 of each, nested together, are accepted. Each
+/// is also made the second of two types, to check that the types of the top level of a signature,
+/// which are those of an implicit structure, are not counted as one.
 fn for_each_nested<F>(check: &mut F)
 where
     F: FnMut(&[u8]),
@@ -422,9 +427,9 @@ mod reference {
     pub(super) fn parse(bytes: &[u8], check_only: bool) -> Result<Signature, Error> {
         use winnow::{
             Parser,
-            combinator::{alt, delimited, empty, eof, fail, repeat},
+            combinator::{alt, delimited, empty, eof, fail, peek, preceded, repeat},
             dispatch,
-            token::any,
+            token::{any, one_of},
         };
 
         let unit = eof.map(|_| Signature::Unit);
@@ -546,7 +551,10 @@ mod reference {
                 delimited(
                     b'{',
                     (
-                        move |s: &mut _| parse_signature(s, check_only, array_depth),
+                        // The key is of a basic type.
+                        preceded(peek(one_of(b"ybnqiuxtdsogh")), move |s: &mut _| {
+                            parse_signature(s, check_only, array_depth)
+                        }),
                         move |s: &mut _| parse_signature(s, check_only, array_depth),
                     ),
                     b'}',

@@ -68,6 +68,58 @@ fn msg_de(c: &mut Criterion) {
     });
 }
 
+/// Checking bodies as a bus does before passing them on.
+#[cfg(feature = "bus-impl")]
+fn msg_validate(c: &mut Criterion) {
+    let mut g = c.benchmark_group("message-validate");
+    // A method call as a bus delivers it, with the name of its sender.
+    let msg = Message::method_call("/org/freedesktop/DBus/Something", "Ping")
+        .destination("org.freedesktop.DBus.Something")
+        .interface("org.freedesktop.DBus.Something")
+        .sender(":1.42")
+        .build(&(42u32, "Testtest"))
+        .unwrap();
+    g.bench_function("small", |b| {
+        b.iter(|| black_box(&msg).body().validate().unwrap())
+    });
+
+    let msg = Message::method_call("/org/freedesktop/DBus/Something", "Ping")
+        .build(&vec![42u8; 16 * 1024])
+        .unwrap();
+    g.bench_function("bytes", |b| {
+        b.iter(|| black_box(&msg).body().validate().unwrap())
+    });
+
+    let mut strings = Vec::new();
+    let big_boy = BigBoy::new(&mut strings);
+    let msg = big_boy_message(&big_boy);
+    g.bench_function("big", |b| {
+        b.iter(|| black_box(&msg).body().validate().unwrap())
+    });
+}
+
+/// Setting the sender of messages, as a bus does to those of peers that leave it out.
+#[cfg(feature = "bus-impl")]
+fn msg_with_sender(c: &mut Criterion) {
+    let mut g = c.benchmark_group("message-with-sender");
+    let sender = zbus::names::UniqueName::from_static_str_unchecked(":busd.42");
+    let msg = Message::method_call("/org/freedesktop/DBus/Something", "Ping")
+        .destination("org.freedesktop.DBus.Something")
+        .interface("org.freedesktop.DBus.Something")
+        .build(&(42u32, "Testtest"))
+        .unwrap();
+    g.bench_function("small", |b| {
+        b.iter(|| black_box(&msg).with_sender(&sender).unwrap())
+    });
+
+    let msg = Message::method_call("/org/freedesktop/DBus/Something", "Ping")
+        .build(&vec![42u8; 16 * 1024])
+        .unwrap();
+    g.bench_function("bytes", |b| {
+        b.iter(|| black_box(&msg).with_sender(&sender).unwrap())
+    });
+}
+
 fn empty_message() -> Message {
     Message::method_call("/org/freedesktop/DBus/Something", "Ping")
         .destination("org.freedesktop.DBus.Something")
@@ -141,5 +193,15 @@ fn address_parse(c: &mut Criterion) {
     });
 }
 
+#[cfg(not(feature = "bus-impl"))]
 criterion_group!(benches, msg_ser, msg_de, address_parse);
+#[cfg(feature = "bus-impl")]
+criterion_group!(
+    benches,
+    msg_ser,
+    msg_de,
+    msg_validate,
+    msg_with_sender,
+    address_parse
+);
 criterion_main!(benches);

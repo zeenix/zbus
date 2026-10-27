@@ -94,6 +94,8 @@ pub struct Builder<'a> {
     auth_mechanism: Option<AuthMechanism>,
     #[cfg(feature = "bus-impl")]
     unique_name: Option<crate::names::UniqueName<'a>>,
+    #[cfg(feature = "bus-impl")]
+    validate_bodies: bool,
     request_name_flags: RequestNameFlags,
     method_timeout: Option<std::time::Duration>,
     user_id: Option<u32>,
@@ -465,6 +467,27 @@ impl<'a> Builder<'a> {
         self
     }
 
+    /// Check the body of each message that the connection receives against its signature, as zbus
+    /// checks the header of each, and end the connection on a message whose body doesn't hold what
+    /// its signature says.
+    ///
+    /// A bus passes the bodies of the messages of its peers on to their recipients without
+    /// deserializing them, so nothing else checks them before the recipients do, some of which end
+    /// their connection to the bus on a body that doesn't hold what its signature says. A bus sets
+    /// this on the connections of its peers, so as to pass on well-formed messages only, as
+    /// dbus-daemon and dbus-broker do. [`Body::validate`] makes the same check of a single body.
+    ///
+    /// This is mainly provided for bus implementations, and hence only available when the
+    /// `bus-impl` feature is enabled.
+    ///
+    /// [`Body::validate`]: crate::message::Body::validate
+    #[cfg(feature = "bus-impl")]
+    pub fn validate_bodies(mut self) -> Self {
+        self.validate_bodies = true;
+
+        self
+    }
+
     /// Set a timeout for method calls.
     ///
     /// Method calls will return
@@ -645,6 +668,8 @@ impl<'a> Builder<'a> {
             already_received_bytes,
             #[cfg(unix)]
             already_received_fds,
+            #[cfg(feature = "bus-impl")]
+            self.validate_bodies,
         );
 
         for name in self.names {
@@ -678,6 +703,8 @@ impl<'a> Builder<'a> {
             auth_mechanism: None,
             #[cfg(feature = "bus-impl")]
             unique_name: None,
+            #[cfg(feature = "bus-impl")]
+            validate_bodies: false,
             request_name_flags: RequestNameFlags::default(),
             method_timeout: None,
             user_id: None,

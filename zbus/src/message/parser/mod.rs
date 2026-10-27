@@ -8,16 +8,21 @@
 //! each string field lies in the message, so that the header can be read again without checking
 //! its fields again.
 //!
-//! It accepts the same headers as decoding a [`Header`](super::Header) through serde does, but for
-//! one that runs past the end of its bytes, which serde takes if all that's missing is the byte
-//! that ends its last string. Like serde, it rejects a field with an unknown code, rather than
-//! ignoring it as the specification asks, and it checks neither the byte that ends a string nor
-//! the padding after the header.
+//! It accepts the headers that decoding a [`Header`](super::Header) through serde does, but for
+//! those that libdbus rejects as well: one with a string or a signature that a 0 doesn't end, or
+//! with a field that comes more than once, which serde takes the last value of. It also rejects one
+//! that runs past the end of its bytes, which serde takes if all that's missing is the byte that
+//! ends its last string. Like serde, it rejects a field with an unknown code, rather than ignoring
+//! it as the specification asks, and it doesn't check the padding after the header. That padding is
+//! checked as a message is received, along with the rest of what makes a message whole, such as
+//! the fields that its type requires.
 //!
 //! It's made of winnow's combinators, but for the `u32`s, which are taken as 4 bytes and converted
 //! at once: winnow's parsers of integers build them a byte at a time, which takes more
 //! instructions.
 
+#[cfg(feature = "bus-impl")]
+mod body;
 mod byte_order;
 mod error;
 mod fields;
@@ -26,6 +31,8 @@ mod quick_fields;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "bus-impl")]
+pub(crate) use body::validate as validate_body;
 pub(crate) use quick_fields::QuickFields;
 
 use winnow::{LocatingSlice, Parser, binary::length_and_then};
@@ -44,13 +51,21 @@ use primary_header::primary_header;
 /// What follows the fields, from the padding before the body on, isn't looked at.
 pub(crate) fn parse(bytes: &[u8]) -> Result<(PrimaryHeader, usize, QuickFields)> {
     let input = &mut Input::new(bytes);
-    match bytes.first() {
+    let header = match bytes.first() {
         Some(b'l') => header::<LittleEndian>(input),
         Some(b'B') => header::<BigEndian>(input),
         Some(_) => Err(ParseError::Endian),
         None => Err(ParseError::Truncated),
+    };
+    // A field that comes more than once makes the header invalid, as it does with libdbus, rather
+    // than one of its values be taken for that of the field.
+    if let Ok((_, _, fields)) = &header
+        && fields.repeated()
+    {
+        return Err(ParseError::Field.into());
     }
-    .map_err(Error::from)
+
+    header.map_err(Error::from)
 }
 
 /// Parse the primary header at the start of `bytes`, and the length of the header fields after it.

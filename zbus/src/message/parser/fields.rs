@@ -5,9 +5,8 @@ use std::num::NonZeroU32;
 
 use winnow::{
     Parser,
-    binary::length_take,
-    combinator::{dispatch, eof, preceded, repeat_till, terminated},
-    stream::Location,
+    combinator::{dispatch, eof, preceded, repeat_till},
+    stream::{Location, Stream},
     token::{any, take},
 };
 use zbus_utils::{
@@ -57,7 +56,7 @@ fn field<O: ByteOrder>(input: &mut Input<'_>) -> PResult<Field> {
         (REPLY_SERIAL, b'u') => O::u32.try_map(reply_serial).map(Field::ReplySerial),
         (DESTINATION, b's') => bus_name::<O>.map(|(pos, unique)| Field::Destination { pos, unique }),
         (SENDER, b's') => name::<O, _>(names::validate_unique_name).map(Field::Sender),
-        (SIGNATURE, b'g') => body_signature.map(Field::Signature),
+        (SIGNATURE, b'g') => body_signature,
         (UNIX_FDS, b'u') => O::u32.map(Field::UnixFds),
         _ => unknown,
     }
@@ -66,13 +65,11 @@ fn field<O: ByteOrder>(input: &mut Input<'_>) -> PResult<Field> {
 
 /// The signature of the variant that holds the value of a field, which is a single type for every
 /// field: the code of that type.
-///
-/// The byte that ends the signature isn't checked.
 #[inline(always)]
 fn variant_signature(input: &mut Input<'_>) -> PResult<u8> {
     take(3usize)
         .try_map(|signature: &[u8]| match signature {
-            [1, value_type, _] => Ok(*value_type),
+            [1, value_type, 0] => Ok(*value_type),
             _ => Err(ParseError::Field),
         })
         .parse_next(input)
@@ -110,13 +107,13 @@ fn bus_name<O: ByteOrder>(input: &mut Input<'_>) -> PResult<(FieldPos, bool)> {
         .parse_next(input)
 }
 
-/// A string: its length, its bytes, and the byte that ends it, which isn't checked. Where it lies
-/// in the message, and its bytes.
+/// A string: its length, its bytes, and the 0 that ends it. Where it lies in the message, and its
+/// bytes.
 #[inline(always)]
 fn string<'i, O: ByteOrder>(input: &mut Input<'i>) -> PResult<(FieldPos, &'i [u8])> {
-    terminated(length_take(O::u32).with_span(), any)
-        .map(|(string, span)| (FieldPos::new(span.end - string.len(), span.end), string))
-        .parse_next(input)
+    let len = O::u32(input)?;
+
+    nul_terminated(input, len as usize)
 }
 
 /// The value of the reply serial field: the serial number of the message that this one replies
@@ -126,20 +123,30 @@ fn reply_serial(serial: u32) -> Result<NonZeroU32, ParseError> {
 }
 
 /// The value of the signature field: the signature of the body, of 255 bytes at most, as its length
-/// takes a single byte, then the byte that ends it, which isn't checked.
+/// takes a single byte, then the 0 that ends it.
 #[inline(always)]
-fn body_signature(input: &mut Input<'_>) -> PResult<Signature> {
-    terminated(length_take(any), any)
-        .try_map(|signature: &[u8]| {
-            // `m` is the maybe type of GVariant, which the D-Bus format doesn't have, even though
-            // the signature parser accepts it when zbus_utils is built for GVariant as well.
-            if signature.contains(&b'm') {
-                return Err(ParseError::Maybe);
-            }
+fn body_signature(input: &mut Input<'_>) -> PResult<Field> {
+    let len = any(input)?;
+    let (pos, signature) = nul_terminated(input, len.into())?;
 
-            Signature::from_bytes(signature).map_err(|_| ParseError::Signature)
-        })
-        .parse_next(input)
+    Signature::from_bytes(signature)
+        .map(|signature| Field::signature(signature, pos))
+        .map_err(|_| ParseError::Signature)
+}
+
+/// The next `len` bytes, then the 0 that ends them, as it does a string or a signature: where the
+/// bytes lie in the message, and the bytes.
+#[inline(always)]
+fn nul_terminated<'i>(input: &mut Input<'i>, len: usize) -> PResult<(FieldPos, &'i [u8])> {
+    // As `len` is less than the length of what's left, it's less than `usize::MAX`.
+    if input.eof_offset() <= len {
+        return Err(ParseError::Truncated);
+    }
+    let start = input.current_token_start();
+    match input.next_slice(len + 1).split_last() {
+        Some((0, bytes)) => Ok((FieldPos::new(start, start + len), bytes)),
+        _ => Err(ParseError::Field),
+    }
 }
 
 /// A field whose code is unknown, or whose value is of another type than its code calls for.

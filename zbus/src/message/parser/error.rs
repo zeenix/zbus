@@ -20,7 +20,8 @@ pub(super) enum ParseError {
     Serial,
     /// A padding byte isn't 0.
     PaddingNot0(u8),
-    /// A field has an unknown code, a value of the wrong type, or is a reply serial of 0.
+    /// A field has an unknown code, a value of the wrong type, or a string or a signature that a 0
+    /// doesn't end, comes more than once, or is a reply serial of 0.
     Field,
     /// A name is invalid, for the reason given.
     Name(&'static str),
@@ -28,8 +29,6 @@ pub(super) enum ParseError {
     ObjectPath,
     /// The signature of the body is invalid.
     Signature,
-    /// The signature of the body has a maybe type, which the D-Bus format doesn't have.
-    Maybe,
 }
 
 impl ParserError<Input<'_>> for ParseError {
@@ -66,7 +65,6 @@ impl From<ParseError> for Error {
             ParseError::Signature => {
                 Error::SignatureParse(wire::signature::Error::InvalidSignature)
             }
-            ParseError::Maybe => wire::dbus::maybe_not_in_dbus(),
         }
     }
 }

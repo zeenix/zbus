@@ -18,6 +18,8 @@ use crate::{
 pub(crate) const PRIMARY_HEADER_SIZE: usize = 12;
 pub(crate) const MIN_MESSAGE_SIZE: usize = PRIMARY_HEADER_SIZE + 4;
 pub(crate) const MAX_MESSAGE_SIZE: usize = 128 * 1024 * 1024; // 128 MiB
+/// The major version of the protocol, the only one that there is.
+pub(crate) const PROTOCOL_VERSION: u8 = 1;
 
 /// D-Bus code for endianness.
 #[repr(u8)]
@@ -164,7 +166,7 @@ impl PrimaryHeader {
             endian_sig: NATIVE_ENDIAN_SIG,
             msg_type,
             flags: Flags::empty(),
-            protocol_version: 1,
+            protocol_version: PROTOCOL_VERSION,
             body_len,
             serial_num: serial_num.try_into().unwrap(),
         }

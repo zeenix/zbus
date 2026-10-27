@@ -1,5 +1,5 @@
 //! D-Bus Message.
-use std::{fmt, sync::Arc};
+use std::{fmt, ops::Range, sync::Arc};
 
 use crate::{
     Error, ObjectPath, Result,
@@ -21,7 +21,10 @@ mod body;
 pub use body::Body;
 
 pub(crate) mod header;
+use header::PROTOCOL_VERSION;
 pub use header::{EndianSig, Flags, Header, NATIVE_ENDIAN_SIG, PrimaryHeader, Type};
+#[cfg(feature = "bus-impl")]
+use header::{MAX_MESSAGE_SIZE, PRIMARY_HEADER_SIZE};
 
 pub(crate) mod parser;
 use parser::QuickFields;
@@ -152,6 +155,12 @@ impl Message {
         }
 
         let body_offset = header_len + padding_for_8_bytes(header_len);
+        check_whole(
+            &primary_header,
+            &quick_fields,
+            &bytes,
+            header_len..body_offset,
+        )?;
         let quick_fields = quick_fields.into();
 
         Ok(Self {
@@ -236,6 +245,118 @@ impl Message {
         self.inner.recv_seq
     }
 
+    /// Check the body against its signature, as [`Body::validate`] does, without making a [`Body`]
+    /// of it, which takes more than a check of a small body does.
+    #[cfg(feature = "bus-impl")]
+    pub(crate) fn validate_body(&self) -> Result<()> {
+        let bytes = self.inner.bytes.bytes();
+        let quick_fields = self.quick_fields();
+        #[cfg(unix)]
+        let fds = quick_fields.unix_fds().unwrap_or(0);
+        // Without file descriptors, a signature can't have them.
+        #[cfg(not(unix))]
+        let fds = 0;
+
+        parser::validate_body(
+            &bytes[self.inner.body_offset..],
+            quick_fields.signature_bytes(bytes),
+            self.inner.primary_header.endian_sig(),
+            fds,
+        )
+    }
+
+    /// The message, with `sender` for its sender field, in place of the one that it has, if any.
+    ///
+    /// A bus sets the sender field of each message that it passes on to the unique name of the peer
+    /// that sent it, as most peers leave it out. The new message is a copy of the bytes of this
+    /// one, with the field added, which takes much less than building the message anew with a
+    /// [`Builder`] does.
+    ///
+    /// This is mainly provided for bus implementations, and hence only available when the
+    /// `bus-impl` feature is enabled.
+    #[cfg(feature = "bus-impl")]
+    pub fn with_sender(&self, sender: &crate::names::UniqueName<'_>) -> Result<Self> {
+        let data = &self.inner.bytes;
+        let bytes = data.bytes();
+        let quick_fields = self.quick_fields();
+        let endian = Endian::from(self.inner.primary_header.endian_sig());
+        // The fields come after the primary header and their length, in an array of structures,
+        // each of which starts on an 8-byte boundary.
+        let fields_start = PRIMARY_HEADER_SIZE + 4;
+        let fields_len = endian.read_u32(&bytes[PRIMARY_HEADER_SIZE..fields_start]) as usize;
+        let fields_end = fields_start + fields_len;
+        // The fields to keep: all of them, but for the sender field, if any, which takes 8 bytes
+        // before the name, for its code, the signature of its value and the length of the name,
+        // and the 0 after it.
+        let (kept, rest) = match quick_fields.sender_range() {
+            Some(name) => {
+                let end = name.end + 1;
+                let next = (end + padding_for_8_bytes(end)).min(fields_end);
+
+                (fields_start..name.start - 8, next..fields_end)
+            }
+            None => (fields_start..fields_end, fields_end..fields_end),
+        };
+        let kept_end = fields_start + kept.len() + rest.len();
+        let field_start = kept_end + padding_for_8_bytes(kept_end);
+        let name = field_start + 8..field_start + 8 + sender.len();
+        let new_fields_end = name.end + 1;
+        let body_offset = new_fields_end + padding_for_8_bytes(new_fields_end);
+        let body = &bytes[self.inner.body_offset..];
+        let len = body_offset + body.len();
+        if len > MAX_MESSAGE_SIZE {
+            return Err(Error::ExcessData);
+        }
+
+        let u32_bytes = |value: usize| {
+            let mut bytes = [0; 4];
+            endian.write_u32(&mut bytes, value as u32);
+
+            bytes
+        };
+        let mut new = Vec::with_capacity(len);
+        new.extend_from_slice(&bytes[..PRIMARY_HEADER_SIZE]);
+        new.extend_from_slice(&u32_bytes(new_fields_end - fields_start));
+        new.extend_from_slice(&bytes[kept]);
+        new.extend_from_slice(&bytes[rest]);
+        new.resize(field_start, 0);
+        // The code of the field, and the signature of its value: 1 type, a string.
+        new.extend_from_slice(&[FieldCode::Sender as u8, 1, b's', 0]);
+        new.extend_from_slice(&u32_bytes(sender.len()));
+        new.extend_from_slice(sender.as_bytes());
+        new.push(0);
+        new.resize(body_offset, 0);
+        new.extend_from_slice(body);
+
+        #[cfg(unix)]
+        let new = serialized::Data::new_fds(
+            new,
+            data.context(),
+            data.fds()
+                .iter()
+                .map(|fd| fd.try_to_owned())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        #[cfg(not(unix))]
+        let new = serialized::Data::new(new, data.context());
+
+        match quick_fields.sender_range() {
+            // The fields that the message keeps lie where they did, so that what parsing them found
+            // holds of the new message, but for its sender field.
+            None => Ok(Self {
+                inner: Arc::new(Inner {
+                    primary_header: self.inner.primary_header.clone(),
+                    quick_fields: quick_fields.with_sender(name).into(),
+                    bytes: new,
+                    body_offset,
+                    recv_seq: self.inner.recv_seq,
+                }),
+            }),
+            // The fields after the sender field that the message had moved.
+            Some(_) => Self::from_raw_parts(new, self.inner.recv_seq.recv_seq),
+        }
+    }
+
     fn quick_fields(&self) -> &QuickFields {
         // Only a message that zbus built has its header parsed this late, and its header is valid,
         // unless it was built with a name or path from an unchecked constructor, such as
@@ -247,6 +368,37 @@ impl Message {
             quick_fields
         })
     }
+}
+
+/// Check what makes the message in `bytes` whole, beyond each field of its header, which parsing
+/// the header checks: its protocol version, the fields that its type requires, the padding between
+/// its header and its body, at `padding`, which must be 0, and, on Unix, that it brought as many
+/// file descriptors as its header says.
+///
+/// Only a received message is checked so: one that zbus builds may lack a field that the
+/// specification requires, if it was built so.
+fn check_whole(
+    primary_header: &PrimaryHeader,
+    quick_fields: &QuickFields,
+    bytes: &serialized::Data<'static, 'static>,
+    padding: Range<usize>,
+) -> Result<()> {
+    if primary_header.protocol_version() != PROTOCOL_VERSION {
+        return Err(Error::InvalidField);
+    }
+    quick_fields.check_required(primary_header.msg_type())?;
+    let Some(padding) = bytes.get(padding) else {
+        return Err(Error::OutOfBounds);
+    };
+    if let Some(byte) = padding.iter().find(|byte| **byte != 0) {
+        return Err(Error::PaddingNot0(*byte));
+    }
+    #[cfg(unix)]
+    if bytes.fds().len() < quick_fields.unix_fds().unwrap_or(0) as usize {
+        return Err(Error::MissingParameter("Missing file descriptors"));
+    }
+
+    Ok(())
 }
 
 impl fmt::Debug for Message {
@@ -341,7 +493,7 @@ mod tests {
     use std::os::fd::{AsFd, AsRawFd};
     use test_log::test;
 
-    use super::Message;
+    use super::{Message, Type, parser};
     use crate::{Error, wire::serialized::Data};
 
     #[test]
@@ -385,6 +537,91 @@ mod tests {
         assert_eq!(e.to_string(), "Error org.freedesktop.zbus.Error: kaboom!");
     }
 
+    #[cfg(feature = "bus-impl")]
+    #[test]
+    fn with_sender() {
+        use crate::{
+            names::UniqueName,
+            wire::{BE, LE},
+        };
+
+        let sender = UniqueName::try_from(":busd.42").unwrap();
+        for endian in [LE, BE] {
+            #[cfg(unix)]
+            let stdout = std::io::stdout();
+            let call = || {
+                Message::method_call("/org/zbus/Test", "Test")
+                    .destination("org.zbus.Test")
+                    .interface("org.zbus.Test")
+                    .endian(endian)
+            };
+            let built = call().build(&(7u32, "seven")).unwrap();
+            let messages = [
+                // Without a sender field, as most peers send messages to a bus.
+                built.clone(),
+                Message::signal("/org/zbus/Test", "org.zbus.Test", "Test")
+                    .endian(endian)
+                    .build(&())
+                    .unwrap(),
+                Message::method_return(&built.header())
+                    .endian(endian)
+                    .build(&[7u8; 13])
+                    .unwrap(),
+                Message::error(&built.header(), "org.zbus.Error")
+                    .endian(endian)
+                    .build(&"seven")
+                    .unwrap(),
+                #[cfg(unix)]
+                call().build(&(Fd::from(&stdout), 7u8)).unwrap(),
+                // With another sender field, before the signature field, and with the same one.
+                call().sender(":1.7").build(&"seven").unwrap(),
+                call().sender(sender.clone()).build(&"seven").unwrap(),
+                // With another sender field, as its last field, as the message has no body.
+                Message::method_return(&built.header())
+                    .sender(":1.7")
+                    .endian(endian)
+                    .build(&())
+                    .unwrap(),
+            ];
+            for msg in messages {
+                let new = msg.with_sender(&sender).unwrap();
+                assert_eq!(new.header().sender(), Some(&sender));
+                assert_eq!(new.body().data().bytes(), msg.body().data().bytes());
+                assert_eq!(new.recv_position(), msg.recv_position());
+                new.body().validate().unwrap();
+
+                // The header is that of the message built with the sender, and a recipient reads
+                // the same from the bytes of the new message.
+                let header = msg.header();
+                let signature = header.signature().clone();
+                #[cfg(unix)]
+                let fds = msg
+                    .data()
+                    .fds()
+                    .iter()
+                    .map(|fd| fd.try_to_owned().unwrap().into())
+                    .collect();
+                let builder = super::Builder::from(header).sender(sender.clone());
+                // SAFETY: The body and its file descriptors are those of a built message.
+                let expected = unsafe {
+                    builder.build_raw_body(
+                        msg.body().data().bytes(),
+                        signature,
+                        #[cfg(unix)]
+                        fds,
+                    )
+                }
+                .unwrap();
+                let received = Message::from_raw_parts(new.data().clone(), 0).unwrap();
+                for header in [new.header(), received.header()] {
+                    assert_eq!(format!("{header:?}"), format!("{:?}", expected.header()));
+                }
+                #[cfg(unix)]
+                assert_eq!(new.data().fds().len(), msg.data().fds().len());
+            }
+        }
+    }
+
     #[test]
     fn invalid_path_field() {
         // `/org.zbus/Test` is not a valid object path, so a message with it as its path is
@@ -402,5 +639,91 @@ mod tests {
 
         let error = Message::from_raw_parts(data, 0).unwrap_err();
         assert_eq!(error, Error::InvalidObjectPath);
+    }
+
+    #[test]
+    fn protocol_version() {
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&())
+            .unwrap();
+        let mut bytes = m.data().bytes().to_vec();
+        bytes[3] = 2;
+        let data = Data::new(bytes, m.data().context());
+
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::InvalidField);
+    }
+
+    #[test]
+    fn required_fields() {
+        // A method call with only the fields that it requires, which aren't those that another
+        // type of message requires.
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&())
+            .unwrap();
+        Message::from_raw_parts(m.data().clone(), 0).unwrap();
+        for msg_type in [Type::MethodReturn, Type::Error, Type::Signal] {
+            let mut bytes = m.data().bytes().to_vec();
+            bytes[1] = msg_type as u8;
+            let data = Data::new(bytes, m.data().context());
+
+            let error = Message::from_raw_parts(data, 0).unwrap_err();
+            assert_eq!(error, Error::MissingField, "{msg_type:?}");
+        }
+
+        // The builder makes a reply without a reply serial, if asked to.
+        let reply = Message::method_return(&m.header())
+            .reply_serial(None)
+            .build(&())
+            .unwrap();
+        let error = Message::from_raw_parts(reply.data().clone(), 0).unwrap_err();
+        assert_eq!(error, Error::MissingField);
+    }
+
+    #[test]
+    fn body_padding() {
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&"Pong")
+            .unwrap();
+        let (_, header_len, _) = parser::parse(m.data()).unwrap();
+        assert_ne!(
+            header_len, m.inner.body_offset,
+            "the header needs no padding"
+        );
+
+        let mut bytes = m.data().bytes().to_vec();
+        bytes[header_len] = 7;
+        let data = Data::new(bytes, m.data().context());
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::PaddingNot0(7));
+
+        // Bytes that end with the header, without the padding after it.
+        let bytes = m.data().bytes()[..header_len].to_vec();
+        let data = Data::new(bytes, m.data().context());
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert_eq!(error, Error::OutOfBounds);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_fds() {
+        let stdout = std::io::stdout();
+        let m = Message::method_call("/org/zbus/Test", "Ping")
+            .build(&(Fd::from(&stdout), Fd::from(&stdout)))
+            .unwrap();
+        let fds = m
+            .data()
+            .fds()
+            .iter()
+            .map(|fd| fd.try_clone().unwrap())
+            .collect::<Vec<_>>();
+        let bytes = m.data().bytes().to_vec();
+        let data = Data::new_fds(bytes.clone(), m.data().context(), fds);
+        Message::from_raw_parts(data, 0).unwrap();
+
+        let fds = vec![m.data().fds()[0].try_clone().unwrap()];
+        let data = Data::new_fds(bytes, m.data().context(), fds);
+        let error = Message::from_raw_parts(data, 0).unwrap_err();
+        assert!(matches!(error, Error::MissingParameter(_)), "{error:?}");
     }
 }
