@@ -1435,6 +1435,7 @@ impl Connection {
         socket_read: Box<dyn socket::ReadHalf>,
         already_read: Vec<u8>,
         #[cfg(unix)] already_received_fds: Vec<std::os::fd::OwnedFd>,
+        #[cfg(feature = "bus-impl")] validate_bodies: bool,
     ) {
         let inner = &self.inner;
         inner
@@ -1448,6 +1449,8 @@ impl Connection {
                     #[cfg(unix)]
                     already_received_fds,
                     inner.socket_status.clone(),
+                    #[cfg(feature = "bus-impl")]
+                    validate_bodies,
                 )
                 .spawn(&inner.runtime),
             )

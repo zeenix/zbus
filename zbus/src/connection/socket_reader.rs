@@ -29,6 +29,9 @@ pub(crate) struct SocketReader {
     already_received_fds: Vec<std::os::fd::OwnedFd>,
     prev_seq: u64,
     socket_status: Arc<SocketStatus>,
+    /// Whether the body of each message is checked against its signature as it's received.
+    #[cfg(feature = "bus-impl")]
+    validate_bodies: bool,
 }
 
 impl SocketReader {
@@ -39,6 +42,7 @@ impl SocketReader {
         already_received_bytes: Vec<u8>,
         #[cfg(unix)] already_received_fds: Vec<std::os::fd::OwnedFd>,
         socket_status: Arc<SocketStatus>,
+        #[cfg(feature = "bus-impl")] validate_bodies: bool,
     ) -> Self {
         Self {
             socket,
@@ -49,6 +53,8 @@ impl SocketReader {
             already_received_fds,
             prev_seq: 0,
             socket_status,
+            #[cfg(feature = "bus-impl")]
+            validate_bodies,
         }
     }
 
@@ -161,6 +167,10 @@ impl SocketReader {
             )
             .await?;
         self.prev_seq = seq;
+        #[cfg(feature = "bus-impl")]
+        if self.validate_bodies {
+            msg.validate_body()?;
+        }
 
         Ok(msg)
     }
@@ -253,6 +263,56 @@ mod tests {
             // A cancelled reader never gets to close the channel behind the stream, so only the
             // stream itself can say it is spent — and a `select!` loop spins until it does.
             assert!(stream.is_terminated(), "the finished stream denies it");
+        });
+    }
+
+    /// A connection that checks the bodies of the messages that it receives ends on one whose body
+    /// doesn't hold what its signature says, after it handed on the messages before it.
+    #[cfg(feature = "bus-impl")]
+    #[test]
+    #[timeout(15000)]
+    fn invalid_body() {
+        use crate::{Error, Message};
+
+        let (c1, c2) = Channel::pair();
+        futures_lite::future::block_on(async {
+            let guid = Guid::generate();
+            let (receiver, sender) = futures_util::try_join!(
+                Builder::authenticated_socket(c1, guid.clone())
+                    .p2p()
+                    .validate_bodies()
+                    .runtime(TestRuntime::new())
+                    .build(),
+                Builder::authenticated_socket(c2, guid)
+                    .p2p()
+                    .runtime(TestRuntime::new())
+                    .build(),
+            )
+            .unwrap();
+            let mut stream = MessageStream::from(&receiver);
+            // A signal whose body is a boolean of `bytes`.
+            let signal = |bytes: &[u8]| {
+                let builder = Message::signal("/org/zbus/Test", "org.zbus.Test", "Test");
+                // SAFETY: The body carries no file descriptors, and the receiver is to check it.
+                unsafe {
+                    builder.build_raw_body(
+                        bytes,
+                        "b",
+                        #[cfg(unix)]
+                        vec![],
+                    )
+                }
+                .unwrap()
+            };
+
+            sender.send(&signal(&[1, 0, 0, 0])).await.unwrap();
+            sender.send(&signal(&[2, 0, 0, 0])).await.unwrap();
+            let msg = stream.next().await.unwrap().unwrap();
+            assert!(msg.body().deserialize::<bool>().unwrap());
+            let error = stream.next().await.unwrap().unwrap_err();
+            assert!(matches!(error, Error::Failure(_)), "{error:?}");
+            receiver.closed().await;
+            assert!(stream.next().await.is_none(), "the stream lives on");
         });
     }
 }
