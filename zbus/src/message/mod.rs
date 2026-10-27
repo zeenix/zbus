@@ -243,6 +243,26 @@ impl Message {
         self.inner.recv_seq
     }
 
+    /// Check the body against its signature, as [`Body::validate`] does, without making a [`Body`]
+    /// of it, which takes more than a check of a small body does.
+    #[cfg(feature = "bus-impl")]
+    pub(crate) fn validate_body(&self) -> Result<()> {
+        let bytes = self.inner.bytes.bytes();
+        let quick_fields = self.quick_fields();
+        #[cfg(unix)]
+        let fds = quick_fields.unix_fds().unwrap_or(0);
+        // Without file descriptors, a signature can't have them.
+        #[cfg(not(unix))]
+        let fds = 0;
+
+        parser::validate_body(
+            &bytes[self.inner.body_offset..],
+            quick_fields.signature_bytes(bytes),
+            self.inner.primary_header.endian_sig(),
+            fds,
+        )
+    }
+
     fn quick_fields(&self) -> &QuickFields {
         // Only a message that zbus built has its header parsed this late, and its header is valid,
         // unless it was built with a name or path from an unchecked constructor, such as

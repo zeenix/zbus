@@ -1,7 +1,7 @@
 //! The header fields: an array of `(code, variant)` structures, whose code tells the one type that
 //! the variant can hold.
 
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, ops::Range};
 
 use winnow::{
     Parser,
@@ -57,7 +57,7 @@ fn field<O: ByteOrder>(input: &mut Input<'_>) -> PResult<Field> {
         (REPLY_SERIAL, b'u') => O::u32.try_map(reply_serial).map(Field::ReplySerial),
         (DESTINATION, b's') => bus_name::<O>.map(|(pos, unique)| Field::Destination { pos, unique }),
         (SENDER, b's') => name::<O, _>(names::validate_unique_name).map(Field::Sender),
-        (SIGNATURE, b'g') => body_signature.map(Field::Signature),
+        (SIGNATURE, b'g') => body_signature,
         (UNIX_FDS, b'u') => O::u32.map(Field::UnixFds),
         _ => unknown,
     }
@@ -128,16 +128,19 @@ fn reply_serial(serial: u32) -> Result<NonZeroU32, ParseError> {
 /// The value of the signature field: the signature of the body, of 255 bytes at most, as its length
 /// takes a single byte, then the byte that ends it, which isn't checked.
 #[inline(always)]
-fn body_signature(input: &mut Input<'_>) -> PResult<Signature> {
-    terminated(length_take(any), any)
-        .try_map(|signature: &[u8]| {
+fn body_signature(input: &mut Input<'_>) -> PResult<Field> {
+    terminated(length_take(any).with_span(), any)
+        .try_map(|(signature, span): (&[u8], Range<usize>)| {
             // `m` is the maybe type of GVariant, which the D-Bus format doesn't have, even though
             // the signature parser accepts it when zbus_utils is built for GVariant as well.
             if signature.contains(&b'm') {
                 return Err(ParseError::Maybe);
             }
+            let pos = FieldPos::new(span.end - signature.len(), span.end);
 
-            Signature::from_bytes(signature).map_err(|_| ParseError::Signature)
+            Signature::from_bytes(signature)
+                .map(|signature| Field::signature(signature, pos))
+                .map_err(|_| ParseError::Signature)
         })
         .parse_next(input)
 }

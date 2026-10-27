@@ -53,9 +53,10 @@ jobs:
           cache-extra-identifier: ${{ runner.arch }}
           bins: cargo-codspeed
       # The features the bench targets need between them beyond the default ones, as their
-      # `required-features` say; each job builds its own targets only.
+      # `required-features` say, and `bus-impl`, which `benchmarks` measures the bus API of where
+      # it's enabled; each job builds its own targets only.
       - name: Build the benchmark target(s)
-        run: cargo codspeed build -m ${{ matrix.mode }} --features zbus/p2p ${{ matrix.benches }}
+        run: cargo codspeed build -m ${{ matrix.mode }} --features zbus/bus-impl ${{ matrix.benches }}
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@v5
         with:

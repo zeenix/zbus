@@ -27,6 +27,9 @@ pub(crate) struct QuickFields {
     unique_destination: bool,
     sender: Option<FieldPos>,
     signature: Signature,
+    /// Where the signature lies, if the message has one.
+    #[cfg(feature = "bus-impl")]
+    signature_pos: Option<FieldPos>,
     unix_fds: Option<u32>,
 }
 
@@ -92,6 +95,13 @@ impl QuickFields {
     pub(in crate::message) fn signature(&self) -> &Signature {
         &self.signature
     }
+
+    /// The signature of the body as it lies in `bytes`, which must be those that `self` was parsed
+    /// from.
+    #[cfg(feature = "bus-impl")]
+    pub(in crate::message) fn signature_bytes<'m>(&self, bytes: &'m [u8]) -> &'m [u8] {
+        self.signature_pos.map_or(&[], |pos| &bytes[pos.range()])
+    }
 }
 
 /// The fields are gathered as they're parsed. A field that comes more than once is checked each
@@ -113,7 +123,17 @@ impl Accumulate<Field> for QuickFields {
                 self.unique_destination = unique;
             }
             Field::Sender(pos) => self.sender = Some(pos),
-            Field::Signature(signature) => self.signature = signature,
+            Field::Signature {
+                signature,
+                #[cfg(feature = "bus-impl")]
+                pos,
+            } => {
+                self.signature = signature;
+                #[cfg(feature = "bus-impl")]
+                {
+                    self.signature_pos = Some(pos);
+                }
+            }
             Field::UnixFds(unix_fds) => self.unix_fds = Some(unix_fds),
         }
     }
@@ -132,8 +152,25 @@ pub(super) enum Field {
         unique: bool,
     },
     Sender(FieldPos),
-    Signature(Signature),
+    Signature {
+        signature: Signature,
+        /// Where the signature lies, which only a bus needs, to check the body against it.
+        #[cfg(feature = "bus-impl")]
+        pos: FieldPos,
+    },
     UnixFds(u32),
+}
+
+impl Field {
+    /// The signature field, of `signature`, which lies at `pos` in the message.
+    #[cfg_attr(not(feature = "bus-impl"), expect(unused_variables))]
+    pub(super) fn signature(signature: Signature, pos: FieldPos) -> Self {
+        Self::Signature {
+            signature,
+            #[cfg(feature = "bus-impl")]
+            pos,
+        }
+    }
 }
 
 /// The byte range of a string field in the bytes of its message.

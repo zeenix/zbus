@@ -14,8 +14,9 @@ endi = "1.1.0"
 [dependencies.zbus]
 path = ".."
 default-features = false
-# The D-Bus API, for the `header` target to decode messages with.
-features = ["comms"]
+# The D-Bus API, for the `header` target to decode messages with, and the bus API, for the `body`
+# target to check bodies with.
+features = ["comms", "bus-impl"]
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -30,5 +31,11 @@ doc = false
 [[bin]]
 name = "header"
 path = "fuzz_targets/header.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "body"
+path = "fuzz_targets/body.rs"
 test = false
 doc = false
