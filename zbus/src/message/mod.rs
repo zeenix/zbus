@@ -23,6 +23,8 @@ pub use body::Body;
 pub(crate) mod header;
 use header::PROTOCOL_VERSION;
 pub use header::{EndianSig, Flags, Header, NATIVE_ENDIAN_SIG, PrimaryHeader, Type};
+#[cfg(feature = "bus-impl")]
+use header::{MAX_MESSAGE_SIZE, PRIMARY_HEADER_SIZE};
 
 pub(crate) mod parser;
 use parser::QuickFields;
@@ -263,6 +265,98 @@ impl Message {
         )
     }
 
+    /// The message, with `sender` for its sender field, in place of the one that it has, if any.
+    ///
+    /// A bus sets the sender field of each message that it passes on to the unique name of the peer
+    /// that sent it, as most peers leave it out. The new message is a copy of the bytes of this
+    /// one, with the field added, which takes much less than building the message anew with a
+    /// [`Builder`] does.
+    ///
+    /// This is mainly provided for bus implementations, and hence only available when the
+    /// `bus-impl` feature is enabled.
+    #[cfg(feature = "bus-impl")]
+    pub fn with_sender(&self, sender: &crate::names::UniqueName<'_>) -> Result<Self> {
+        let data = &self.inner.bytes;
+        let bytes = data.bytes();
+        let quick_fields = self.quick_fields();
+        let endian = Endian::from(self.inner.primary_header.endian_sig());
+        // The fields come after the primary header and their length, in an array of structures,
+        // each of which starts on an 8-byte boundary.
+        let fields_start = PRIMARY_HEADER_SIZE + 4;
+        let fields_len = endian.read_u32(&bytes[PRIMARY_HEADER_SIZE..fields_start]) as usize;
+        let fields_end = fields_start + fields_len;
+        // The fields to keep: all of them, but for the sender field, if any, which takes 8 bytes
+        // before the name, for its code, the signature of its value and the length of the name,
+        // and the 0 after it.
+        let (kept, rest) = match quick_fields.sender_range() {
+            Some(name) => {
+                let end = name.end + 1;
+                let next = (end + padding_for_8_bytes(end)).min(fields_end);
+
+                (fields_start..name.start - 8, next..fields_end)
+            }
+            None => (fields_start..fields_end, fields_end..fields_end),
+        };
+        let kept_end = fields_start + kept.len() + rest.len();
+        let field_start = kept_end + padding_for_8_bytes(kept_end);
+        let name = field_start + 8..field_start + 8 + sender.len();
+        let new_fields_end = name.end + 1;
+        let body_offset = new_fields_end + padding_for_8_bytes(new_fields_end);
+        let body = &bytes[self.inner.body_offset..];
+        let len = body_offset + body.len();
+        if len > MAX_MESSAGE_SIZE {
+            return Err(Error::ExcessData);
+        }
+
+        let u32_bytes = |value: usize| {
+            let mut bytes = [0; 4];
+            endian.write_u32(&mut bytes, value as u32);
+
+            bytes
+        };
+        let mut new = Vec::with_capacity(len);
+        new.extend_from_slice(&bytes[..PRIMARY_HEADER_SIZE]);
+        new.extend_from_slice(&u32_bytes(new_fields_end - fields_start));
+        new.extend_from_slice(&bytes[kept]);
+        new.extend_from_slice(&bytes[rest]);
+        new.resize(field_start, 0);
+        // The code of the field, and the signature of its value: 1 type, a string.
+        new.extend_from_slice(&[FieldCode::Sender as u8, 1, b's', 0]);
+        new.extend_from_slice(&u32_bytes(sender.len()));
+        new.extend_from_slice(sender.as_bytes());
+        new.push(0);
+        new.resize(body_offset, 0);
+        new.extend_from_slice(body);
+
+        #[cfg(unix)]
+        let new = serialized::Data::new_fds(
+            new,
+            data.context(),
+            data.fds()
+                .iter()
+                .map(|fd| fd.try_to_owned())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        #[cfg(not(unix))]
+        let new = serialized::Data::new(new, data.context());
+
+        match quick_fields.sender_range() {
+            // The fields that the message keeps lie where they did, so that what parsing them found
+            // holds of the new message, but for its sender field.
+            None => Ok(Self {
+                inner: Arc::new(Inner {
+                    primary_header: self.inner.primary_header.clone(),
+                    quick_fields: quick_fields.with_sender(name).into(),
+                    bytes: new,
+                    body_offset,
+                    recv_seq: self.inner.recv_seq,
+                }),
+            }),
+            // The fields after the sender field that the message had moved.
+            Some(_) => Self::from_raw_parts(new, self.inner.recv_seq.recv_seq),
+        }
+    }
+
     fn quick_fields(&self) -> &QuickFields {
         // Only a message that zbus built has its header parsed this late, and its header is valid,
         // unless it was built with a name or path from an unchecked constructor, such as
@@ -441,6 +535,91 @@ mod tests {
             .build(&("kaboom!", 32))
             .unwrap();
         assert_eq!(e.to_string(), "Error org.freedesktop.zbus.Error: kaboom!");
+    }
+
+    #[cfg(feature = "bus-impl")]
+    #[test]
+    fn with_sender() {
+        use crate::{
+            names::UniqueName,
+            wire::{BE, LE},
+        };
+
+        let sender = UniqueName::try_from(":busd.42").unwrap();
+        for endian in [LE, BE] {
+            #[cfg(unix)]
+            let stdout = std::io::stdout();
+            let call = || {
+                Message::method_call("/org/zbus/Test", "Test")
+                    .destination("org.zbus.Test")
+                    .interface("org.zbus.Test")
+                    .endian(endian)
+            };
+            let built = call().build(&(7u32, "seven")).unwrap();
+            let messages = [
+                // Without a sender field, as most peers send messages to a bus.
+                built.clone(),
+                Message::signal("/org/zbus/Test", "org.zbus.Test", "Test")
+                    .endian(endian)
+                    .build(&())
+                    .unwrap(),
+                Message::method_return(&built.header())
+                    .endian(endian)
+                    .build(&[7u8; 13])
+                    .unwrap(),
+                Message::error(&built.header(), "org.zbus.Error")
+                    .endian(endian)
+                    .build(&"seven")
+                    .unwrap(),
+                #[cfg(unix)]
+                call().build(&(Fd::from(&stdout), 7u8)).unwrap(),
+                // With another sender field, before the signature field, and with the same one.
+                call().sender(":1.7").build(&"seven").unwrap(),
+                call().sender(sender.clone()).build(&"seven").unwrap(),
+                // With another sender field, as its last field, as the message has no body.
+                Message::method_return(&built.header())
+                    .sender(":1.7")
+                    .endian(endian)
+                    .build(&())
+                    .unwrap(),
+            ];
+            for msg in messages {
+                let new = msg.with_sender(&sender).unwrap();
+                assert_eq!(new.header().sender(), Some(&sender));
+                assert_eq!(new.body().data().bytes(), msg.body().data().bytes());
+                assert_eq!(new.recv_position(), msg.recv_position());
+                new.body().validate().unwrap();
+
+                // The header is that of the message built with the sender, and a recipient reads
+                // the same from the bytes of the new message.
+                let header = msg.header();
+                let signature = header.signature().clone();
+                #[cfg(unix)]
+                let fds = msg
+                    .data()
+                    .fds()
+                    .iter()
+                    .map(|fd| fd.try_to_owned().unwrap().into())
+                    .collect();
+                let builder = super::Builder::from(header).sender(sender.clone());
+                // SAFETY: The body and its file descriptors are those of a built message.
+                let expected = unsafe {
+                    builder.build_raw_body(
+                        msg.body().data().bytes(),
+                        signature,
+                        #[cfg(unix)]
+                        fds,
+                    )
+                }
+                .unwrap();
+                let received = Message::from_raw_parts(new.data().clone(), 0).unwrap();
+                for header in [new.header(), received.header()] {
+                    assert_eq!(format!("{header:?}"), format!("{:?}", expected.header()));
+                }
+                #[cfg(unix)]
+                assert_eq!(new.data().fds().len(), msg.data().fds().len());
+            }
+        }
     }
 
     #[test]

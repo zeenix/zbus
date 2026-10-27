@@ -3,6 +3,7 @@
 use zbus::{
     Message,
     message::{Header, Type},
+    names::UniqueName,
     wire::{
         BE, Endian, LE,
         serialized::{Context, Data},
@@ -85,6 +86,26 @@ fn check(data: &[u8], endian: Endian) {
     assert_eq!(header.sender(), decoded.sender());
     assert_eq!(header.signature(), decoded.signature());
     assert_eq!(header.unix_fds(), decoded.unix_fds());
+
+    // A bus that sets the sender of the message gets the same header but for its sender, which a
+    // recipient reads from the bytes of the new message as well.
+    let sender = UniqueName::from_static_str_unchecked(":busd.42");
+    let new = received.with_sender(&sender).unwrap();
+    // SAFETY: The data carries no file descriptors.
+    let reread = unsafe { Message::from_bytes(new.data().clone()) }.unwrap();
+    for new in [&new, &reread] {
+        let new_header = new.header();
+        assert_eq!(new_header.sender(), Some(&sender));
+        assert_eq!(new_header.path(), header.path());
+        assert_eq!(new_header.interface(), header.interface());
+        assert_eq!(new_header.member(), header.member());
+        assert_eq!(new_header.error_name(), header.error_name());
+        assert_eq!(new_header.reply_serial(), header.reply_serial());
+        assert_eq!(new_header.destination(), header.destination());
+        assert_eq!(new_header.signature(), header.signature());
+        assert_eq!(new_header.unix_fds(), header.unix_fds());
+        assert_eq!(new.body().data().bytes(), received.body().data().bytes());
+    }
 }
 
 /// Whether a message whose header, `len` bytes long, decodes to `header` from the start of `data`,

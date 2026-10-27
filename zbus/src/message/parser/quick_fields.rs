@@ -15,7 +15,7 @@ use crate::{
 ///
 /// Only the parser creates it, from fields that it checked, so that reading them back doesn't have
 /// to check them again.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct QuickFields {
     path: Option<FieldPos>,
     interface: Option<FieldPos>,
@@ -103,6 +103,22 @@ impl QuickFields {
     #[cfg(feature = "bus-impl")]
     pub(in crate::message) fn signature_bytes<'m>(&self, bytes: &'m [u8]) -> &'m [u8] {
         self.signature_pos.map_or(&[], |pos| &bytes[pos.range()])
+    }
+
+    /// Where the name in the sender field lies, if the message has one.
+    #[cfg(feature = "bus-impl")]
+    pub(in crate::message) fn sender_range(&self) -> Option<Range<usize>> {
+        self.sender.map(FieldPos::range)
+    }
+
+    /// The fields of the same message with a sender field added after the others, whose name lies
+    /// at `name`, which the message didn't have.
+    #[cfg(feature = "bus-impl")]
+    pub(in crate::message) fn with_sender(&self, name: Range<usize>) -> Self {
+        Self {
+            sender: Some(FieldPos::new(name.start, name.end)),
+            ..self.clone()
+        }
     }
 
     /// Whether a field came more than once.
