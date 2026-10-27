@@ -1,4 +1,7 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 use test_log::test;
 
 use super::parse;
@@ -54,22 +57,27 @@ fn unknown_fields() {
 
 #[test]
 fn ends_of_strings() {
-    // As decoding a header through serde, the byte that ends a string isn't checked, nor the
-    // one that ends the signature of a variant.
-    let bytes = raw_header(&[3, 1, b's', b'x', 4, 0, 0, 0, b'P', b'i', b'n', b'g', b'y']);
-    let header = header(&bytes);
-    assert_eq!(header.member().unwrap(), "Ping");
+    // A string ends with a 0, as does the signature of a variant, which libdbus checks, unlike
+    // decoding a header through serde.
+    let bytes = raw_header(&[3, 1, b's', 0, 4, 0, 0, 0, b'P', b'i', b'n', b'g', 0]);
+    assert_eq!(header(&bytes).member().unwrap(), "Ping");
+    for (i, byte) in [(3, b'x'), (12, b'y')] {
+        let mut bytes = bytes.clone();
+        bytes[MIN_MESSAGE_SIZE + i] = byte;
+        assert_eq!(parse(&bytes).unwrap_err(), Error::InvalidField, "{bytes:?}");
+    }
 }
 
 #[test]
 fn repeated_fields() {
-    // Each member field is checked, and the last one is kept.
+    // A field that comes twice makes the header invalid, as it does with libdbus, and each of
+    // them is checked.
     let mut fields = vec![
         3, 1, b's', 0, 4, 0, 0, 0, b'P', b'i', b'n', b'g', 0, 0, 0, 0,
     ];
     fields.extend([3, 1, b's', 0, 4, 0, 0, 0, b'P', b'o', b'n', b'g', 0]);
     let bytes = raw_header(&fields);
-    assert_eq!(header(&bytes).member().unwrap(), "Pong");
+    assert_eq!(parse(&bytes).unwrap_err(), Error::InvalidField);
 
     fields[8] = b'0';
     let bytes = raw_header(&fields);
@@ -176,13 +184,51 @@ fn assert_same(bytes: &[u8]) {
     match (parsed, decoded) {
         (Ok((primary, len, quick_fields)), Ok((decoded, decoded_len))) => {
             assert_eq!(len, decoded_len);
+            assert!(canonical_fields(bytes, endian), "{bytes:?}");
             // SAFETY: `quick_fields` were parsed from `bytes`.
             let fields = unsafe { quick_fields.fields(bytes) };
             assert_eq_headers(&Header::new(primary, fields), &decoded, bytes);
         }
         (Err(_), Err(_)) => (),
+        // Decoding through serde doesn't check that strings end with a 0, nor that no field comes
+        // twice.
+        (Err(Error::InvalidField), Ok(_)) if !canonical_fields(bytes, endian) => (),
         (parsed, decoded) => panic!("{bytes:?}: parsed: {parsed:?}, decoded: {decoded:?}"),
     }
+}
+
+/// Whether the fields of the header in `bytes`, which decodes through serde, end each of their
+/// strings and signatures with a 0, none of them coming twice, which decoding through serde doesn't
+/// check.
+fn canonical_fields(bytes: &[u8], endian: Endian) -> bool {
+    let end = MIN_MESSAGE_SIZE + endian.read_u32(&bytes[MIN_MESSAGE_SIZE - 4..]) as usize;
+    let byte = |i: usize| bytes.get(i).copied();
+    let mut codes = HashSet::new();
+    let mut field = MIN_MESSAGE_SIZE;
+    while field < end {
+        // A field starts with its code, and the signature of its value: 1 type, and a 0. Its
+        // value comes next, on a 4-byte boundary, as the field starts on an 8-byte one.
+        let value = field + 4;
+        let value_end = match byte(field + 2) {
+            Some(b'u') => value + 4,
+            Some(b'g') => match byte(value) {
+                Some(len) => value + 1 + len as usize + 1,
+                None => return false,
+            },
+            _ => match bytes.get(value..value + 4) {
+                Some(len) => value + 4 + endian.read_u32(len) as usize + 1,
+                None => return false,
+            },
+        };
+        let ends_with_0 = byte(field + 3) == Some(0)
+            && (byte(field + 2) == Some(b'u') || byte(value_end - 1) == Some(0));
+        if !codes.insert(byte(field)) || !ends_with_0 {
+            return false;
+        }
+        field = value_end.next_multiple_of(8);
+    }
+
+    true
 }
 
 fn assert_eq_headers(parsed: &Header<'_>, decoded: &Header<'_>, bytes: &[u8]) {

@@ -7,7 +7,7 @@ use winnow::stream::Accumulate;
 
 use crate::{
     Error, ObjectPath, Signature,
-    message::{Fields, Type, header::PRIMARY_HEADER_SIZE},
+    message::{FieldCode, Fields, Type, header::PRIMARY_HEADER_SIZE},
     names::{BusName, ErrorName, InterfaceName, MemberName, UniqueName, WellKnownName},
 };
 
@@ -31,6 +31,8 @@ pub(crate) struct QuickFields {
     #[cfg(feature = "bus-impl")]
     signature_pos: Option<FieldPos>,
     unix_fds: Option<u32>,
+    /// A bit for the code of each field that came, and [`REPEATED`] if one came more than once.
+    codes: u16,
 }
 
 impl QuickFields {
@@ -102,16 +104,26 @@ impl QuickFields {
     pub(in crate::message) fn signature_bytes<'m>(&self, bytes: &'m [u8]) -> &'m [u8] {
         self.signature_pos.map_or(&[], |pos| &bytes[pos.range()])
     }
+
+    /// Whether a field came more than once.
+    pub(super) fn repeated(&self) -> bool {
+        self.codes & REPEATED != 0
+    }
 }
 
-/// The fields are gathered as they're parsed. A field that comes more than once is checked each
-/// time, and the last one is kept.
+/// The fields are gathered as they're parsed. A field that comes more than once makes the header
+/// invalid, as it does with libdbus, rather than one of its values be taken for that of the field.
 impl Accumulate<Field> for QuickFields {
     fn initial(_capacity: Option<usize>) -> Self {
         Self::default()
     }
 
+    #[inline(always)]
     fn accumulate(&mut self, field: Field) {
+        // Without a branch, as fields seldom come more than once.
+        let code = 1 << field.code() as u16;
+        self.codes |= code | (u16::from(self.codes & code != 0) * REPEATED);
+
         match field {
             Field::Path(pos) => self.path = Some(pos),
             Field::Interface(pos) => self.interface = Some(pos),
@@ -139,6 +151,10 @@ impl Accumulate<Field> for QuickFields {
     }
 }
 
+/// The bit of [`QuickFields::codes`] that tells a field came more than once, which no field code
+/// takes, as they start at 1.
+const REPEATED: u16 = 1;
+
 /// A header field, as the parser finds it.
 pub(super) enum Field {
     Path(FieldPos),
@@ -162,6 +178,22 @@ pub(super) enum Field {
 }
 
 impl Field {
+    /// The code of the field.
+    #[inline(always)]
+    fn code(&self) -> FieldCode {
+        match self {
+            Self::Path(_) => FieldCode::Path,
+            Self::Interface(_) => FieldCode::Interface,
+            Self::Member(_) => FieldCode::Member,
+            Self::ErrorName(_) => FieldCode::ErrorName,
+            Self::ReplySerial(_) => FieldCode::ReplySerial,
+            Self::Destination { .. } => FieldCode::Destination,
+            Self::Sender(_) => FieldCode::Sender,
+            Self::Signature { .. } => FieldCode::Signature,
+            Self::UnixFds(_) => FieldCode::UnixFDs,
+        }
+    }
+
     /// The signature field, of `signature`, which lies at `pos` in the message.
     #[cfg_attr(not(feature = "bus-impl"), expect(unused_variables))]
     pub(super) fn signature(signature: Signature, pos: FieldPos) -> Self {
