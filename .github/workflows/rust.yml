@@ -406,6 +406,9 @@ jobs:
       - name: Fuzz the parser of message headers against decoding them through serde
         run: |
           cargo --locked fuzz run --fuzz-dir zbus/fuzz header -- -max_total_time=30 -max_len=4096
+      - name: Fuzz the check of message bodies against deserializing them
+        run: |
+          cargo --locked fuzz run --fuzz-dir zbus/fuzz body -- -max_total_time=30 -max_len=4096
 
   doc_build:
     runs-on: ubuntu-latest
