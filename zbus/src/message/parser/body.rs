@@ -621,6 +621,7 @@ mod tests {
     #[cfg(unix)]
     use std::{io::stdout, os::fd::AsFd};
 
+    use serde::de::IgnoredAny;
     use test_log::test;
 
     use super::{is_ascii_without_nul, validate};
@@ -769,6 +770,9 @@ mod tests {
 
     #[test]
     fn depth() {
+        // Deserializing counts nesting as the parser does, so it takes each of these bodies if and
+        // only if the parser does.
+
         // Dicts of a single entry each, of a variant of the next dict, the last of which holds a
         // byte: the entry of the first dict is in 2 containers, its array and itself, and each dict
         // adds 3 more, for the variant. With 21 dicts, the byte is in 63 containers, and with 22,
@@ -776,7 +780,7 @@ mod tests {
         for (dicts, valid) in [(21, true), (22, false)] {
             let mut bytes = vec![];
             nested_dicts(&mut bytes, dicts);
-            let checked = check(b"a{sv}", &bytes);
+            let checked = check_and_deserialize(b"a{sv}", &bytes);
             assert_eq!(checked.is_ok(), valid, "{dicts} dicts: {checked:?}");
         }
 
@@ -792,7 +796,7 @@ mod tests {
         });
         let mut signature = vec![b'a'; 16];
         signature.push(b'v');
-        check(&signature, &bytes).unwrap();
+        check_and_deserialize(&signature, &bytes).unwrap();
 
         // A variant of an empty array, or of a structure, nested in 32 others of its kind in its
         // signature, which a signature holds no more than of either.
@@ -801,7 +805,7 @@ mod tests {
             bytes.extend([b'a'; 33].iter().take(nested.into()));
             bytes.extend([b'y', 0]);
             nested_arrays(&mut bytes, 1, 4, &|_| ());
-            let checked = check(b"v", &bytes);
+            let checked = check_and_deserialize(b"v", &bytes);
             assert_eq!(checked.is_ok(), valid, "{nested} arrays: {checked:?}");
 
             let mut bytes = vec![2 * nested + 1];
@@ -811,7 +815,7 @@ mod tests {
             bytes.push(0);
             pad(&mut bytes, 8);
             bytes.push(7);
-            let checked = check(b"v", &bytes);
+            let checked = check_and_deserialize(b"v", &bytes);
             assert_eq!(checked.is_ok(), valid, "{nested} structures: {checked:?}");
         }
 
@@ -835,7 +839,7 @@ mod tests {
                 bytes.extend(signature);
                 bytes.push(0);
                 nested_arrays(&mut bytes, 1, alignment, &|bytes| bytes.extend(elements));
-                let checked = check(b"v", &bytes);
+                let checked = check_and_deserialize(b"v", &bytes);
                 assert_eq!(
                     checked, expected,
                     "{variants} variants of {signature:?}, {elements:?}"
@@ -874,7 +878,7 @@ mod tests {
                     true => Ok(()),
                     false => max.clone(),
                 };
-                let checked = check(&signature, &bytes);
+                let checked = check_and_deserialize(&signature, &bytes);
                 assert_eq!(checked, expected, "{structures}, {element:?}, {elements:?}");
             }
         }
@@ -994,6 +998,23 @@ mod tests {
     /// Check `bytes` against `signature`, in little-endian byte order, without file descriptors.
     fn check(signature: &[u8], bytes: &[u8]) -> crate::Result<()> {
         validate(bytes, signature, EndianSig::Little, 0)
+    }
+
+    /// Check `bytes` against `signature`, of a single complete type, as [`check`] does, making sure
+    /// that deserializing a value of `signature` from them takes all of them if and only if they're
+    /// valid.
+    fn check_and_deserialize(signature: &[u8], bytes: &[u8]) -> crate::Result<()> {
+        let checked = check(signature, bytes);
+        let data = Data::new(bytes, Context::new(LE, 0));
+        let deserialized = data.deserialize_for_signature::<_, IgnoredAny>(signature);
+        assert_eq!(
+            matches!(deserialized, Ok((_, len)) if len == bytes.len()),
+            checked.is_ok(),
+            "`{}`: {checked:?}, deserialized: {deserialized:?}",
+            String::from_utf8_lossy(signature),
+        );
+
+        checked
     }
 
     /// Deserialize `bytes` of `body` as a structure of the types of its signature, whose bytes are

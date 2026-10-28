@@ -151,6 +151,8 @@ impl ser::Serializer for &mut ValueSerializer {
         if child.signature() != &Signature::U8 {
             return Err(self.mismatch("an array of bytes"));
         }
+        // The bytes are the elements of an array, which nests as any other does.
+        self.depths.inc_array(&Signature::U8)?;
         let mut array = Array::new(&Signature::U8);
         for byte in value {
             array.append(Variant::U8(*byte))?;
@@ -234,10 +236,10 @@ impl ser::Serializer for &mut ValueSerializer {
             _ => return Err(self.mismatch("an array")),
         };
         Ok(SeqSerializer {
+            depths: self.depths.inc_array(&child)?,
             element_signature: child,
             array_signature: self.signature.clone(),
             elements: Vec::new(),
-            depths: self.depths.inc_array()?,
         })
     }
 
@@ -274,7 +276,7 @@ impl ser::Serializer for &mut ValueSerializer {
             dict_signature: self.signature.clone(),
             entries: Vec::new(),
             pending_key: None,
-            depths: self.depths.inc_array()?,
+            depths: self.depths.inc_dict()?,
         })
     }
 
@@ -285,7 +287,7 @@ impl ser::Serializer for &mut ValueSerializer {
     ) -> crate::Result<Self::SerializeStruct> {
         match &self.signature {
             Signature::Variant => Ok(StructSeqSerializer::Variant(VariantSerializer::new(
-                self.depths.inc_variant()?,
+                self.depths,
             ))),
             Signature::Array(_) => self.serialize_seq(Some(len)).map(StructSeqSerializer::Seq),
             Signature::U8 => Ok(StructSeqSerializer::Struct(StructSerializer::unit(self)?)),
@@ -333,6 +335,11 @@ impl ser::SerializeSeq for SeqSerializer {
     }
 
     fn end(self) -> crate::Result<Self::Ok> {
+        // The elements count toward the limit of nesting only if there are any, unless
+        // `inc_array` has counted them already.
+        if !self.elements.is_empty() {
+            self.depths.check()?;
+        }
         let mut array = Array::new(&self.element_signature);
         for element in self.elements {
             array.append(element)?;
@@ -382,6 +389,10 @@ impl ser::SerializeMap for MapSerializer {
     fn end(self) -> crate::Result<Self::Ok> {
         if self.pending_key.is_some() {
             return Err(crate::Error::Failure("map value is missing".to_owned()));
+        }
+        // The keys and values count toward the limit of nesting only if there are any.
+        if !self.entries.is_empty() {
+            self.depths.check()?;
         }
         let mut dict = Dict::new(&self.key_signature, &self.value_signature);
         for (key, value) in self.entries {
@@ -565,7 +576,8 @@ impl VariantSerializer {
             ));
         }
         let signature = self.signature.clone().expect("checked above");
-        let mut serializer = ValueSerializer::new(signature, self.depths);
+        let depths = self.depths.inc_variant(&signature)?;
+        let mut serializer = ValueSerializer::new(signature, depths);
         self.value = Some(value.serialize(&mut serializer)?);
         Ok(())
     }

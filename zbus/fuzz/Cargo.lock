@@ -469,6 +469,7 @@ version = "0.0.0"
 dependencies = [
  "endi",
  "libfuzzer-sys",
+ "serde",
  "zbus",
 ]
 
